@@ -5,10 +5,52 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.build_context_review_queue import main
+from scripts.build_context_review_queue import _is_valid_relation, main
 
 
 class BuildContextReviewQueueTests(unittest.TestCase):
+    def test_main_si_reference_basis_requires_a_real_indexed_reference(self) -> None:
+        paper_index = {
+            "unit_navigation": [
+                {
+                    "unit_id": "MAIN-UNIT",
+                    "doc_type": "MAIN",
+                    "page_number": 4,
+                    "source_ids": ["SRC-MAIN"],
+                },
+                {
+                    "unit_id": "SI-TABLE-UNIT",
+                    "doc_type": "SI",
+                    "page_number": 2,
+                    "source_ids": ["SRC-SI"],
+                    "table_id": "SI_TABLE_S2",
+                },
+            ],
+            "cross_source_references": [{
+                "source_doc_type": "MAIN",
+                "source_page_number": 4,
+                "reference_text": "See Table S2",
+                "target_candidates": [{
+                    "evidence_kind": "table",
+                    "target_id": "SI_TABLE_S2",
+                    "page_number": 2,
+                }],
+            }],
+        }
+        self.assertTrue(_is_valid_relation(
+            "main_si_reference",
+            {"MAIN-UNIT"},
+            {"SI-TABLE-UNIT"},
+            paper_index,
+        ))
+        paper_index["cross_source_references"] = []
+        self.assertFalse(_is_valid_relation(
+            "main_si_reference",
+            {"MAIN-UNIT"},
+            {"SI-TABLE-UNIT"},
+            paper_index,
+        ))
+
     def test_builds_targeted_worker_b_task_from_explicit_remote_unit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
