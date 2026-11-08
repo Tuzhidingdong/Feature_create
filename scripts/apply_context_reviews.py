@@ -107,6 +107,35 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def record_snapshot(record: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "record_id", "paper_id", "doi", "registry_feature_id", "observation_id",
+        "raw_feature_name", "raw_value", "numeric_value", "reported_unit",
+        "result_type", "value_extraction_status", "extraction_status",
+        "statistic_label", "replicate_count", "sample_identity", "condition_facts",
+        "time_cycle_facts", "protocol_facts", "other_context_facts",
+        "measurement_or_calculation_method", "source_id", "source_type",
+        "source_location", "evidence_refs", "evidence_status", "context_notes",
+        "worker_task_id", "worker_model",
+    )
+    return {key: record.get(key) for key in fields}
+
+
+def unresolved_snapshot(unresolved: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "unresolved_id", "paper_id", "worker_task_id", "item_type", "description",
+        "related_candidate_record_id", "related_candidate_observation_id",
+        "evidence_refs", "cross_chunk_target", "resolution_status", "resolution_history",
+    )
+    return {key: unresolved.get(key) for key in fields}
+
+
 def verify_context_artifact_hashes(
     task: dict[str, Any],
     validation: dict[str, Any],
@@ -317,6 +346,12 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if record.get("worker_task_id") != task.get("origin_worker_task_id"):
                 skipped.append({"task_id": task_id, "reason": "origin_worker_task_mismatch"})
+                continue
+            if not task.get("record_snapshot_sha256") or canonical_sha256(record_snapshot(record)) != task.get("record_snapshot_sha256"):
+                skipped.append({"task_id": task_id, "reason": "result_record_changed_after_context_queue_build"})
+                continue
+            if not task.get("unresolved_snapshot_sha256") or canonical_sha256(unresolved_snapshot(unresolved)) != task.get("unresolved_snapshot_sha256"):
+                skipped.append({"task_id": task_id, "reason": "unresolved_item_changed_after_context_queue_build"})
                 continue
 
             decision = payload.get("decision")
