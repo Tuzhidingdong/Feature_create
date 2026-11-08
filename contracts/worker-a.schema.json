@@ -435,6 +435,59 @@
             "string",
             "null"
           ]
+        },
+        "cross_chunk_target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "relation_basis",
+            "context_role",
+            "target_units",
+            "rationale"
+          ],
+          "properties": {
+            "relation_basis": {
+              "enum": [
+                "adjacent_text_boundary",
+                "same_original_table_row",
+                "main_si_reference",
+                "worker_located"
+              ]
+            },
+            "context_role": {
+              "enum": [
+                "sample_identity",
+                "condition",
+                "time_or_cycle",
+                "protocol",
+                "statistical_scope",
+                "other"
+              ]
+            },
+            "target_units": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "chunk_id",
+                  "unit_id",
+                  "source_id"
+                ],
+                "properties": {
+                  "chunk_id": {"type": "string", "minLength": 1},
+                  "unit_id": {"type": "string", "minLength": 1},
+                  "source_id": {"type": "string", "minLength": 1}
+                }
+              }
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     }
