@@ -18,14 +18,14 @@ A result feature is a reported outcome/result variable, not merely an experiment
 
 ## Required review scope
 
-Review the full available source bundle:
-- main article text, including abstract, methods, results, discussion, and conclusion;
-- all tables and footnotes;
-- all figures, panels, axes, legends, labels, and captions;
-- every accessible SI text section;
-- every SI table, figure, caption, and supporting dataset made available in the task.
+Review the full available upstream-preprocessed source bundle:
+- upstream-preprocessed MAIN article text, including abstract, methods, results, discussion, and conclusion;
+- all upstream-extracted MAIN tables, rows, cells, captions, and footnotes;
+- all upstream-extracted figure/table images, panels, axes, legends, labels, and captions;
+- every accessible upstream-preprocessed SI text section;
+- every SI table, figure, caption, and supporting dataset included in the upstream evidence package.
 
-Do not assume a Markdown conversion includes all visual or tabular content. Inspect provided table extracts and figure images. Report source components that are missing, inaccessible, partially parsed, or not reviewed.
+The attached chem-literature evidence_index.json is the authoritative structural source index: preserve its page numbers, block coordinates, table IDs/cells, figure IDs/bounding boxes, SI references, asset IDs, and provenance. The PREPROCESSING_QC_REPORT.md and processing_summary are authoritative for scan warnings and unparsed/unsupported SI. Inspect the provided structured tables and extracted figure images. Do not re-open or re-parse original PDFs/SI files; they are upstream provenance only and are deliberately not supplied as worker attachments. Report source components that are missing, inaccessible, partially parsed, or not reviewed.
 
 ## Feature discovery rules
 
@@ -99,4 +99,4 @@ Return one JSON object conforming exactly to `contracts/worker-a.schema.json`.
 - Do not include commentary outside the JSON object.
 - Do not claim a source is fully reviewed unless you actually reviewed it.
 
-If the source material is too large for one semantic pass, ask the Supervisor to split it into coherent bounded chunks while preserving source locators. Do not silently omit sections.
+If the source material is too large for one semantic pass, ask the Supervisor to split the upstream-extracted text/table/image inventory into coherent bounded chunks while preserving original source IDs and locators. Do not silently omit sections.
