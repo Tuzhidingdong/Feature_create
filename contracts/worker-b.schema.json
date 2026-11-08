@@ -118,7 +118,6 @@
       "additionalProperties": false,
       "required": [
         "source_id",
-        "scope_id",
         "component",
         "status",
         "audit_note"
@@ -131,7 +130,7 @@
         "scope_id": {
           "type": "string",
           "minLength": 1,
-          "description": "Exact assigned review scope ID from the task coverage checklist."
+          "description": "Exact assigned review scope ID from the task coverage checklist; required when the task includes source_scopes."
         },
         "component": {
           "enum": [
