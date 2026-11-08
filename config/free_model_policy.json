@@ -1,0 +1,59 @@
+{
+  "policy_version": "0.1",
+  "purpose": "Pin the two worker roles to different OpenCode Go models whose current published inference prices are Free.",
+  "verified_on": "2026-11-08",
+  "verification_scope": "Official OpenCode Go documentation snapshot. Re-check before every run.",
+  "official_sources": [
+    "https://opencode.ai/docs/console/go/",
+    "https://opencode.ai/docs/console/models/"
+  ],
+  "selection_rules": {
+    "minimum_distinct_models": 2,
+    "require_provider": "opencode-go",
+    "require_zero_input_price": true,
+    "require_zero_output_price": true,
+    "require_zero_cached_read_price": true,
+    "require_zero_cached_write_price": true,
+    "require_available_in_current_opencode_catalog": true,
+    "explicit_model_selection_for_every_worker_call": true,
+    "no_paid_fallback": true,
+    "no_antigravity_bulk_extraction_fallback": true,
+    "pause_if_price_or_availability_is_uncertain": true
+  },
+  "preferred_pair": [
+    {
+      "worker": "A",
+      "role": "source_discovery",
+      "model_ref": "opencode-go/crouton-alpha-free",
+      "display_name": "Crouton Alpha Free",
+      "input_price": "Free",
+      "output_price": "Free",
+      "cached_read_price": "Free",
+      "cached_write_price": "Free",
+      "published_request_allowance": "Unlimited",
+      "offer_status": "limited_time",
+      "published_data_retention": "30 days",
+      "published_training_use": "not used for model training"
+    },
+    {
+      "worker": "B",
+      "role": "feature_audit",
+      "model_ref": "opencode-go/beam-free",
+      "display_name": "Beam Free",
+      "input_price": "Free",
+      "output_price": "Free",
+      "cached_read_price": "Free",
+      "cached_write_price": "Free",
+      "published_request_allowance": "Unlimited",
+      "offer_status": "limited_time",
+      "published_data_retention": "30 days",
+      "published_training_use": "not used for model training"
+    }
+  ],
+  "important_caveats": [
+    "Free offers can expire, change, or become region-restricted.",
+    "The OpenCode Go subscription fee is separate from per-model inference pricing.",
+    "A model name containing Free is not sufficient proof; current catalog and price evidence are required.",
+    "The current official documentation snapshot is not a substitute for per-run verification."
+  ]
+}
