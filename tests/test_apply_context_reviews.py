@@ -310,6 +310,103 @@ class ApplyContextReviewTests(unittest.TestCase):
                 report["skipped_tasks"][0]["reason"],
             )
 
+    def test_rejects_bundle_modified_after_evidence_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run_dir = root / "context_runs"
+            task_output = root / "task_output"
+            task_id = "FC-CX-BUNDLE-TAMPER"
+            record_id = "REC-BUNDLE"
+            unresolved_id = "UNRES-BUNDLE"
+            model = "opencode-go/beam-free"
+            task = {
+                "task_id": task_id,
+                "worker_role": "cross_chunk_context",
+                "task_status": "pending",
+                "paper_id": "PAPER-1",
+                "model_ref": model,
+                "output_dir": str(task_output),
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "origin_worker_task_id": "TASK-A",
+            }
+            artifact_hashes = self._bind_context_artifacts(task, root)
+            queue_path = root / "context_review_task_queue.json"
+            self._write_json(queue_path, {"tasks": [task]})
+            self._write_json(task_output / "task_state.json", {
+                "status": "complete",
+                "requested_model": model,
+                "observed_models": [model],
+            })
+            response = {
+                "contract_version": "0.1",
+                "task_type": "cross_chunk_context",
+                "task_id": task_id,
+                "paper_id": "PAPER-1",
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "decision": "insufficient_evidence",
+                "rationale": "The selected target unit does not contain a verified sample mapping.",
+                "review_evidence_refs": [
+                    {"evidence_side": "current", "source_id": "SRC-A", "locator": {"chunk_id": "A", "unit_id": "UA"}, "evidence_status": "unverified"},
+                    {"evidence_side": "target", "source_id": "SRC-B", "locator": {"chunk_id": "B", "unit_id": "UB"}, "evidence_status": "unverified"},
+                ],
+                "context_facts": [],
+            }
+            response_path = task_output / "response.json"
+            self._write_json(response_path, response)
+            response_sha256 = hashlib.sha256(response_path.read_bytes()).hexdigest()
+            self._write_json(run_dir / "evidence_validation.json", {
+                "manifest_path": task["source_manifest_path"],
+                "manifest_sha256": artifact_hashes["source_manifest"],
+                "tasks": [{
+                    "task_id": task_id,
+                    "status": "evidence_checked",
+                    "response_sha256": response_sha256,
+                    "artifact_sha256": artifact_hashes,
+                }],
+            })
+
+            # Keep the Worker B response unchanged, but alter the exact input
+            # bundle after validation. The context decision must not be applied.
+            Path(task["bundle_path"]).write_text("changed after validation", encoding="utf-8")
+
+            records_path = root / "result_records.jsonl"
+            records_path.write_text(json.dumps({
+                "record_id": record_id,
+                "paper_id": "PAPER-1",
+                "worker_task_id": "TASK-A",
+                "raw_value": "91",
+                "numeric_value": 91,
+                "sample_identity": [],
+                "unresolved_issues": [{"unresolved_id": unresolved_id, "resolution_status": "pending"}],
+            }) + "\n", encoding="utf-8")
+            unresolved_path = root / "unresolved_extraction_items.jsonl"
+            unresolved_path.write_text(json.dumps({
+                "unresolved_id": unresolved_id,
+                "paper_id": "PAPER-1",
+                "resolution_status": "pending",
+            }) + "\n", encoding="utf-8")
+
+            report_path = root / "report.json"
+            self.assertEqual(main([
+                "--queue", str(queue_path),
+                "--run-dir", str(run_dir),
+                "--records", str(records_path),
+                "--unresolved", str(unresolved_path),
+                "--report", str(report_path),
+            ]), 0)
+            updated = json.loads(records_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(91, updated["numeric_value"])
+            self.assertEqual([], updated["sample_identity"])
+            self.assertEqual("pending", updated["unresolved_issues"][0]["resolution_status"])
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, report["tasks_applied"])
+            self.assertEqual(
+                "context_artifact_changed_after_evidence_validation:bundle",
+                report["skipped_tasks"][0]["reason"],
+            )
+
     def test_insufficient_evidence_keeps_unresolved_issue_open_and_adds_no_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
