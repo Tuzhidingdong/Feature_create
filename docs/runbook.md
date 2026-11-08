@@ -6,7 +6,7 @@
 - Python 3.10+.
 - OpenCode CLI installed and authenticated for OpenCode Go.
 - Current OpenCode Go plan/account allows access to the selected limited-time free models in the user's region.
-- A completed [chem-literature preprocessing-branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) run.
+- A completed [chem-literature `main` workflow](https://github.com/Tuzhidingdong/chem-literature/tree/main) run.
 - `research_corpus_paired.csv` contains `preprocessing_path`, `preprocessing_status`, and the referenced `01_preprocessing/` packages.
 - Enough local disk space for task bundles, pre-extracted image attachments, worker outputs, and session exports. Feature_create does not create another parsed PDF/SI corpus.
 
@@ -29,7 +29,7 @@ The workflow uses `opencode run --model`, `--agent`, `--file`, `--format json`, 
 
 ## 2. Prepare the upstream-preprocessed corpus
 
-Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. The final `research_corpus_paired.csv` must include:
+Run the merged [chem-literature `main` workflow](https://github.com/Tuzhidingdong/chem-literature/tree/main) first. Stage 5 preprocessing is enabled by default; make sure it was not skipped. The final `research_corpus_paired.csv` must include:
 - `local_pdf_path` and `local_si_info` for raw-source provenance and hash verification;
 - `preprocessing_path` pointing to that paper's `01_preprocessing/`;
 - `preprocessing_status` matching `evidence_index.json`;
@@ -81,7 +81,7 @@ Outputs:
 python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
 ~~~
 
-One independent Worker A and Worker B task is created per eligible paper. Each task has:
+One independent Worker A and Worker B task pair is created for each bounded chunk of an eligible paper. A paper may therefore produce multiple task pairs. The default bundle limit is 120,000 characters, the Windows command limit is 7,600 characters, and the default attachment limit is 12 (`--max-bundle-chars`, `--max-command-chars`, and `--max-attachments` can override them). Each chunk has:
 - stable task ID and exact pinned model reference;
 - worker prompt and consolidated upstream-parsed text/table bundle;
 - exact upstream `evidence_index.json` and QC report attachments;
@@ -89,9 +89,9 @@ One independent Worker A and Worker B task is created per eligible paper. Each t
 - stable source IDs and original page/table/figure/SI locators;
 - raw PDF/SI hash inventory for provenance only.
 
-The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and source-index/QC files. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding coverage incomplete.
+The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and the authoritative upstream evidence index/QC report. Each assigned page/text segment/table-row range/asset has a stable `scope_id`; its original `source_id`, page number, figure/table ID, bounding box, and original table row/column positions remain unchanged. Every chunk also stores the exact scope text locally for downstream quote verification. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding scopes incomplete.
 
-If the bundle exceeds the configured maximum, it is marked blocked rather than silently truncated. Bounded semantic chunking will be handled as a separate task-splitting stage; it must split only upstream-parsed content and preserve the original source IDs and locators.
+Long upstream-parsed MAIN/SI text is split first at chem-literature's explicit `## Page N (MAIN|SI)` boundaries. A single oversized page is split at paragraph/line/whitespace boundaries without dropping or duplicating characters. Structured tables are split into bounded groups of original rows; later groups repeat the original first row as header context while retaining original 1-based row numbers. Chunk packing respects bundle size, attachment count, and command-line limits. No content is silently truncated. An individual row or source asset that cannot fit safely is retained in a blocked task rather than omitted. Coverage is recorded per `scope_id` and aggregated by original `source_id` only after every scope for that source has been fully reviewed by that worker.
 
 ## 4. Verify the free model pair before dispatch
 
@@ -315,7 +315,7 @@ A missing usage/cost field is recorded as not exposed, not automatically treated
 - Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
 - Figure panel/bounding-box interpretation is not automatically validated. The image and upstream coordinates support review, but workers must not claim automated figure digitization or exact values without digitization evidence.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
-- Oversized paper bundles are blocked rather than chunked automatically.
+- Very large sources are split into page/text-segment and table-row scopes. An individual source unit that still exceeds a hard size/attachment/command limit is blocked, never truncated or discarded.
 - The cross-paper Registry review/merge mechanism, existing FEATURE_ID mapping, and final TXT exporter are implemented but still require a manually inspected pilot and validation against the user's actual legacy schema file.
 - The worker runner and preparation pipeline still require a local Windows smoke test against the installed OpenCode CLI version before production use.
 
