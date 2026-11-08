@@ -421,6 +421,10 @@ def refresh_feature_statuses(
                         str(row.get("candidate_pair_id"))
                     )
 
+    observations_by_id = {
+        item["observation_id"]: item
+        for item in registry.get("observations", [])
+    }
     for feature in registry["canonical_features"]:
         if feature.get("feature_status") == "retired_merged":
             continue
@@ -428,7 +432,18 @@ def refresh_feature_statuses(
         if unresolved_by_feature.get(feature_id):
             feature["feature_status"] = "under_review"
         elif feature.get("feature_status") in {"provisional", "under_review"}:
-            feature["feature_status"] = "confirmed"
+            linked = [
+                observations_by_id[oid]
+                for oid in feature.get("observation_ids", [])
+                if oid in observations_by_id
+            ]
+            has_verified_source = any(
+                item.get("discovery_status") == "evidence_verified"
+                for item in linked
+            )
+            feature["feature_status"] = (
+                "confirmed" if has_verified_source else "under_review"
+            )
         feature["updated_at"] = utc_now()
 
 
