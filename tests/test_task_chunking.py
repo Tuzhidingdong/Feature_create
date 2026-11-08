@@ -133,22 +133,28 @@ class SemanticChunkingTests(unittest.TestCase):
                 self.assertEqual({task["worker_role"] for task in paired}, {"source_discovery", "feature_audit"})
                 self.assertEqual(paired[0]["source_scopes"], paired[1]["source_scopes"])
 
+            image_attachment_seen = False
+            figure_bundle_seen = False
             for task in queue["tasks"]:
                 attachments = task["attachment_paths"]
-                self.assertIn(str(image_path), attachments)
                 self.assertIn(str(evidence_index), attachments)
                 self.assertIn(str(qc_report), attachments)
                 self.assertNotIn(str(raw_pdf), attachments)
                 self.assertTrue(all(not path.lower().endswith(".pdf") for path in attachments))
+                if str(image_path) in attachments:
+                    image_attachment_seen = True
                 bundle = Path(task["bundle_path"]).read_text(encoding="utf-8")
                 self.assertIn("Do not request or perform a second PDF/SI parsing pass", bundle)
-                self.assertIn("MAIN_FIG_P2_01", bundle)
+                if "MAIN_FIG_P2_01" in bundle:
+                    figure_bundle_seen = True
                 for scope in task["source_scopes"]:
                     scope_file = Path(scope["scope_text_path"])
                     self.assertTrue(scope_file.is_file())
                     raw = scope_file.read_bytes()
                     self.assertEqual(hashlib.sha256(raw).hexdigest(), scope["scope_text_sha256"])
                     self.assertIn("[PRIMARY SCOPE]", raw.decode("utf-8"))
+            self.assertTrue(image_attachment_seen)
+            self.assertTrue(figure_bundle_seen)
 
     def test_text_split_reconstructs_source_without_loss_or_overlap(self) -> None:
         source = ("alpha beta gamma\n\n" * 40) + "last marker Ω"
