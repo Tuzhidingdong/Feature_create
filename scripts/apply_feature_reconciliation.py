@@ -32,6 +32,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_SCHEMA = ROOT / "contracts" / "registry.schema.json"
 DECISION_SCHEMA = ROOT / "contracts" / "feature-reconciliation-batch.schema.json"
+EXECUTION_POLICY = ROOT / "config" / "execution_policy.json"
 
 
 class ApplyDecisionError(RuntimeError):
@@ -452,6 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     observations = {row["observation_id"]: row for row in registry.get("observations", [])}
     tasks_queue = read_json(args.reconciliation_queue.resolve())
     run_dir = args.run_dir.resolve()
+    execution_policy = read_json(EXECUTION_POLICY)
+    expected_worker_b_model = execution_policy.get("workers", {}).get("worker_b", {}).get("model_ref")
 
     report = {
         "application_version": "0.1",
@@ -491,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         requested_model = task.get("model_ref")
         observed_models = task_state.get("observed_models") or []
-        if requested_model != "opencode-go/beam-free":
+        if requested_model != expected_worker_b_model:
             report["tasks_skipped"].append({
                 "task_id": task.get("task_id"),
                 "reason": "unexpected_worker_b_model",
