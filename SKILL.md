@@ -179,7 +179,7 @@ After Worker A/B first-pass outputs have been validated and ingested, resolve on
 9. When an identical context fact already exists, merge newly verified evidence references into that fact rather than duplicate the sample/condition entry. Repeated application of the same task is idempotent.
 10. `no_association` closes that one investigated question without adding a fact. `insufficient_evidence` and `conflicting_evidence` remain unresolved for human review. All decisions and citations are retained in the unresolved item and linked result record history.
 
-This stage reuses Worker B; it is not a third worker or a repeated full-paper discovery pass. The context queue skips already reviewed/resolved items by default. Task IDs are fingerprinted from the unresolved question, exact current/target content and locators, visual assets, model ID, and dedicated prompt; changed inputs cannot silently reuse a stale completed response. Items without a linked result record and exact remote target remain in the unresolved queue.
+This stage reuses Worker B; it is not a third worker or a repeated full-paper discovery pass. The context queue skips already reviewed/resolved items by default; only inconclusive items may be explicitly retried with the retry-inconclusive switch. Confirmed/no-association items stay closed. Task IDs are fingerprinted from the unresolved question, exact current/target content and locators, visual assets, model ID, and dedicated prompt; changed inputs cannot silently reuse a stale completed response. Response SHA-256 must still match the evidence-validation report at apply time. Items without a linked result record and exact remote target remain in the unresolved queue.
 
 ### Phase 5 — Global cross-paper reconciliation
 
