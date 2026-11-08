@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,16 +9,147 @@ from pathlib import Path
 from scripts.build_task_queue import (
     group_units,
     make_source_units,
-    render_table_rows,
     split_text_preserving_content,
     table_row_segments,
     text_page_segments,
 )
 from scripts.audit_records import aggregate_source_scope_status, coverage_for_task
 from scripts.validate_evidence import validate_locator_scope, verify_quote_in_assigned_scope
+from scripts.build_task_queue import main as build_task_queue_main
 
 
 class SemanticChunkingTests(unittest.TestCase):
+    def test_end_to_end_queue_writes_chunk_scope_hashes_and_preserves_upstream_attachments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prepared = root / "prepared"
+            extracted = prepared / "extracted_text"
+            extracted.mkdir(parents=True)
+            main_text = "# Main Analysis\nDOI: 10.1000/end-to-end\n\n"
+            for page in range(1, 6):
+                main_text += (
+                    f"## Page {page} (MAIN)\n"
+                    + (f"Sample P{page} capacity retention result. " * 20)
+                    + "\n---\n"
+                )
+            (extracted / "main.txt").write_text(main_text, encoding="utf-8")
+
+            image_path = root / "figure-1.png"
+            image_path.write_bytes(b"already extracted image")
+            raw_pdf = root / "raw-original.pdf"
+            raw_pdf.write_bytes(b"%PDF-original")
+            evidence_index = root / "evidence_index.json"
+            evidence_index.write_text('{"package_version":"1.1.0"}', encoding="utf-8")
+            qc_report = root / "PREPROCESSING_QC_REPORT.md"
+            qc_report.write_text("# QC\nStatus: COMPLETE\n", encoding="utf-8")
+
+            sources = [{
+                "source_id": "SRC-MAIN",
+                "paper_id": "10.1000/end-to-end",
+                "source_role": "main",
+                "source_type": "main_text",
+                "component": "main_text",
+                "relative_path": "preprocessing/main_analysis.md",
+                "parse_status": "upstream_preprocessed_text",
+                "sha256": "main-source-hash",
+                "extracted_text_path": "extracted_text/main.txt",
+                "page_numbers": [1, 2, 3, 4, 5],
+            }, {
+                "source_id": "SRC-FIG-1",
+                "paper_id": "10.1000/end-to-end",
+                "source_role": "main",
+                "source_type": "main_figure",
+                "component": "main_figures",
+                "relative_path": "preprocessing/extracted_figures/figure-1.png",
+                "attachment_path": str(image_path),
+                "sha256": "figure-sha256",
+                "parse_status": "upstream_extracted_visual_asset",
+                "extracted_text_path": "extracted_text/figure-descriptor.txt",
+                "is_visual_asset": True,
+                "page_number": 2,
+                "figure_id": "MAIN_FIG_P2_01",
+                "bbox": [10, 20, 300, 400],
+                "asset_id": "ASSET-FIG-1",
+                "asset_type": "figure",
+            }]
+            (extracted / "figure-descriptor.txt").write_text(
+                "ASSET_ID: ASSET-FIG-1\nFIGURE_ID: MAIN_FIG_P2_01\nPAGE: 2\n",
+                encoding="utf-8",
+            )
+            manifest = {
+                "manifest_version": "0.3",
+                "source_kind": "chem-literature-preprocessed-research_corpus_paired.csv",
+                "corpus_fingerprint": "corpus-hash",
+                "upstream_artifact_sha256": "csv-hash",
+                "upstream_row_count": 1,
+                "sources": sources,
+                "papers": [{
+                    "paper_id": "10.1000/end-to-end",
+                    "doi": "10.1000/end-to-end",
+                    "title": "Long paper with preprocessed inputs",
+                    "year": "2026",
+                    "journal": "Example Journal",
+                    "article_type": "Original Research",
+                    "abstract": "Abstract context.",
+                    "pair_status": "paired_files_verified",
+                    "input_status": "ready",
+                    "preprocessing_status": "COMPLETE",
+                    "preprocessing_path": "papers/10.1000.end-to-end/01_preprocessing",
+                    "processing_summary": {"status": "COMPLETE"},
+                    "pair_warnings": [],
+                    "unparsed_material": [],
+                    "evidence_index_copy": str(evidence_index),
+                    "evidence_index_sha256": "evidence-hash",
+                    "qc_report_path": str(qc_report),
+                    "qc_report_sha256": "qc-hash",
+                    "raw_source_inventory": [{
+                        "role": "main_raw_pdf",
+                        "absolute_path": str(raw_pdf),
+                        "worker_attachment": False,
+                        "reparsed_downstream": False,
+                    }],
+                    "source_ids": ["SRC-MAIN", "SRC-FIG-1"],
+                }],
+            }
+            manifest_path = prepared / "source_manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = root / "dispatch"
+
+            exit_code = build_task_queue_main([
+                "--manifest", str(manifest_path),
+                "--output", str(output),
+                "--max-bundle-chars", "2600",
+                "--max-command-chars", "7600",
+                "--max-attachments", "5",
+            ])
+            self.assertEqual(exit_code, 0)
+            queue = json.loads((output / "task_queue.json").read_text(encoding="utf-8"))
+            self.assertGreater(queue["chunk_count"], 1)
+            self.assertEqual(queue["task_count"], queue["chunk_count"] * 2)
+            self.assertEqual(queue["pending_count"], queue["task_count"])
+
+            for chunk_id in {task["chunk_id"] for task in queue["tasks"]}:
+                paired = [task for task in queue["tasks"] if task["chunk_id"] == chunk_id]
+                self.assertEqual({task["worker_role"] for task in paired}, {"source_discovery", "feature_audit"})
+                self.assertEqual(paired[0]["source_scopes"], paired[1]["source_scopes"])
+
+            for task in queue["tasks"]:
+                attachments = task["attachment_paths"]
+                self.assertIn(str(image_path), attachments)
+                self.assertIn(str(evidence_index), attachments)
+                self.assertIn(str(qc_report), attachments)
+                self.assertNotIn(str(raw_pdf), attachments)
+                self.assertTrue(all(not path.lower().endswith(".pdf") for path in attachments))
+                bundle = Path(task["bundle_path"]).read_text(encoding="utf-8")
+                self.assertIn("Do not request or perform a second PDF/SI parsing pass", bundle)
+                self.assertIn("MAIN_FIG_P2_01", bundle)
+                for scope in task["source_scopes"]:
+                    scope_file = Path(scope["scope_text_path"])
+                    self.assertTrue(scope_file.is_file())
+                    raw = scope_file.read_bytes()
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), scope["scope_text_sha256"])
+                    self.assertIn("[PRIMARY SCOPE]", raw.decode("utf-8"))
+
     def test_text_split_reconstructs_source_without_loss_or_overlap(self) -> None:
         source = ("alpha beta gamma\n\n" * 40) + "last marker Ω"
         parts = split_text_preserving_content(source, 47)
