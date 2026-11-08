@@ -89,6 +89,40 @@ class WorkerRunnerTests(unittest.TestCase):
         }
         self.assertEqual(validate_worker_payload(payload, task), [])
 
+    def test_worker_b_must_report_each_assigned_scope(self) -> None:
+        task = {
+            "task_id": "TASK-B-SCOPE",
+            "paper_id": "PAPER-1",
+            "worker_role": "feature_audit",
+            "source_ids": ["SRC-1"],
+            "source_scopes": [
+                {"scope_id": "SCP-1", "source_id": "SRC-1"},
+                {"scope_id": "SCP-2", "source_id": "SRC-1"},
+            ],
+        }
+        payload = {
+            "contract_version": "0.1",
+            "task_id": "TASK-B-SCOPE",
+            "worker_role": "feature_audit",
+            "paper_id": "PAPER-1",
+            "coverage_audit": [{
+                "source_id": "SRC-1",
+                "scope_id": "SCP-1",
+                "component": "main_text",
+                "status": "reviewed",
+                "audit_note": "Reviewed assigned unit.",
+            }],
+            "feature_observations": [],
+            "omission_candidates": [],
+            "semantic_distinctions": [],
+            "unresolved_items": [],
+        }
+        problems = validate_worker_payload(payload, task)
+        self.assertTrue(any(
+            "missing assigned scope_ids: SCP-2" in problem
+            for problem in problems
+        ))
+
     def test_legacy_queue_accepts_source_level_coverage_without_scope_id(self) -> None:
         task = {
             "task_id": "TASK-LEGACY",
