@@ -87,7 +87,7 @@ Every Feature Observation and every result record must include at least one prec
 
 Keep a short exact quote or exact table-cell value when available. Do not invent page numbers or locators.
 
-For a structured-table cell, cite the table source ID and include `table_id`, `page_number`, `row_index_1based`, and `column_index_1based` in the locator; include row/column headers when present. Indices refer to the exact row and column positions in the upstream evidence_index table `rows` array, including the header row. For figure evidence, preserve the upstream `figure_id`, `page_number`, panel label, and bounding box where supplied. For text evidence, cite the page number and exact quote.
+For every evidence reference, include the assigned `unit_id` and current `chunk_id` in the locator. For a structured-table cell, cite the table source ID and include `table_id`, `page_number`, `row_index_1based`, and `column_index_1based` in the locator; when a large cell was split, also include its exact `cell_text_offset_start` and `cell_text_offset_end` from the assigned cell-fragment unit; include row/column headers when present. Indices refer to the exact row and column positions in the upstream evidence_index table `rows` array, including the header row. For figure evidence, preserve the upstream `figure_id`, `page_number`, panel label, and bounding box where supplied. For text evidence, cite the page number and exact quote.
 
 ## Output
 
