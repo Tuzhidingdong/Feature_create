@@ -406,7 +406,15 @@ def validate_payload(
     if payload.get("paper_id") != task.get("paper_id"):
         errors.append("Payload paper_id does not match task.json.")
 
-    for location, ref in evidence_refs_in_payload(payload):
+    payload_references = evidence_refs_in_payload(payload)
+    if role == "cross_chunk_context":
+        payload_references.extend(
+            (f"$/review_evidence_refs/{index}", ref)
+            for index, ref in enumerate(payload.get("review_evidence_refs", []))
+            if isinstance(ref, dict)
+        )
+
+    for location, ref in payload_references:
         reference_count += 1
         source_id = ref.get("source_id")
         source = sources.get(source_id)
