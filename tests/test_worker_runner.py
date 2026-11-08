@@ -178,6 +178,88 @@ class WorkerRunnerTests(unittest.TestCase):
             for item in validate_worker_payload(invalid, task)
         ))
 
+    def test_worker_a_main_si_target_must_be_an_actual_si_unit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index_path = root / "paper_chunk_index.json"
+            paper_index = {
+                "unit_navigation": [
+                    {
+                        "unit_id": "MAIN-UNIT",
+                        "chunk_id": "CHUNK-A",
+                        "source_ids": ["SRC-MAIN"],
+                        "doc_type": "MAIN",
+                        "page_number": 4,
+                    },
+                    {
+                        "unit_id": "TARGET-UNIT",
+                        "chunk_id": "CHUNK-B",
+                        "source_ids": ["SRC-SI"],
+                        "doc_type": "MAIN",
+                        "page_number": 2,
+                        "table_id": "SI_TABLE_S2",
+                    },
+                ],
+                "cross_source_references": [{
+                    "source_doc_type": "MAIN",
+                    "source_page_number": 4,
+                    "reference_text": "See Table S2",
+                    "target_candidates": [{
+                        "evidence_kind": "table",
+                        "target_id": "SI_TABLE_S2",
+                        "page_number": 2,
+                    }],
+                }],
+            }
+            index_path.write_text(json.dumps(paper_index), encoding="utf-8")
+            task = {
+                "task_id": "TASK-A-MAIN-SI",
+                "paper_id": "PAPER-1",
+                "worker_role": "source_discovery",
+                "chunk_id": "CHUNK-A",
+                "paper_chunk_index_path": str(index_path),
+            }
+            base_payload = {
+                "contract_version": "0.1",
+                "task_id": "TASK-A-MAIN-SI",
+                "worker_role": "source_discovery",
+                "paper_id": "PAPER-1",
+                "coverage": [],
+                "feature_observations": [],
+                "result_records": [],
+                "unresolved_items": [{
+                    "item_type": "missing_context",
+                    "description": "The reported value may use the protocol defined in the referenced SI table.",
+                    "evidence_refs": [{
+                        "source_id": "SRC-MAIN",
+                        "source_type": "main_text",
+                        "locator": {"chunk_id": "CHUNK-A", "unit_id": "MAIN-UNIT", "page_number": 4},
+                        "quote_or_cell_value": "See Table S2",
+                        "evidence_status": "verified_text",
+                    }],
+                    "cross_chunk_target": {
+                        "relation_basis": "main_si_reference",
+                        "context_role": "protocol",
+                        "target_units": [{
+                            "chunk_id": "CHUNK-B",
+                            "unit_id": "TARGET-UNIT",
+                            "source_id": "SRC-SI",
+                        }],
+                        "rationale": "The main text explicitly points to Table S2.",
+                    },
+                }],
+            }
+
+            blocked = validate_worker_payload(base_payload, task)
+            self.assertTrue(any(
+                "do not match relation_basis 'main_si_reference'" in issue
+                for issue in blocked
+            ))
+
+            paper_index["unit_navigation"][1]["doc_type"] = "SI"
+            index_path.write_text(json.dumps(paper_index), encoding="utf-8")
+            self.assertEqual(validate_worker_payload(base_payload, task), [])
+
     def test_legacy_queue_accepts_source_level_coverage_without_scope_id(self) -> None:
         task = {
             "task_id": "TASK-LEGACY",
