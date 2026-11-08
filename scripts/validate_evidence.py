@@ -456,6 +456,11 @@ def validate_payload(
                 errors.append(
                     f"{location}: source_id {source_id!r} is not linked to cited assigned unit {unit_id!r}."
                 )
+            if is_multi_chunk_task and assigned_unit is not None:
+                if ref.get("evidence_side") != assigned_unit.get("review_side"):
+                    errors.append(
+                        f"{location}: evidence_side does not match the assigned unit's review_side."
+                    )
 
         status = ref.get("evidence_status", "unverified")
         quote = ref.get("quote_or_cell_value")
