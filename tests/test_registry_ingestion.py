@@ -126,6 +126,7 @@ class RegistryIngestionTests(unittest.TestCase):
             feature_id,
             "Coulombic efficiency",
             "galvanostatic cycling",
+            [],
             self.source_map,
             self.root,
         )
@@ -145,6 +146,7 @@ class RegistryIngestionTests(unittest.TestCase):
             feature_id,
             "Coulombic efficiency",
             "galvanostatic cycling",
+            [],
             self.source_map,
             self.root,
         )
