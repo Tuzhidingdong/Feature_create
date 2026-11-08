@@ -103,9 +103,10 @@ The unit of semantic work is a bounded chunk, not an entire paper. Python create
 - A task bundle contains only its assigned units. A separate paper-wide navigation index identifies all chunks and candidate MAIN-to-SI references; a per-chunk evidence index carries the exact assigned page/table/figure locators and the upstream index SHA-256.
 - Adjacent text and repeated table-header rows are explicitly context-only. They can help interpret the assigned evidence but do not count as additional assigned coverage.
 - Every evidence reference must cite `chunk_id` and `unit_id` in addition to the original upstream locator. Deterministic validation rejects references to unassigned chunks/units, text quotes outside the assigned text range, or table rows/cells outside the assigned unit.
+- Every `(source_id, unit_id)` assignment receives a deterministic `scope_id`. A chunk's coverage checklist contains one row per scope, including linked image assets that share a parent evidence unit. Each worker must report every assigned scope exactly once; the validator checks the exact scope/source pairing, and the audit aggregates scope states across all chunks before reporting whole-source coverage.
 - The planner iteratively reduces chunk size when the rendered bundle exceeds its hard character limit. If an indivisible asset/metadata item still exceeds limits, the task is explicitly blocked and reported; content is never silently truncated.
 
-Cross-chunk relationships are preserved through stable unit/chunk identities, original source locators, same-row table identities, paper-wide navigation, and explicit unresolved items. A worker must not infer a sample/condition/result link from proximity. Full-source coverage is aggregated only after all its chunk assignments are successful for the relevant Worker.
+Cross-chunk relationships are preserved through stable unit/chunk identities, original source locators, same-row table identities, paper-wide navigation, and explicit unresolved items. A worker must not infer a sample/condition/result link from proximity. Full-source coverage is aggregated only after all its `(source_id, unit_id)` scopes are successful for the relevant Worker; no source-level status may overwrite the status of another unit.
 
 ## 6. Model pair and run isolation
 
