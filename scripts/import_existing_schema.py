@@ -57,7 +57,7 @@ def split_values(value: Any) -> list[str]:
             return [str(item).strip() for item in parsed if str(item).strip()]
     except json.JSONDecodeError:
         pass
-    return [item.strip() for item in re.split(r"[;\n|]+", text) if item.strip()]
+    return [item.strip().strip('"') for item in re.split(r"[;,\n|]+", text) if item.strip()]
 
 
 def parse_units(value: Any) -> dict[str, list[str]]:
@@ -149,18 +149,18 @@ def parse_json_schema(text: str) -> list[dict[str, Any]]:
 
 
 def parse_text_blocks(text: str) -> list[dict[str, Any]]:
-    blocks = re.split(
+    explicit_blocks = re.split(
         r"(?im)^\s*(?:\[FEATURE\]|\*{2,}\s*FEATURE\b.*|\-{3,}\s*FEATURE\b.*)\s*$",
         text,
     )
-    parsed_blocks: list[dict[str, Any]] = []
     aliases_to_field = {
         norm_key(alias): field
         for field, aliases in KEY_ALIASES.items()
         for alias in aliases
     }
-    for block in blocks:
-        raw: dict[str, Any] = {}
+    parsed_blocks: list[dict[str, Any]] = []
+    for block in explicit_blocks:
+        current: dict[str, Any] = {}
         for line in block.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith(("#", "//", "[/")):
@@ -170,10 +170,14 @@ def parse_text_blocks(text: str) -> list[dict[str, Any]]:
                 continue
             key = norm_key(match.group(1))
             field = aliases_to_field.get(key)
-            if field:
-                raw[field] = match.group(2).strip()
-        if raw:
-            parsed_blocks.append(canonicalize_row(raw))
+            if not field:
+                continue
+            if field == "FEATURE_ID" and current.get("FEATURE_ID"):
+                parsed_blocks.append(canonicalize_row(current))
+                current = {}
+            current[field] = match.group(2).strip()
+        if current:
+            parsed_blocks.append(canonicalize_row(current))
     if not parsed_blocks:
         raise SchemaImportError(
             "No Feature blocks were recognized. Expected key/value blocks containing FEATURE_ID and CANONICAL_NAME."
@@ -208,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             stripped = text.lstrip()
             if stripped.startswith("{") or stripped.startswith("["):
                 selected = "json"
-            elif "\t" in text.splitlines()[0] if text.splitlines() else False:
+            elif text.splitlines() and "\t" in text.splitlines()[0]:
                 selected = "tsv"
             else:
                 selected = "text_blocks"
