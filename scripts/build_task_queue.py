@@ -119,6 +119,7 @@ def _paper_chunk_index(
                 for row_index in sorted({int(value) for value in row_indices}):
                     table_units_by_row.setdefault((str(table_id), row_index), []).append(unit)
 
+    cross_chunk_text_boundaries: list[dict[str, Any]] = []
     text_neighbors: dict[str, dict[str, Any]] = {}
     for source_id, source_units in text_units_by_source.items():
         ordered = sorted(
@@ -126,10 +127,34 @@ def _paper_chunk_index(
             key=lambda unit: int((unit.get("locator") or {}).get("source_text_offset_start") or 0),
         )
         for index, unit in enumerate(ordered):
+            previous = ordered[index - 1] if index > 0 else None
+            following = ordered[index + 1] if index + 1 < len(ordered) else None
             text_neighbors[str(unit["unit_id"])] = {
-                "previous": ordered[index - 1] if index > 0 else None,
-                "next": ordered[index + 1] if index + 1 < len(ordered) else None,
+                "previous": previous,
+                "next": following,
             }
+            if following and unit_chunk.get(str(unit["unit_id"])) != unit_chunk.get(str(following["unit_id"])):
+                previous_locator = unit.get("locator") or {}
+                next_locator = following.get("locator") or {}
+                cross_chunk_text_boundaries.append({
+                    "source_id": source_id,
+                    "from_segment": {
+                        "unit_id": unit["unit_id"],
+                        "chunk_id": unit_chunk.get(str(unit["unit_id"])),
+                        "doc_type": unit.get("doc_type"),
+                        "page_number": unit.get("page_number"),
+                        "source_text_offset_start": previous_locator.get("source_text_offset_start"),
+                        "source_text_offset_end": previous_locator.get("source_text_offset_end"),
+                    },
+                    "to_segment": {
+                        "unit_id": following["unit_id"],
+                        "chunk_id": unit_chunk.get(str(following["unit_id"])),
+                        "doc_type": following.get("doc_type"),
+                        "page_number": following.get("page_number"),
+                        "source_text_offset_start": next_locator.get("source_text_offset_start"),
+                        "source_text_offset_end": next_locator.get("source_text_offset_end"),
+                    },
+                })
 
     table_row_group_ids_by_unit: dict[str, list[str]] = {}
     table_row_groups: list[dict[str, Any]] = []
@@ -165,17 +190,22 @@ def _paper_chunk_index(
                     if cell.get("row_index_1based") == row_index
                 ],
             })
-            table_row_group_ids_by_unit.setdefault(unit_id, []).append(group_id)
+        group_chunk_ids = sorted({
+            str(item["chunk_id"]) for item in unit_refs if item.get("chunk_id")
+        })
+        # Rows contained entirely within one chunk need no paper-wide navigation entry.
+        if len(group_chunk_ids) < 2:
+            continue
         table_row_groups.append({
             "row_group_id": group_id,
             "table_id": table_id,
             "original_row_index_1based": row_index,
             "unit_count": len(unit_refs),
-            "chunk_ids": sorted({
-                str(item["chunk_id"]) for item in unit_refs if item.get("chunk_id")
-            }),
+            "chunk_ids": group_chunk_ids,
             "units": unit_refs,
         })
+        for item in unit_refs:
+            table_row_group_ids_by_unit.setdefault(str(item["unit_id"]), []).append(group_id)
     supplementary_targets = []
     for table in all_tables:
         if str(table.get("doc_type", "")).upper() == "SI":
@@ -234,60 +264,12 @@ def _paper_chunk_index(
                 f"{unit.get('doc_type')}:{unit.get('page_number')}"
                 for unit in chunk["units"] if unit.get("page_number") is not None
             }),
-            "text_segment_locators": [
-                {
-                    "unit_id": unit["unit_id"],
-                    "chunk_id": chunk["chunk_id"],
-                    "source_id": unit["source_id"],
-                    "doc_type": unit.get("doc_type"),
-                    "page_number": unit.get("page_number"),
-                    "text_segment_index_1based": (unit.get("locator") or {}).get("text_segment_index_1based"),
-                    "text_segment_count": (unit.get("locator") or {}).get("text_segment_count"),
-                    "source_text_offset_start": (unit.get("locator") or {}).get("source_text_offset_start"),
-                    "source_text_offset_end": (unit.get("locator") or {}).get("source_text_offset_end"),
-                    "page_text_offset_start": (unit.get("locator") or {}).get("page_text_offset_start"),
-                    "page_text_offset_end": (unit.get("locator") or {}).get("page_text_offset_end"),
-                    "previous_segment": (
-                        {
-                            "unit_id": text_neighbors[unit["unit_id"]]["previous"]["unit_id"],
-                            "chunk_id": unit_chunk.get(text_neighbors[unit["unit_id"]]["previous"]["unit_id"]),
-                            "source_text_offset_end": (text_neighbors[unit["unit_id"]]["previous"].get("locator") or {}).get("source_text_offset_end"),
-                        }
-                        if text_neighbors.get(unit["unit_id"], {}).get("previous") else None
-                    ),
-                    "next_segment": (
-                        {
-                            "unit_id": text_neighbors[unit["unit_id"]]["next"]["unit_id"],
-                            "chunk_id": unit_chunk.get(text_neighbors[unit["unit_id"]]["next"]["unit_id"]),
-                            "source_text_offset_start": (text_neighbors[unit["unit_id"]]["next"].get("locator") or {}).get("source_text_offset_start"),
-                        }
-                        if text_neighbors.get(unit["unit_id"], {}).get("next") else None
-                    ),
-                }
-                for unit in chunk["units"] if unit.get("unit_kind") == "text"
-            ],
-            "table_locators": [
-                {
-                    "unit_id": unit["unit_id"],
-                    "chunk_id": chunk["chunk_id"],
-                    "source_id": unit["source_id"],
-                    "table_id": unit.get("table_id"),
-                    "page_number": unit.get("page_number"),
-                    "row_indices_1based": (unit.get("locator") or {}).get("row_indices_1based", []),
-                    "row_index_start_1based": (unit.get("locator") or {}).get("row_index_start_1based"),
-                    "row_index_end_1based": (unit.get("locator") or {}).get("row_index_end_1based"),
-                    "row_index_1based": (unit.get("locator") or {}).get("row_index_1based"),
-                    "column_indices_1based": (unit.get("locator") or {}).get("column_indices_1based", []),
-                    "cell_fragments": (unit.get("locator") or {}).get("cell_fragments", []),
-                    "row_group_ids": sorted(table_row_group_ids_by_unit.get(str(unit["unit_id"]), [])),
-                }
-                for unit in chunk["units"] if unit.get("table_id")
-            ],
             "figure_ids": sorted({
                 str(unit.get("figure_id")) for unit in chunk["units"] if unit.get("figure_id")
             }),
         } for chunk in chunks],
         "all_supplementary_evidence_locators": supplementary_targets,
+        "cross_chunk_text_boundaries": cross_chunk_text_boundaries,
         "same_original_table_row_groups": table_row_groups,
         "cross_source_references": links,
         "rules": [
