@@ -205,7 +205,10 @@ def add_text_source(
     text = upstream_path.read_text(encoding="utf-8", errors="replace")
     digest = sha256_file(upstream_path)
     source_id = stable_id("SRC", f"{paper_id}|{doc_type}|{source_type}|{digest}")
-    indexed_path = write_indexed_text(output_text_dir, source_id, text)
+    output_text_dir.mkdir(parents=True, exist_ok=True)
+    staged_text = output_text_dir / f"{source_id}.txt"
+    shutil.copyfile(upstream_path, staged_text)
+    indexed_path = staged_text.relative_to(output_text_dir.parent).as_posix()
     try:
         package_relative = upstream_path.resolve().relative_to(package_dir.resolve()).as_posix()
     except ValueError:
@@ -340,7 +343,13 @@ def build_manifest_from_paired_csv(
             paper_sources.append(source_id)
 
             si_text_path = package_dir / "si_analysis.md"
-            if si_text_path.is_file() and (si_text_path.stat().st_size > 0 or si_pages):
+            if not si_text_path.is_file():
+                raise CorpusError("Upstream si_analysis.md is missing.")
+            parsed_si_files = [
+                item for item in (package.get("inventory", {}).get("supplementary_files") or [])
+                if item.get("processing_status") == "PARSED"
+            ]
+            if parsed_si_files or si_pages:
                 source_id = add_text_source(
                     sources, paper_id=paper_id, doc_type="SI", source_type="si_text",
                     component="si_text", label="Supporting information parsed text",
