@@ -272,6 +272,35 @@ class BuildContextReviewQueueTests(unittest.TestCase):
             self.assertEqual(1, resolved_queue["skipped_unresolved_count"])
             self.assertIn("already_reviewed_status", resolved_queue["skipped_unresolved"][0]["reason"])
 
+            unresolved_rows[0]["resolution_status"] = "insufficient_evidence"
+            unresolved.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in unresolved_rows) + "\n",
+                encoding="utf-8",
+            )
+            inconclusive_default = root / "context_dispatch_inconclusive_default"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(source_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(inconclusive_default),
+            ]), 0)
+            default_queue = json.loads((inconclusive_default / "context_review_task_queue.json").read_text(encoding="utf-8"))
+            self.assertEqual(0, default_queue["task_count"])
+
+            inconclusive_retry = root / "context_dispatch_inconclusive_retry"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(source_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(inconclusive_retry),
+                "--retry-inconclusive",
+            ]), 0)
+            retry_queue = json.loads((inconclusive_retry / "context_review_task_queue.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, retry_queue["task_count"])
+            self.assertEqual(revised_queue["tasks"][0]["task_id"], retry_queue["tasks"][0]["task_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
