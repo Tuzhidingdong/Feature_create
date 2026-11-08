@@ -11,6 +11,8 @@ import sys
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import contextmanager
+import time
 from typing import Any
 
 try:
@@ -151,7 +153,42 @@ def mapping_gate(
     return not problems, problems
 
 
-def main(argv: list[str] | None = None) -> int:
+def atomic_write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+        newline="\n",
+    )
+    os.replace(temporary, path)
+
+
+@contextmanager
+def registry_lock(path: Path, timeout_seconds: float = 30.0):
+    """Protect Registry read-modify-write from concurrent ingestion/mapping jobs."""
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    deadline = time.monotonic() + timeout_seconds
+    descriptor = None
+    while descriptor is None:
+        try:
+            descriptor = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(descriptor, f"pid={os.getpid()} time={utc_now()}".encode("utf-8"))
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise MappingApplyError(f"Timed out waiting for Registry lock: {lock_path}")
+            time.sleep(0.2)
+    try:
+        yield
+    finally:
+        os.close(descriptor)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _main_unlocked(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply Worker B recommendations mapping Registry Features to existing FEATURE_IDs.")
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--existing-schema", type=Path, required=True)
@@ -362,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     if registry_errors:
         raise MappingApplyError("Registry schema validation failed: " + " | ".join(registry_errors[:10]))
 
-    registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    atomic_write_json(registry_path, registry)
     report["finished_at"] = utc_now()
     report["registry_feature_count"] = len(registry.get("canonical_features", []))
     report["mapped_existing_feature_count"] = sum(
@@ -381,6 +418,15 @@ def main(argv: list[str] | None = None) -> int:
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     print(json.dumps({key: value for key, value in report.items() if key != "decisions"}, ensure_ascii=False, indent=2))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--registry", type=Path, required=True)
+    args, _unknown = parser.parse_known_args(argv)
+    registry_path = args.registry.expanduser().resolve()
+    with registry_lock(registry_path):
+        return _main_unlocked(argv)
 
 
 if __name__ == "__main__":
