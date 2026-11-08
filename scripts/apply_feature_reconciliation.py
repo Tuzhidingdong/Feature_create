@@ -23,6 +23,11 @@ try:
 except ImportError:
     Draft202012Validator = None  # type: ignore[assignment]
 
+try:
+    from .reconcile_features import build_feature_pair_queue
+except ImportError:
+    from reconcile_features import build_feature_pair_queue
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_SCHEMA = ROOT / "contracts" / "registry.schema.json"
@@ -377,6 +382,27 @@ def update_pair_review_status(
     return False
 
 
+def invalidate_pairs_after_merge(
+    review_rows: list[dict[str, Any]],
+    retired_feature_id: str,
+    current_pair_id: str,
+    survivor_feature_id: str,
+) -> None:
+    for row in review_rows:
+        if row.get("candidate_pair_id") == current_pair_id:
+            continue
+        if retired_feature_id not in {
+            row.get("registry_feature_a_id"),
+            row.get("registry_feature_b_id"),
+        }:
+            continue
+        row["decision_status"] = "stale_after_merge"
+        row["decision_applied_at"] = utc_now()
+        row["decision_notes"] = [
+            f"Feature {retired_feature_id} redirected to {survivor_feature_id}; regenerate this pair against the surviving Feature."
+        ]
+
+
 def refresh_feature_statuses(
     registry: dict[str, Any],
     review_rows: list[dict[str, Any]],
@@ -537,6 +563,12 @@ def main(argv: list[str] | None = None) -> int:
                         if item["registry_feature_id"] == pair["registry_feature_b_id"]
                     )
                     survivor_id, retired_id = apply_merge(registry, feature_a, feature_b, decision)
+                    invalidate_pairs_after_merge(
+                        review_rows,
+                        retired_feature_id=retired_id,
+                        current_pair_id=pair_id,
+                        survivor_feature_id=survivor_id,
+                    )
                     update_pair_review_status(
                         review_rows, pair_id, "applied_merge", decision,
                         [f"survivor={survivor_id}", f"retired={retired_id}"],
@@ -577,6 +609,12 @@ def main(argv: list[str] | None = None) -> int:
                 "status": decision_status,
             })
 
+    # A merge can invalidate other queued pairs involving the retired ID.
+    # Persist resolved/stale decisions, then regenerate candidate pairs against
+    # the surviving Registry identities without duplicating prior decisions.
+    atomic_write_jsonl(review_path, review_rows)
+    regenerated_pairs = build_feature_pair_queue(registry, review_path)
+    review_rows = read_jsonl(review_path)
     refresh_feature_statuses(registry, review_rows)
     registry_errors = validate_json_schema(registry, REGISTRY_SCHEMA)
     if registry_errors:
@@ -584,6 +622,7 @@ def main(argv: list[str] | None = None) -> int:
 
     atomic_write_json(registry_path, registry)
     atomic_write_jsonl(review_path, review_rows)
+    report["regenerated_pair_queue"] = regenerated_pairs
     report["finished_at"] = utc_now()
     report["registry_feature_count"] = len(registry["canonical_features"])
     report["confirmed_feature_count"] = sum(
