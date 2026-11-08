@@ -308,6 +308,18 @@ class BuildTaskQueueTests(unittest.TestCase):
                 {unit_id for task in worker_a_tasks for unit_id in task["unit_ids"]},
             )
 
+            task_bundle = Path(queue["tasks"][0]["bundle_path"]).read_text(encoding="utf-8")
+            evidence_manifest_start = task_bundle.index("## Assigned evidence manifest")
+            scope_checklist_start = task_bundle.index("## Assigned review scopes (coverage checklist)")
+            review_requirements_start = task_bundle.index("## Review requirements")
+            self.assertLess(evidence_manifest_start, scope_checklist_start)
+            self.assertLess(scope_checklist_start, review_requirements_start)
+            for scope in queue["tasks"][0]["source_scopes"]:
+                self.assertIn(
+                    f"| {scope['scope_id']} | {scope['source_id']} | {scope['unit_id']} |",
+                    task_bundle,
+                )
+
             paper_index_path = Path(queue["tasks"][0]["paper_chunk_index_path"])
             paper_index = json.loads(paper_index_path.read_text(encoding="utf-8"))
             boundaries = paper_index["cross_chunk_text_boundaries"]
