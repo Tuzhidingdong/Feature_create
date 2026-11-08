@@ -6,8 +6,9 @@
 - Python 3.10+.
 - OpenCode CLI installed and authenticated for OpenCode Go.
 - Current OpenCode Go plan/account allows access to the selected limited-time free models in the user's region.
-- A local corpus folder containing articles and SI.
-- Enough local disk space for extracted text, task bundles, raw worker outputs, and session exports.
+- A completed [chem-literature](https://github.com/Tuzhidingdong/chem-literature) run.
+- The resulting `research_corpus_paired.csv` and the PDF/SI files referenced by its `local_pdf_path` and `local_si_info` columns.
+- Enough local disk space for extracted text, expanded SI ZIP members, visual pages, task bundles, raw worker outputs, and session exports.
 
 Install dependencies:
 
@@ -26,20 +27,53 @@ opencode export --help
 
 The exact flags are checked against the installed CLI version by the user before the first real dispatch. The workflow uses current documented `opencode run --model`, `--agent`, `--file`, `--format json`, `--title`, and `--dir` options.
 
-## 2. Prepare a corpus
+## 2. Prepare the chem-literature paired corpus
 
-Example corpus root: `E:\\Zinc_batters_datas`
+Run `chem-literature` first. Its final curated artifact is:
+
+`research_corpus_paired.csv`
+
+The CSV contains the selected original-research papers and the local file paths in:
+- `local_pdf_path` — full-text PDF path;
+- `local_si_info` — supporting-information file path (currently one path per row).
+
+The paired CSV is authoritative. Feature_create must not recursively scan `papers_pdf/` or `papers_si/`, add unlisted files, re-filter articles, or attempt to repair a missing pair by finding a similarly named file.
+
+The current chem-literature workflow writes its CSV and `papers_pdf/` / `papers_si/` paths relative to the directory from which `run_workflow.py` is executed. For example, when it is run from:
+
+`E:\\Zinc_batters_datas\\chem-literature`
+
+use:
 
 ```powershell
-python scripts/prepare_corpus.py --input "E:\\Zinc_batters_datas" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+python scripts/prepare_corpus.py `
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
+  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
 ```
 
-Outputs:
-- `source_manifest.json` — all detected source files and paper groups.
-- `extracted_text/` — local extracted text for PDFs, Markdown, XML/TEI, HTML, CSV/TSV, and XLSX.
-- `prepare_summary.json` — counts and parse failures.
+`--corpus-root` is the base directory against which relative CSV paths are resolved. It defaults to the directory containing the CSV, but should be explicit when the upstream workflow was run from another working directory.
 
-The preparation step does not call any AI model. It does not OCR scanned PDFs. A PDF for which PyMuPDF extracts no usable text remains recorded as a source with an extraction status; the workflow must not report it as fully reviewed.
+The preparation step:
+- reads only rows present in `research_corpus_paired.csv`;
+- verifies the physical existence of every referenced main PDF and SI file;
+- records missing files and invalid PDF magic as blocked pair-integrity items;
+- extracts text from main PDFs and supported SI files;
+- safely expands SI ZIP archives into the Feature_create run directory, without modifying the upstream archive;
+- parses PDF, DOCX, XLSX, CSV/TSV, HTML, XML/TEI, and plain-text SI files;
+- renders PDF pages with Figure/Table/Scheme captions for visual inspection;
+- records the upstream CSV path and SHA-256 in the derived internal manifest.
+
+Outputs:
+- `source_manifest.json` — internal manifest derived only from the curated CSV and its referenced files;
+- `extracted_text/` — extracted text for each listed source;
+- `si_archives/` — safe copies of supported members from listed SI ZIP archives;
+- `visual_assets/` — rendered figure/table pages from listed PDFs;
+- `prepare_summary.json` — row, paper, source, and file-pair integrity counts.
+
+A separate `research_corpus_paired_manifest.json` is not required; the current upstream workflow generates the CSV. The internal Feature_create manifest is derived downstream from that CSV.
+
+A listed file that is missing or invalid remains visible in the manifest and blocks that paper's Worker A/B tasks. It is never replaced by an unlisted file. A scanned PDF with no extractable text remains recorded as partially/unparsed evidence; this step does not perform OCR.
 
 ## 3. Build isolated Worker tasks
 
