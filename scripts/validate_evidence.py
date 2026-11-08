@@ -72,6 +72,9 @@ def validate_context_task_artifacts(
         errors.append("Context task source_manifest_path does not match the manifest used by evidence validation.")
     try:
         hashes["source_manifest"] = sha256_file(source_manifest_path)
+        expected_source_hash = task.get("source_manifest_sha256")
+        if not expected_source_hash or hashes["source_manifest"] != expected_source_hash:
+            errors.append("Source manifest SHA-256 differs from the manifest used to build the context task.")
     except OSError as exc:
         errors.append(f"Unable to hash source manifest: {exc}")
 
