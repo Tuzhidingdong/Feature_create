@@ -10,6 +10,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -53,10 +54,14 @@ def normalize_doi(value: Any) -> str | None:
 
 def clean_stem(stem: str) -> str:
     """Compatibility helper retained for existing callers; never used for discovery."""
-    value = Path(stem).stem.casefold()
-    for suffix in ("_supporting_information", "_supplementary_information", "_supplement", "_si"):
-        if value.endswith(suffix):
-            value = value[:-len(suffix)]
+    value = stem.casefold()
+    value = re.sub(r"\\.(pdf|md|txt|xml|csv|xlsx|html?|docx)$", "", value)
+    value = re.sub(
+        r"([_-](si|supp|supplement|supplementary|supporting|supporting_information|supplementary_information)([_-].*)?)$",
+        "", value,
+    )
+    value = re.sub(r"^(si|supp|supplement|supplementary|supporting)[_-]+", "", value)
+    value = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
     return value or "unnamed"
 
 
