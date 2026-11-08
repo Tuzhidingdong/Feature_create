@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.build_task_queue import _paper_chunk_index
+from scripts.build_task_queue import _chunk_evidence_index, _paper_chunk_index
 from scripts.chunking import build_evidence_units, group_units_into_chunks
 
 
@@ -58,6 +60,63 @@ class CrossChunkRelationshipIndexTests(unittest.TestCase):
                 for chunk in paper_index["chunks"]
                 for locator in chunk["text_segment_locators"]
             ))
+
+    def test_large_header_context_row_is_referenced_not_duplicated(self) -> None:
+        long_cell = "large-cell-content-" * 300
+        source = {
+            "source_id": "SRC-LARGE-HEADER",
+            "source_role": "main",
+            "source_type": "main_table",
+            "component": "main_tables",
+            "table_id": "MAIN_TAB_P5_01",
+            "relative_path": "preprocessing/tables/MAIN_TAB_P5_01.csv",
+            "parse_status": "upstream_preprocessed_table",
+            "sha256": "table-source-sha",
+            "table_data": {
+                "table_id": "MAIN_TAB_P5_01",
+                "doc_type": "MAIN",
+                "page_number": 5,
+                "caption": "Long table row",
+                "rows": [
+                    ["Sample", "Large cell"],
+                    ["S-01", long_cell],
+                ],
+            },
+        }
+        units = build_evidence_units([source], Path("."), max_unit_chars=900)
+        chunks = group_units_into_chunks(units, max_chars=1000, max_attachments=4)
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / "chunk_evidence_index.json"
+            output = _chunk_evidence_index(
+                {"paper_id": "PAPER-LARGE-HEADER"},
+                chunks[0],
+                {"SRC-LARGE-HEADER": source},
+                {
+                    "tables": [{
+                        "table_id": "MAIN_TAB_P5_01",
+                        "doc_type": "MAIN",
+                        "page_number": 5,
+                        "caption": "Long table row",
+                        "col_count": 2,
+                        "rows": [["Sample", "Large cell"], ["S-01", long_cell]],
+                    }],
+                },
+                "upstream-index-sha",
+                destination,
+            )
+            saved = json.loads(output.read_text(encoding="utf-8"))
+            header_row = next(
+                row for row in saved["tables"][0]["header_context_rows"]
+                if row["row_index_1based"] == 2
+            )
+
+        self.assertEqual("locator_only_large_row", header_row["context_payload_kind"])
+        self.assertNotIn("cells", header_row)
+        self.assertEqual(
+            hashlib.sha256(long_cell.encode("utf-8")).hexdigest(),
+            header_row["cell_metadata"][1]["sha256"],
+        )
+        self.assertEqual(len(long_cell), header_row["cell_metadata"][1]["char_count"])
 
     def test_same_original_table_row_links_cell_units_across_chunks(self) -> None:
         long_a = "capacity-series-A-" * 80
