@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scripts.apply_feature_reconciliation import (
     apply_merge,
+    invalidate_pairs_after_merge,
     merge_gate,
     refresh_feature_statuses,
 )
@@ -183,6 +184,31 @@ class ApplyFeatureReconciliationTests(unittest.TestCase):
         review = []
         refresh_feature_statuses(self.registry, review)
         self.assertEqual(self.feature_a["feature_status"], "under_review")
+
+    def test_merge_invalidates_other_pairs_referencing_retired_feature(self) -> None:
+        rows = [
+            {
+                "candidate_pair_id": "PAIR-CURRENT",
+                "registry_feature_a_id": "RFEAT-A",
+                "registry_feature_b_id": "RFEAT-B",
+                "decision_status": "pending_semantic_review",
+            },
+            {
+                "candidate_pair_id": "PAIR-STALE",
+                "registry_feature_a_id": "RFEAT-B",
+                "registry_feature_b_id": "RFEAT-C",
+                "decision_status": "pending_semantic_review",
+            },
+        ]
+        invalidate_pairs_after_merge(
+            rows,
+            retired_feature_id="RFEAT-B",
+            current_pair_id="PAIR-CURRENT",
+            survivor_feature_id="RFEAT-A",
+        )
+        self.assertEqual(rows[0]["decision_status"], "pending_semantic_review")
+        self.assertEqual(rows[1]["decision_status"], "stale_after_merge")
+        self.assertIn("RFEAT-A", rows[1]["decision_notes"][0])
 
     def test_pending_pairs_keep_features_under_review(self) -> None:
         review = [{
