@@ -260,6 +260,13 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 set(task["source_text_sha256"]),
             )
             self.assertTrue(all(task["source_text_sha256"].values()))
+            self.assertTrue(task["record_snapshot_sha256"])
+            self.assertTrue(task["unresolved_snapshot_sha256"])
+            self.assertEqual(
+                {"SRC-CURRENT", "SRC-TARGET"},
+                set(task["source_text_sha256"]),
+            )
+            self.assertTrue(all(task["source_text_sha256"].values()))
             policy = json.loads(
                 (Path(__file__).resolve().parents[1] / "config" / "execution_policy.json").read_text(encoding="utf-8")
             )
