@@ -216,9 +216,14 @@ def main(argv: list[str] | None = None) -> int:
                 original_value_snapshot = {
                     key: record.get(key)
                     for key in (
-                        "raw_value", "numeric_value", "raw_feature_name", "registry_feature_id",
-                        "observation_id", "reported_unit", "result_type",
-                        "measurement_or_calculation_method", "source_id", "evidence_refs",
+                        "record_id", "paper_id", "doi", "raw_value", "numeric_value",
+                        "raw_feature_name", "registry_feature_id", "observation_id",
+                        "reported_unit", "result_type", "value_extraction_status",
+                        "extraction_status", "statistic_label", "replicate_count",
+                        "measurement_or_calculation_method", "source_id", "source_type",
+                        "source_location", "evidence_refs", "evidence_status",
+                        "evidence_verification", "context_notes", "worker_task_id",
+                        "worker_model", "created_at",
                     )
                 }
                 added_fact_count = 0
@@ -258,15 +263,6 @@ def main(argv: list[str] | None = None) -> int:
                 unresolved["resolution_rationale"] = payload.get("rationale")
                 unresolved["resolution_evidence_refs"] = payload.get("review_evidence_refs", [])
                 unresolved["resolved_at"] = utc_now()
-                record.setdefault("context_review_history", []).append({
-                    "task_id": task_id,
-                    "unresolved_id": task["unresolved_id"],
-                    "decision": decision,
-                    "rationale": payload.get("rationale"),
-                    "review_evidence_refs": payload.get("review_evidence_refs", []),
-                    "context_facts_added": added_fact_count,
-                    "reviewed_at": utc_now(),
-                })
             elif decision == "no_association":
                 unresolved["resolution_status"] = "no_association"
                 unresolved["resolution_task_id"] = task_id
@@ -282,6 +278,18 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 skipped.append({"task_id": task_id, "reason": f"unsupported_decision_{decision}"})
                 continue
+
+            history = record.setdefault("context_review_history", [])
+            if not any(item.get("task_id") == task_id for item in history if isinstance(item, dict)):
+                history.append({
+                    "task_id": task_id,
+                    "unresolved_id": task["unresolved_id"],
+                    "decision": decision,
+                    "rationale": payload.get("rationale"),
+                    "review_evidence_refs": payload.get("review_evidence_refs", []),
+                    "context_facts_added": added_fact_count if decision == "association_confirmed" else 0,
+                    "reviewed_at": utc_now(),
+                })
 
             for issue in record.get("unresolved_issues", []):
                 if isinstance(issue, dict) and issue.get("unresolved_id") == task.get("unresolved_id"):
@@ -322,9 +330,14 @@ def main(argv: list[str] | None = None) -> int:
         "applied_tasks": applied,
         "skipped_tasks": skipped,
         "protected_result_fields": [
-            "raw_value", "numeric_value", "raw_feature_name", "registry_feature_id",
-            "observation_id", "reported_unit", "result_type",
-            "measurement_or_calculation_method", "source_id", "evidence_refs",
+            "record_id", "paper_id", "doi", "raw_value", "numeric_value",
+            "raw_feature_name", "registry_feature_id", "observation_id",
+            "reported_unit", "result_type", "value_extraction_status",
+            "extraction_status", "statistic_label", "replicate_count",
+            "measurement_or_calculation_method", "source_id", "source_type",
+            "source_location", "evidence_refs", "evidence_status",
+            "evidence_verification", "context_notes", "worker_task_id",
+            "worker_model", "created_at",
         ],
     }
     atomic_write_json(args.report.resolve(), report)
