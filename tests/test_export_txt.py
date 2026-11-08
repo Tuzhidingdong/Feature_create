@@ -128,7 +128,7 @@ class ExportTxtTests(unittest.TestCase):
             output = root / "formal"
             self.assertTrue((output / "result_feature_records.txt").is_file())
             self.assertTrue((output / "result_feature_list.txt").is_file())
-            self.assertTrue((output / "export_audit.json").is_file())
+            self.assertTrue((root / "formal_export_audit.json").is_file())
 
             with (output / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
                 records = list(csv.DictReader(handle, delimiter="\t"))
@@ -157,7 +157,7 @@ class ExportTxtTests(unittest.TestCase):
             )
             self.assertEqual(status, 2)
             self.assertFalse((root / "formal" / "result_feature_records.txt").exists())
-            report = json.loads((root / "formal" / "export_audit.json").read_text(encoding="utf-8"))
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "blocked")
             self.assertTrue(any("remain pending" in item for item in report["errors"]))
 
