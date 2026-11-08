@@ -57,6 +57,7 @@ def task_state(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def coverage_for_task(task: dict[str, Any]) -> dict[str, str]:
+    """Return scope-level states for new queues, with source-level legacy fallback."""
     path = Path(task.get("output_dir", "")) / "response.json"
     if not path.is_file():
         return {}
@@ -67,11 +68,25 @@ def coverage_for_task(task: dict[str, Any]) -> dict[str, str]:
     result: dict[str, str] = {}
     role = task.get("worker_role")
     rows = payload.get("coverage", []) if role == "source_discovery" else payload.get("coverage_audit", [])
+    expected = {
+        str(scope.get("scope_id")): str(scope.get("source_id"))
+        for scope in task.get("source_scopes", [])
+        if scope.get("scope_id") and scope.get("source_id")
+    }
     for row in rows:
         source_id = row.get("source_id")
         status = row.get("status")
-        if source_id:
-            result[source_id] = str(status)
+        if not source_id or status is None:
+            continue
+        scope_id = row.get("scope_id")
+        if expected:
+            if not scope_id or expected.get(str(scope_id)) != str(source_id):
+                continue
+            key = str(scope_id)
+        else:
+            # Legacy queue: one coverage state per source in the chunk.
+            key = str(source_id)
+        result[key] = str(status)
     return result
 
 
@@ -180,21 +195,42 @@ def main(argv: list[str] | None = None) -> int:
         task_status_counts.setdefault(str(role), Counter())[status] += 1
         coverage = coverage_for_task(task) if status == "complete" else {}
         if role in {"source_discovery", "feature_audit"}:
-            expected_sources = task.get("source_ids") or list(coverage)
-            for source_id in expected_sources:
-                coverage_status = coverage.get(source_id, "missing_chunk_coverage")
-                coverage_assignments[str(role)].setdefault(str(source_id), []).append(coverage_status)
+            required_status = "fully_reviewed" if role == "source_discovery" else "reviewed"
+            expected_scopes = task.get("source_scopes") or []
+            if expected_scopes:
+                for scope in expected_scopes:
+                    source_id = str(scope.get("source_id") or "")
+                    scope_id = str(scope.get("scope_id") or "")
+                    if not source_id or not scope_id:
+                        continue
+                    coverage_status = coverage.get(scope_id, "missing_chunk_coverage")
+                    coverage_assignments[str(role)].setdefault(source_id, []).append(coverage_status)
+                current_chunk_complete = bool(
+                    status == "complete"
+                    and expected_scopes
+                    and all(
+                        coverage.get(str(scope.get("scope_id"))) == required_status
+                        for scope in expected_scopes
+                    )
+                )
+            else:
+                # Backward compatibility for queues created before scope-level coverage.
+                expected_sources = task.get("source_ids") or list(coverage)
+                for source_id in expected_sources:
+                    coverage_status = coverage.get(source_id, "missing_chunk_coverage")
+                    coverage_assignments[str(role)].setdefault(str(source_id), []).append(coverage_status)
+                current_chunk_complete = bool(
+                    status == "complete"
+                    and expected_sources
+                    and all(coverage.get(source_id) == required_status for source_id in expected_sources)
+                )
+        else:
+            current_chunk_complete = False
 
         chunk_id = task.get("chunk_id")
         if chunk_id and role in {"source_discovery", "feature_audit"}:
             chunk_to_paper[str(chunk_id)] = str(task.get("paper_id") or "")
-            expected_sources = task.get("source_ids") or []
-            required_status = "fully_reviewed" if role == "source_discovery" else "reviewed"
-            chunk_role_complete.setdefault(str(chunk_id), {})[str(role)] = bool(
-                status == "complete"
-                and expected_sources
-                and all(coverage.get(source_id) == required_status for source_id in expected_sources)
-            )
+            chunk_role_complete.setdefault(str(chunk_id), {})[str(role)] = current_chunk_complete
 
         role_key = str(role)
         requested_model = task.get("model_ref")
