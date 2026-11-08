@@ -158,7 +158,17 @@ A model agreement is not evidence. Every accepted result value must have a trace
 
 Worker B supplies semantic recommendations. Python validates source provenance, feature IDs, evidence coverage, and explicit merge gates, then performs the state transition. The Supervisor only coordinates this work.
 
-### Phase 6 — Final global audit and export
+### Phase 6 — Existing FEATURE_ID mapping
+
+1. Import the user's existing Feature Schema into the normalized schema contract, preserving every existing ID and the source-file SHA-256.
+2. Treat this schema strictly as a mapping reference; never use it to limit discovery or to define what is/is not a result Feature.
+3. Build bounded mapping tasks for each confirmed Registry Feature. Include the full legacy candidate list in the review bundle so lexical pre-filtering cannot silently remove a valid synonym.
+4. Use Worker B's already configured free OpenCode Go model to compare definitions, quantity, formula, normalization basis, statistic, temporal scope, and units.
+5. Apply an old FEATURE_ID only when exactly one candidate is selected and every explicit compatibility gate passes, source evidence exists, and the old ID is not already assigned to another active Feature.
+6. When there is no match, preserve the new Registry Feature ID. When evidence is insufficient or candidates conflict, do not force a mapping.
+7. Record the source schema hash and every mapping/no-mapping decision in the Registry decision log.
+
+### Phase 7 — Final global audit and export
 
 Audit cross-paper consistency, feature coverage, evidence integrity, record completeness, unresolved cases, and paid-cost compliance.
 
@@ -170,7 +180,7 @@ The records file may contain paper identifiers, raw names, mapped feature IDs, r
 
 The Feature-list file contains one entry per canonical result feature, with ID, canonical name, aliases, definition, result type, units/dimension, measurement/calculation methods, and standardization/comparability notes. It must not contain concrete values, Record_IDs, samples, conditions, paper coverage, or conclusions.
 
-### Phase 7 — Report
+### Phase 8 — Report
 
 Report counts calculated from local audit data:
 - sources found, accessible, reviewed, partially reviewed, and inaccessible;
