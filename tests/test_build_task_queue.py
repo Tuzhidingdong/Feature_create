@@ -154,5 +154,82 @@ class BuildTaskQueueTests(unittest.TestCase):
             self.assertIn("Unique source text marker 123.45", task_input.read_text(encoding="utf-8"))
 
 
+    def test_attaches_preprocessed_images_and_evidence_index_but_not_raw_pdfs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            prepared = base / "prepared"
+            extracted = prepared / "extracted_text"
+            extracted.mkdir(parents=True)
+            (extracted / "main.txt").write_text("Capacity retention was 91%.", encoding="utf-8")
+            image_path = base / "figure.png"
+            image_path.write_bytes(b"already extracted image")
+            raw_pdf = base / "original.pdf"
+            raw_pdf.write_bytes(b"%PDF-raw source")
+            evidence_index = base / "evidence_index.json"
+            evidence_index.write_text('{"package_version":"1.1.0","tables":[]}', encoding="utf-8")
+            qc_report = base / "PREPROCESSING_QC_REPORT.md"
+            qc_report.write_text("# QC\\n- Status: COMPLETE", encoding="utf-8")
+
+            source = {
+                "source_id": "SRC-PRE-1",
+                "paper_id": "10.1234/preprocessed",
+                "source_role": "main",
+                "source_type": "main_figure",
+                "component": "main_figures",
+                "relative_path": "preprocessing/extracted_figures/figure.png",
+                "absolute_path": str(image_path),
+                "attachment_path": str(image_path),
+                "parse_status": "upstream_extracted_visual_asset",
+                "sha256": "figure-hash",
+                "extracted_text_path": "extracted_text/main.txt",
+                "is_visual_asset": True,
+            }
+            manifest = {
+                "manifest_version": "0.3",
+                "source_kind": "chem-literature-preprocessed-research_corpus_paired.csv",
+                "corpus_fingerprint": "preprocessed-fingerprint",
+                "sources": [source],
+                "papers": [{
+                    "paper_id": "10.1234/preprocessed",
+                    "doi": "10.1234/preprocessed",
+                    "title": "Preprocessed paper",
+                    "year": "2025",
+                    "journal": "Example",
+                    "article_type": "Original Research",
+                    "pair_status": "paired_files_verified",
+                    "input_status": "ready_with_warnings",
+                    "preprocessing_status": "WARNING_SCANNED_PAGES",
+                    "processing_summary": {"scanned_pages_detected": 1},
+                    "pair_warnings": ["One page is scanned; OCR was not performed."],
+                    "unparsed_material": [],
+                    "evidence_index_copy": str(evidence_index),
+                    "evidence_index_sha256": "evidence-hash",
+                    "qc_report_path": str(qc_report),
+                    "qc_report_sha256": "qc-hash",
+                    "raw_source_inventory": [{
+                        "role": "main_raw_pdf", "absolute_path": str(raw_pdf),
+                        "worker_attachment": False, "reparsed_downstream": False,
+                    }],
+                    "source_ids": ["SRC-PRE-1"],
+                }],
+            }
+            manifest_path = prepared / "source_manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = base / "dispatch"
+            self.assertEqual(main(["--manifest", str(manifest_path), "--output", str(output)]), 0)
+            queue = json.loads((output / "task_queue.json").read_text(encoding="utf-8"))
+            for task in queue["tasks"]:
+                attachments = task["attachment_paths"]
+                self.assertIn(str(image_path), attachments)
+                self.assertIn(str(evidence_index), attachments)
+                self.assertIn(str(qc_report), attachments)
+                self.assertFalse(any(path.lower().endswith((".pdf", ".zip", ".docx", ".xlsx")) for path in attachments))
+                self.assertEqual(task["preprocessing_status"], "WARNING_SCANNED_PAGES")
+                task_input = Path(task["bundle_path"]).read_text(encoding="utf-8")
+                self.assertIn("OCR was not performed", task_input)
+                self.assertIn("Do not request or perform a second PDF/SI parsing pass", task_input)
+
+
+
 if __name__ == "__main__":
     unittest.main()
