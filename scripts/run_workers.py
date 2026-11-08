@@ -538,6 +538,34 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
                         )
                     elif basis == "same_original_table_row":
                         linked = any(bool(group & current_ids) and bool(group & target_ids) for group in row_groups)
+                    elif basis == "main_si_reference":
+                        current_main_pages = {
+                            int(navigation[unit_id]["page_number"])
+                            for unit_id in current_ids
+                            if unit_id in navigation
+                            and str(navigation[unit_id].get("doc_type") or "").upper() == "MAIN"
+                            and navigation[unit_id].get("page_number") is not None
+                        }
+                        target_evidence_ids = set()
+                        for unit_id in target_ids:
+                            item = navigation.get(unit_id, {})
+                            if str(item.get("doc_type") or "").upper() != "SI":
+                                continue
+                            if item.get("table_id"):
+                                target_evidence_ids.add(str(item["table_id"]).casefold())
+                            if item.get("figure_id"):
+                                target_evidence_ids.add(str(item["figure_id"]).casefold())
+                        linked = any(
+                            str(reference.get("source_doc_type") or "").upper() == "MAIN"
+                            and int(reference.get("source_page_number") or 0) in current_main_pages
+                            and any(
+                                str(candidate.get("target_id") or "").casefold() in target_evidence_ids
+                                for candidate in reference.get("target_candidates", [])
+                            )
+                            for reference in paper_index.get("cross_source_references", [])
+                        )
+                    elif basis == "worker_located":
+                        linked = True
                     if not linked:
                         problems.append(
                             f"unresolved_items/{issue_index}/cross_chunk_target: nominated units do not match relation_basis {basis!r}."
