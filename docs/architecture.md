@@ -89,6 +89,8 @@ Worker B need not duplicate every value Worker A extracted. It should produce ev
 
 The first-pass outputs must remain isolated: neither Worker sees the other's output before its own first-pass review is complete.
 
+A paper may generate multiple Worker A/B task pairs. Every page segment, table-row range, and source asset receives a stable `scope_id`; original `source_id`, page, table ID, figure ID, bounding box, and 1-based table row/column coordinates remain unchanged. A source is fully reviewed only after all of its scope IDs have completed coverage for that worker. Same-page context snippets and repeated table-prefix rows help preserve local relationships but do not expand the assigned coverage scope.
+
 ## 5. Model pair and run isolation
 
 The two workers must use different exact model references. The current preferred pair is:
@@ -116,7 +118,9 @@ Feature_create Python owns:
 - ingestion of the upstream chem-literature preprocessed paired CSV (not independent corpus discovery);
 - verification and hashing of the CSV-listed raw MAIN/SI files without parsing them;
 - validation/indexing of upstream evidence_index, parsed text, structured tables, media assets, and QC;
-- provenance indexing, chunking of upstream-parsed content, and task queue construction;
+- provenance indexing, page-aware text segmentation, original-row-preserving table chunking, bounded task packing, and task queue construction;
+- scope-level coverage validation and aggregation across all chunks before a source/paper can be considered fully reviewed;
+- exact staged-scope text hashing and quote verification so evidence cannot be borrowed from another chunk;
 - stable ID allocation;
 - Registry persistence and decision logs;
 - schema validation;
