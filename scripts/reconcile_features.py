@@ -195,6 +195,19 @@ def normalized_unit(value: str | None) -> str:
     return unit
 
 
+def acronym_match(left: str, right: str) -> bool:
+    a = normalize_text(left).replace(" ", "")
+    b_tokens = tokenize(right)
+    acronym = "".join(token[0] for token in normalize_text(right).split() if token)
+    if len(a) < 2 or len(a) > 8:
+        return False
+    if a == acronym:
+        return True
+    # Also allow a short alias to match the initials of a longer canonical name.
+    b = normalize_text(right).replace(" ", "")
+    return bool(len(a) <= 5 and b.startswith(a) and len(b) >= len(a) + 3)
+
+
 def is_evidence_reference_verified(
     reference: dict[str, Any],
     source_map: dict[str, dict[str, Any]],
@@ -266,8 +279,14 @@ def evidence_summary(
     )
     reported_statuses = {item["status_reported"] for item in references}
     best_status = next((status for status in status_priority if status in reported_statuses), "unverified")
+    if verified_refs:
+        effective_status = best_status
+    elif "visual_only" in reported_statuses:
+        effective_status = "visual_only"
+    else:
+        effective_status = "unverified"
     return {
-        "status": best_status,
+        "status": effective_status,
         "verified_reference_count": len(verified_refs),
         "reference_count": len(references),
         "locally_verified": bool(verified_refs),
@@ -549,25 +568,62 @@ def build_feature_pair_queue(registry: dict[str, Any], output_path: Path) -> dic
                 continue
             comparisons += 1
 
-            names = [left["canonical_name"], right["canonical_name"]]
-            ratio, overlap, containment = similarity(*names)
-            left_units = {normalized_unit(value) for value in left.get("unit_dimensions", []) if value}
-            right_units = {normalized_unit(value) for value in right.get("unit_dimensions", []) if value}
+            left_obs = [observations_by_id[oid] for oid in left.get("observation_ids", []) if oid in observations_by_id]
+            right_obs = [observations_by_id[oid] for oid in right.get("observation_ids", []) if oid in observations_by_id]
+            left_names = [left["canonical_name"], *left.get("aliases", [])]
+            right_names = [right["canonical_name"], *right.get("aliases", [])]
+            left_definitions = [left.get("definition") or ""]
+            right_definitions = [right.get("definition") or ""]
+            left_units = {
+                normalized_unit(item.get("reported_unit"))
+                for item in left_obs if item.get("reported_unit")
+            }
+            right_units = {
+                normalized_unit(item.get("reported_unit"))
+                for item in right_obs if item.get("reported_unit")
+            }
             shared_unit = bool(left_units & right_units)
-            exact_name = normalize_text(names[0]) == normalize_text(names[1])
+
+            best_ratio = 0.0
+            best_overlap = 0.0
+            best_containment = 0.0
+            exact_name = False
+            acronym = False
+            for name_a in left_names:
+                for name_b in right_names:
+                    ratio, overlap, containment = similarity(str(name_a), str(name_b))
+                    best_ratio = max(best_ratio, ratio)
+                    best_overlap = max(best_overlap, overlap)
+                    best_containment = max(best_containment, containment)
+                    exact_name = exact_name or normalize_text(str(name_a)) == normalize_text(str(name_b))
+                    acronym = acronym or acronym_match(str(name_a), str(name_b)) or acronym_match(str(name_b), str(name_a))
+            definition_ratio, definition_overlap, definition_containment = similarity(
+                " ".join(left_definitions), " ".join(right_definitions)
+            )
+            best_overlap = max(best_overlap, definition_overlap)
+            best_containment = max(best_containment, definition_containment)
+
+            ratio = best_ratio
+            overlap = best_overlap
+            containment = best_containment
             reasons: list[str] = []
             if exact_name:
                 reasons.append("exact_normalized_name")
             if ratio >= 0.58:
                 reasons.append("name_sequence_similarity")
             if overlap >= 0.30:
-                reasons.append("token_overlap")
+                reasons.append("name_or_definition_token_overlap")
             if containment >= 0.65:
                 reasons.append("token_containment")
-            if shared_unit and (overlap >= 0.20 or ratio >= 0.40):
-                reasons.append("shared_reported_unit_with_name_overlap")
+            if acronym:
+                reasons.append("possible_acronym_alias")
+            if shared_unit:
+                reasons.append("shared_reported_unit")
+            if definition_ratio >= 0.55:
+                reasons.append("definition_similarity")
 
-            # Candidate retrieval is deliberately permissive; it never merges.
+            # Unit and acronym matching can rescue synonyms whose names differ.
+            # The result is still only a review queue; no semantic merge occurs.
             if not reasons:
                 continue
 
@@ -576,8 +632,6 @@ def build_feature_pair_queue(registry: dict[str, Any], output_path: Path) -> dic
             if pair_id in existing_by_pair:
                 continue
 
-            left_obs = [observations_by_id[oid] for oid in left.get("observation_ids", []) if oid in observations_by_id]
-            right_obs = [observations_by_id[oid] for oid in right.get("observation_ids", []) if oid in observations_by_id]
             all_papers = {
                 item.get("paper_id")
                 for item in left_obs + right_obs
