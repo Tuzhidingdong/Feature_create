@@ -7,7 +7,7 @@
 - OpenCode CLI installed and authenticated for OpenCode Go.
 - Current OpenCode Go plan/account allows access to the selected limited-time free models in the user's region.
 - A completed [chem-literature preprocessing-branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) run.
-- \`research_corpus_paired.csv\` contains \`preprocessing_path\`, \`preprocessing_status\`, and the referenced \`01_preprocessing/\` packages.
+- `research_corpus_paired.csv` contains `preprocessing_path`, `preprocessing_status`, and the referenced `01_preprocessing/` packages.
 - Enough local disk space for task bundles, pre-extracted image attachments, worker outputs, and session exports. Feature_create does not create another parsed PDF/SI corpus.
 
 Install dependencies:
@@ -25,40 +25,40 @@ opencode run --help
 opencode export --help
 ~~~
 
-The workflow uses \`opencode run --model\`, \`--agent\`, \`--file\`, \`--format json\`, \`--title\`, and \`--dir\`.
+The workflow uses `opencode run --model`, `--agent`, `--file`, `--format json`, `--title`, and `--dir`.
 
 ## 2. Prepare the upstream-preprocessed corpus
 
-Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. The final \`research_corpus_paired.csv\` must include:
-- \`local_pdf_path\` and \`local_si_info\` for raw-source provenance and hash verification;
-- \`preprocessing_path\` pointing to that paper's \`01_preprocessing/\`;
-- \`preprocessing_status\` matching \`evidence_index.json\`;
-- \`preprocessing_qc_report\` (recommended).
+Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. The final `research_corpus_paired.csv` must include:
+- `local_pdf_path` and `local_si_info` for raw-source provenance and hash verification;
+- `preprocessing_path` pointing to that paper's `01_preprocessing/`;
+- `preprocessing_status` matching `evidence_index.json`;
+- `preprocessing_qc_report` (recommended).
 
 Each package must include:
-- \`evidence_index.json\` and \`PREPROCESSING_QC_REPORT.md\`;
-- \`main_analysis.md\` and \`si_analysis.md\`;
-- \`extracted_tables/\` and \`extracted_figures/\` assets;
+- `evidence_index.json` and `PREPROCESSING_QC_REPORT.md`;
+- `main_analysis.md` and `si_analysis.md`;
+- `extracted_tables/` and `extracted_figures/` assets;
 - page, table, figure, SI-reference, coordinate, and hash metadata in the evidence index.
 
 The CSV is the complete paper-selection authority. Feature_create does not scan the upstream folders, add unlisted files, repeat article screening, or substitute missing PDFs/SI.
 
-The current chem-literature workflow writes relative paths against the directory from which \`run_workflow.py\` was executed. For example, when it is run from:
+The current chem-literature workflow writes relative paths against the directory from which `run_workflow.py` was executed. For example, when it is run from:
 
-\`E:\\Zinc_batters_datas\\chem-literature\`
+`E:\\Zinc_batters_datas\\chem-literature`
 
 index the upstream packages:
 
 ~~~powershell
-python scripts/prepare_corpus.py \`
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" \`
+python scripts/prepare_corpus.py `
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
+  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
 ~~~
 
 The preparation adapter:
-- reads only rows from \`research_corpus_paired.csv\`;
-- resolves each row's \`preprocessing_path\`;
+- reads only rows from `research_corpus_paired.csv`;
+- resolves each row's `preprocessing_path`;
 - validates package version, CSV/package DOI, preprocessing status, QC report, and evidence index;
 - hashes CSV-listed raw MAIN/SI files to verify they still match upstream inventory records;
 - validates extracted image hashes and referenced table exports;
@@ -68,12 +68,12 @@ The preparation adapter:
 It does **not** parse PDFs, render pages, extract tables, unpack SI archives, or parse DOCX/XLSX. Raw MAIN/SI files are not attached to workers.
 
 Outputs:
-- \`source_manifest.json\` — internal logical-source index derived from the paired CSV and upstream packages;
-- \`extracted_text/\` — exact staging copies of upstream MAIN/SI text and structured table/caption text for evidence checking;
-- \`upstream_evidence_indexes/\` — exact copies of upstream \`evidence_index.json\` files;
-- \`prepare_summary.json\` — ready/blocked paper and source counts.
+- `source_manifest.json` — internal logical-source index derived from the paired CSV and upstream packages;
+- `extracted_text/` — exact staging copies of upstream MAIN/SI text and structured table/caption text for evidence checking;
+- `upstream_evidence_indexes/` — exact copies of upstream `evidence_index.json` files;
+- `prepare_summary.json` — ready/blocked paper and source counts.
 
-\`COMPLETE\` packages may proceed normally. \`WARNING_SCANNED_PAGES\`, \`PARTIAL_SI_UNSUPPORTED\`, and \`PARTIAL_NO_SI\` are preserved as warnings and must remain visible to both workers. A missing/corrupt package, unsupported package version, raw-source hash mismatch, or missing MAIN parsed text blocks the paper instead of falling back to raw-document parsing.
+`COMPLETE` packages may proceed normally. `WARNING_SCANNED_PAGES`, `PARTIAL_SI_UNSUPPORTED`, and `PARTIAL_NO_SI` are preserved as warnings and must remain visible to both workers. A missing/corrupt package, unsupported package version, raw-source hash mismatch, or missing MAIN parsed text blocks the paper instead of falling back to raw-document parsing.
 
 ## 3. Build isolated Worker tasks
 
@@ -84,7 +84,7 @@ python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Fea
 One independent Worker A and Worker B task is created per eligible paper. Each task has:
 - stable task ID and exact pinned model reference;
 - worker prompt and consolidated upstream-parsed text/table bundle;
-- exact upstream \`evidence_index.json\` and QC report attachments;
+- exact upstream `evidence_index.json` and QC report attachments;
 - pre-extracted figure/table image assets when available;
 - stable source IDs and original page/table/figure/SI locators;
 - raw PDF/SI hash inventory for provenance only.
