@@ -67,24 +67,27 @@ def _model_block(output: str, model_ref: str) -> str:
     return "\n".join(block)
 
 
-def _validate_verbose_price_block(block: str, model_ref: str) -> None:
+def _validate_verbose_price_block(block: str, model_ref: str, display_name: str | None = None) -> None:
     if not block:
         raise ModelPolicyError(
             f"Exact model reference not found in refreshed verbose catalog: {model_ref}"
         )
-    # Current OpenCode Go verbose output is expected to expose metadata in the
-    # selected model row. Require at least three explicit zero/free price values.
-    free_tokens = re.findall(r"\bFree\b", block, flags=re.IGNORECASE)
-    zero_tokens = re.findall(r"\$0(?:\.0+)?\b", block)
+    # Remove the model identifier/display label first. Both contain the word
+    # "Free" and must not be mistaken for price fields.
+    price_text = block.replace(model_ref, "")
+    if display_name:
+        price_text = re.sub(re.escape(display_name), "", price_text, flags=re.IGNORECASE)
+    free_tokens = re.findall(r"\bFree\b", price_text, flags=re.IGNORECASE)
+    zero_tokens = re.findall(r"\$0(?:\.0+)?\b", price_text)
     if len(free_tokens) + len(zero_tokens) < 3:
         raise ModelPolicyError(
             f"Verbose catalog does not prove input/output/cached-read are all Free "
-            f"for {model_ref}. Block was: {block!r}"
+            f"for {model_ref}. Price block was: {price_text!r}"
         )
-    positive_prices = re.findall(r"\$([0-9]+(?:\.[0-9]+)?)", block)
+    positive_prices = re.findall(r"\$([0-9]+(?:\.[0-9]+)?)", price_text)
     if any(float(price) > 0 for price in positive_prices):
         raise ModelPolicyError(
-            f"Positive price found in the selected model block for {model_ref}: {block!r}"
+            f"Positive price found in the selected model block for {model_ref}: {price_text!r}"
         )
     # The Go catalog currently shows '-' for cached-write for these free models.
     # If a future catalog exposes a positive cached-write price, it is rejected
@@ -174,7 +177,7 @@ def validate_policy(
             raise ModelPolicyError(
                 f"Cached-write is not explicitly non-positive for Worker {worker}."
             )
-        _validate_verbose_price_block(_model_block(models_output, model_ref), model_ref)
+        _validate_verbose_price_block(_model_block(models_output, model_ref), model_ref, entry.get("display_name"))
 
     return [configured["A"], configured["B"]]
 
