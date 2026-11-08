@@ -421,15 +421,6 @@ def _main_unlocked(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--registry", type=Path, required=True)
-    args, _unknown = parser.parse_known_args(argv)
-    registry_path = args.registry.expanduser().resolve()
-    with registry_lock(registry_path):
-        return _main_unlocked(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
     import sys
 
     arguments = list(argv) if argv is not None else sys.argv[1:]
