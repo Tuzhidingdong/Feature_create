@@ -150,7 +150,7 @@ The exporter refuses to create either formal TXT file when:
 - a candidate Feature pair remains pending, blocked, or under review;
 - the Registry fails its JSON Schema.
 
-Retired merged IDs are resolved through their redirect to the surviving Feature ID. Raw Feature names and values remain unchanged in the records file. The internal audit JSON is not a third formal deliverable; the only formal output files are the two TXT files above.
+Retired merged IDs are resolved through their redirect to the surviving Feature ID. Raw Feature names and values remain unchanged in the records file. The internal audit JSON is written beside, not inside, the formal output directory. The formal output directory itself contains only the two TXT files above.
 
 ## 5. Serialization invariants
 
