@@ -178,7 +178,10 @@ class BuildContextReviewQueueTests(unittest.TestCase):
             self.assertEqual(1, queue["task_count"])
             task = queue["tasks"][0]
             self.assertEqual("cross_chunk_context", task["worker_role"])
-            self.assertEqual("opencode-go/gpt-6-luna", task["model_ref"] if task["model_ref"] == "opencode-go/gpt-6-luna" else task["model_ref"])
+            policy = json.loads(
+                (Path(__file__).resolve().parents[1] / "config" / "execution_policy.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(policy["workers"]["worker_b"]["model_ref"], task["model_ref"])
             self.assertEqual({"UNIT-CURRENT", "UNIT-TARGET"}, set(task["assigned_unit_ids"]))
             self.assertEqual(["UNIT-CURRENT"], task["current_unit_ids"])
             self.assertEqual(["UNIT-TARGET"], task["target_unit_ids"])
