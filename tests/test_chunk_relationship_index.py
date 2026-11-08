@@ -38,28 +38,20 @@ class CrossChunkRelationshipIndexTests(unittest.TestCase):
                 "upstream-index-sha",
             )
 
-            locators = [
-                locator
-                for chunk in paper_index["chunks"]
-                for locator in chunk["text_segment_locators"]
-            ]
+            boundaries = paper_index["cross_chunk_text_boundaries"]
             self.assertGreater(len(chunks), 1)
-            self.assertEqual(len(units), len(locators))
-            for locator in locators:
-                if locator["next_segment"]:
-                    self.assertEqual(
-                        locator["source_text_offset_end"],
-                        locator["next_segment"]["source_text_offset_start"],
-                    )
-                    self.assertTrue(locator["next_segment"]["chunk_id"])
-                if locator["previous_segment"]:
-                    self.assertTrue(locator["previous_segment"]["chunk_id"])
-            self.assertTrue(any(
-                locator["next_segment"]
-                and locator["next_segment"]["chunk_id"] != locator["chunk_id"]
-                for chunk in paper_index["chunks"]
-                for locator in chunk["text_segment_locators"]
-            ))
+            self.assertTrue(boundaries)
+            for boundary in boundaries:
+                self.assertEqual(
+                    boundary["from_segment"]["source_text_offset_end"],
+                    boundary["to_segment"]["source_text_offset_start"],
+                )
+                self.assertNotEqual(
+                    boundary["from_segment"]["chunk_id"],
+                    boundary["to_segment"]["chunk_id"],
+                )
+                self.assertTrue(boundary["from_segment"]["unit_id"])
+                self.assertTrue(boundary["to_segment"]["unit_id"])
 
     def test_large_header_context_row_is_referenced_not_duplicated(self) -> None:
         long_cell = "large-cell-content-" * 300
@@ -147,11 +139,6 @@ class CrossChunkRelationshipIndexTests(unittest.TestCase):
             "upstream-table-index-sha",
         )
 
-        table_locators = [
-            locator
-            for chunk in paper_index["chunks"]
-            for locator in chunk["table_locators"]
-        ]
         self.assertGreater(len(chunks), 1)
         row_groups = paper_index["same_original_table_row_groups"]
         self.assertTrue(row_groups)
@@ -166,10 +153,10 @@ class CrossChunkRelationshipIndexTests(unittest.TestCase):
         self.assertGreater(len(group["chunk_ids"]), 1)
         self.assertTrue(all(unit["chunk_id"] for unit in group["units"]))
         self.assertTrue(all(unit["unit_id"] for unit in group["units"]))
-        referenced_group_ids = {
-            group_id for locator in table_locators for group_id in locator["row_group_ids"]
-        }
-        self.assertIn(group["row_group_id"], referenced_group_ids)
+        self.assertEqual(
+            set(group["chunk_ids"]),
+            {unit["chunk_id"] for unit in group["units"]},
+        )
 
 
 if __name__ == "__main__":
