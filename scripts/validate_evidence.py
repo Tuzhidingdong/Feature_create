@@ -127,7 +127,8 @@ def validate_payload(
     sources: dict[str, dict[str, Any]],
     output_root: Path,
 ) -> dict[str, Any]:
-    errors = validate_schema(payload, role)
+    schema_errors = validate_schema(payload, role)
+    errors = list(schema_errors)
     warnings: list[dict[str, str]] = []
     verified_refs = 0
     unverified_refs = 0
@@ -204,7 +205,7 @@ def validate_payload(
         "task_id": task.get("task_id"),
         "paper_id": task.get("paper_id"),
         "worker_role": role,
-        "schema_valid": not any("schema" in error.lower() for error in errors),
+        "schema_valid": not schema_errors,
         "reference_count": reference_count,
         "verified_reference_count": verified_refs,
         "unverified_reference_count": unverified_refs,
