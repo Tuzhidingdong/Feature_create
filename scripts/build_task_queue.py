@@ -131,26 +131,51 @@ def _paper_chunk_index(
                 "next": ordered[index + 1] if index + 1 < len(ordered) else None,
             }
 
-    table_row_neighbors: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
-    for (table_id, row_index), row_units in table_units_by_row.items():
+    table_row_group_ids_by_unit: dict[str, list[str]] = {}
+    table_row_groups: list[dict[str, Any]] = []
+    for (table_id, row_index), row_units in sorted(table_units_by_row.items()):
         unique_units = {
             str(unit["unit_id"]): unit for unit in row_units
         }
-        for unit_id, unit in unique_units.items():
-            table_row_neighbors[(table_id, row_index, unit_id)] = [
-                {
-                    "unit_id": other_id,
-                    "chunk_id": unit_chunk.get(other_id),
-                    "source_id": other.get("source_id"),
-                    "column_indices_1based": sorted({
-                        int(value) for value in (
-                            (other.get("locator") or {}).get("column_indices_1based") or []
-                        )
-                    }),
-                }
-                for other_id, other in sorted(unique_units.items())
-                if other_id != unit_id
-            ]
+        group_id = "ROWGROUP-" + hashlib.sha256(
+            f"{paper['paper_id']}|{table_id}|{row_index}".encode("utf-8")
+        ).hexdigest()[:12].upper()
+        unit_refs = []
+        for unit_id, unit in sorted(unique_units.items()):
+            locator = unit.get("locator") or {}
+            column_indices = {
+                int(value) for value in (locator.get("column_indices_1based") or [])
+            }
+            if locator.get("column_count"):
+                column_indices.update(range(1, int(locator["column_count"]) + 1))
+            unit_refs.append({
+                "unit_id": unit_id,
+                "chunk_id": unit_chunk.get(unit_id),
+                "source_id": unit.get("source_id"),
+                "column_indices_1based": sorted(column_indices),
+                "cell_fragments": [
+                    {
+                        "column_index_1based": cell.get("column_index_1based"),
+                        "cell_text_offset_start": cell.get("cell_text_offset_start"),
+                        "cell_text_offset_end": cell.get("cell_text_offset_end"),
+                        "cell_text_segment_index_1based": cell.get("cell_text_segment_index_1based"),
+                        "cell_text_segment_count": cell.get("cell_text_segment_count"),
+                    }
+                    for cell in locator.get("cell_fragments", [])
+                    if cell.get("row_index_1based") == row_index
+                ],
+            })
+            table_row_group_ids_by_unit.setdefault(unit_id, []).append(group_id)
+        table_row_groups.append({
+            "row_group_id": group_id,
+            "table_id": table_id,
+            "original_row_index_1based": row_index,
+            "unit_count": len(unit_refs),
+            "chunk_ids": sorted({
+                str(item["chunk_id"]) for item in unit_refs if item.get("chunk_id")
+            }),
+            "units": unit_refs,
+        })
     supplementary_targets = []
     for table in all_tables:
         if str(table.get("doc_type", "")).upper() == "SI":
@@ -254,19 +279,7 @@ def _paper_chunk_index(
                     "row_index_1based": (unit.get("locator") or {}).get("row_index_1based"),
                     "column_indices_1based": (unit.get("locator") or {}).get("column_indices_1based", []),
                     "cell_fragments": (unit.get("locator") or {}).get("cell_fragments", []),
-                    "same_row_related_units": [
-                        relation
-                        for row_index in sorted({
-                            int(value) for value in (
-                                (unit.get("locator") or {}).get("row_indices_1based") or []
-                            )
-                        } | ({
-                            int((unit.get("locator") or {})["row_index_1based"])
-                        } if (unit.get("locator") or {}).get("row_index_1based") is not None else set()))
-                        for relation in table_row_neighbors.get(
-                            (str(unit.get("table_id")), row_index, str(unit["unit_id"])), []
-                        )
-                    ],
+                    "row_group_ids": sorted(table_row_group_ids_by_unit.get(str(unit["unit_id"]), [])),
                 }
                 for unit in chunk["units"] if unit.get("table_id")
             ],
@@ -275,6 +288,7 @@ def _paper_chunk_index(
             }),
         } for chunk in chunks],
         "all_supplementary_evidence_locators": supplementary_targets,
+        "same_original_table_row_groups": table_row_groups,
         "cross_source_references": links,
         "rules": [
             "This is a navigation index, not the full source content.",
