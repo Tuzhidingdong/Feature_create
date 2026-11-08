@@ -145,19 +145,21 @@ def _paper_chunk_index(
             "next_chunk_id": chunk.get("next_chunk_id"),
             "unit_count": chunk["unit_count"],
             "source_ids": chunk["source_ids"],
-            "locators": [
+            "page_locators": sorted({
+                f"{unit.get('doc_type')}:{unit.get('page_number')}"
+                for unit in chunk["units"] if unit.get("page_number") is not None
+            }),
+            "table_locators": [
                 {
-                    "unit_id": unit["unit_id"],
-                    "source_ids": unit.get("source_ids", []),
-                    "unit_kind": unit.get("unit_kind"),
-                    "source_type": unit.get("source_type"),
-                    "page_number": unit.get("page_number"),
                     "table_id": unit.get("table_id"),
-                    "figure_id": unit.get("figure_id"),
-                    "locator": unit.get("locator", {}),
+                    "row_index_start_1based": (unit.get("locator") or {}).get("row_index_start_1based"),
+                    "row_index_end_1based": (unit.get("locator") or {}).get("row_index_end_1based"),
                 }
-                for unit in chunk["units"]
+                for unit in chunk["units"] if unit.get("table_id")
             ],
+            "figure_ids": sorted({
+                str(unit.get("figure_id")) for unit in chunk["units"] if unit.get("figure_id")
+            }),
         } for chunk in chunks],
         "all_supplementary_evidence_locators": supplementary_targets,
         "cross_source_references": links,
@@ -168,7 +170,6 @@ def _paper_chunk_index(
             "A target locator is a candidate link; verify it against the exact upstream caption/index before using it.",
             "Preserve original page, table, row, column, figure, bbox, and source IDs when evidence is cited.",
         ],
-        "all_unit_locators": units,
     }
 
 
@@ -521,7 +522,6 @@ def main(argv: list[str] | None = None) -> int:
                 *visual_attachments,
                 str(chunk_evidence_path),
                 str(paper_index_path.resolve()),
-                *([str(path)] for path in []),
             ]))
             qc_path = _safe_output_path(paper.get("qc_report_path"))
             if qc_path:
