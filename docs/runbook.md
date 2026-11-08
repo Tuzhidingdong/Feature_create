@@ -233,6 +233,7 @@ python scripts/export_txt.py `
   --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
   --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
   --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
   --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_output"
 ```
 
@@ -242,7 +243,25 @@ The exporter creates exactly two formal TXT files:
 
 Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal `export_audit.json` for diagnostics; that audit file is not a formal deliverable.
 
-## 13. Inspect the run
+## 13. Generate the final deterministic audit report
+
+After mapping and reconciliation, calculate the corpus/source/extraction totals directly from local manifests and task outputs:
+
+```powershell
+python scripts/audit_records.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_audit.json"
+```
+
+The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
+
+## 14. Inspect the run
 
 Key files:
 - `worker_runs/model_preflight.json`
@@ -253,7 +272,7 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 14. Important limitations in v0.1
+## 15. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - PDF page/paragraph/table locators are not yet enriched beyond page markers and model-provided locators.
