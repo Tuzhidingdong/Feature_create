@@ -124,7 +124,7 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 - Tables are split by original 1-based source rows. A single oversized row is split into cell fragments while preserving original table ID, row, column, and character offsets. Multi-row headers remain available as context.
 - An upstream image asset is assigned once to its related figure/table evidence unit when the evidence index identifies that relationship. Orphaned assets remain explicit units.
 - Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Every `(source_id, unit_id)` assignment also receives a stable `scope_id`, and the task bundle includes a coverage checklist. Worker evidence locators must cite `unit_id` and `chunk_id`, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
-- `paper_chunk_index.json` exposes the other chunks' IDs, exact text-segment offsets and previous/next segment links, same-table-row unit links (including cell fragments), page/table/figure locators, and candidate MAIN-to-SI links. Candidate MAIN-to-SI links are navigation aids, not confirmed semantic associations.
+- `paper_chunk_index.json` exposes `unit_navigation` for every unit, `cross_chunk_text_boundaries` for adjacent text segments assigned to different chunks, `same_original_table_row_groups` for rows/cell fragments spanning chunks, and candidate MAIN-to-SI links. Candidate links are navigation aids, not confirmed semantic associations.
 - If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
 - Worker A and Worker B must each return exactly one coverage entry for every assigned `scope_id`, preserving the corresponding `source_id`. Repeated `source_id` values with different units require separate entries. A source is counted fully reviewed only when every one of its scopes across every chunk has the worker's successful status. A completed task/chunk cannot mark other scopes of that source complete.
 
@@ -163,6 +163,21 @@ A model agreement is not evidence. Every accepted result value must have a trace
 4. Preserve Worker B's omission candidates and within-paper semantic distinctions as review items.
 5. Build candidate Feature pairs using permissive lexical, alias, acronym, unit, and definition signals. These signals only retrieve candidates; they never merge them.
 6. Keep all new Canonical Features provisional until the global review stage resolves the candidate pairs.
+
+### Phase 4A — Targeted cross-chunk context review
+
+After Worker A/B first-pass outputs have been validated and ingested, resolve only those value-specific missing-context items that identify a concrete remote target unit.
+
+1. Worker A may nominate at most eight target units in an unresolved item's `cross_chunk_target`. Each target must carry its exact `chunk_id`, `unit_id`, and `source_id`, plus a context role, relation basis, and short rationale.
+2. Python verifies every nomination against the paper-wide `unit_navigation` index. For `adjacent_text_boundary` and `same_original_table_row`, it also verifies the exact cross-chunk navigation relation. A target from another paper, the current chunk, or an unindexed unit is blocked.
+3. Build a minimal context-review queue containing only the current result evidence, the selected target evidence, and the existing result record's identifying/context fields. Do not attach the full paper or any Worker A/B output.
+4. Route the task to the already-configured Worker B free model. Worker B receives a dedicated context-review prompt and must return exactly one of: `association_confirmed`, `no_association`, `insufficient_evidence`, or `conflicting_evidence`.
+5. A confirmed context fact must cite both CURRENT and TARGET evidence, using exact assigned unit/chunk IDs and locally verifiable text or table-cell values. Target descriptors are navigation requests, never evidence.
+6. Run the evidence validator against the two-sided evidence manifest. Reject a fact if its quote/cell is outside the assigned range, its side/source/chunk/unit identity is wrong, or the exact content cannot be verified.
+7. The context applier may append only sample identity, condition, time/cycle, protocol, statistical-scope, or other context facts. It must not change the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, or first-pass evidence references.
+8. `no_association` closes that one investigated question without adding a fact. `insufficient_evidence` and `conflicting_evidence` remain unresolved for human review. All decisions and citations are retained in the unresolved item and linked result record history.
+
+This stage reuses Worker B; it is not a third worker or a repeated full-paper discovery pass. Items without a linked result record and exact remote target remain in the unresolved queue.
 
 ### Phase 5 — Global cross-paper reconciliation
 
@@ -208,7 +223,7 @@ Report counts calculated from local audit data:
 - result records extracted and evidence-verified;
 - canonical features confirmed;
 - unresolved records and feature candidates;
-- unresolved context items;
+- unresolved context items, targeted cross-chunk context decisions, and unresolved context links remaining;
 - figure-only and unreadable sources;
 - exact Worker A/B model IDs;
 - free-price verification timestamp/source;
