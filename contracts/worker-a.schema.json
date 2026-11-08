@@ -131,6 +131,11 @@
           "type": "string",
           "minLength": 1
         },
+        "scope_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact assigned review scope ID from the task coverage checklist; required when the task includes source_scopes."
+        },
         "status": {
           "enum": [
             "fully_reviewed",

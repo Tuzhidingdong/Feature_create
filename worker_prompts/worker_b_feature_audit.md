@@ -16,8 +16,8 @@ Raw MAIN/SI PDFs and SI archives are provenance only; they are deliberately not 
 
 Each task covers only the assigned evidence units listed in its bundle and chunk_evidence_index.json.
 
-- Audit all assigned units and report coverage for assigned source IDs only.
-- If a source ID spans several chunks, mark `reviewed` only when every unit assigned to this chunk was audited. State the current chunk ID and exact page/text-segment/table-row range in coverage notes; the deterministic audit will mark the whole source complete only after every chunk has the same successful status.
+- Audit all assigned units and return exactly one `coverage_audit` entry for every row in the bundle's **Assigned review scopes (coverage checklist)**. Copy both `scope_id` and `source_id` exactly from that row. A repeated source ID with different scope IDs requires separate coverage entries.
+- Set `reviewed` only when the exact unit represented by that scope ID was fully audited. State the chunk ID and exact unit locator in `audit_note`. The deterministic audit aggregates all scopes across chunks before marking an original source complete.
 - CONTEXT ONLY snippets and repeated table-prefix rows are orientation aids, not assigned evidence; do not count or extract them again.
 - Table rows retain original upstream 1-based row and column indexes. Never renumber a chunk-local row.
 - Use `paper_chunk_index.json` to identify cross-chunk links. `cross_chunk_text_boundaries` identifies adjacent exact source-text ranges across chunks; `same_original_table_row_groups` identifies the units carrying cells from the same original `table_id + 1-based row index`, including cell-fragment offsets and owning chunk IDs. Only cross-chunk boundaries/groups are listed in the compact navigation index; current-chunk exact locators remain in `chunk_evidence_index.json. Same-row cells can be interpreted as fields from that exact table row, but do not infer a distant prose-to-result association by proximity. When the target chunk's evidence content is not assigned to this task, name its chunk ID and unit locator in `unresolved_items`; the navigation index is not proof that target content was reviewed.
@@ -78,7 +78,7 @@ Where you can identify a likely missed result series, name its raw feature and s
 
 ## Coverage
 
-Audit every source item assigned to this chunk. Mark reviewed, partially reviewed, inaccessible, not present, or uncertain honestly. State the assigned locator range in notes. A file being listed does not mean it was read. A table index does not prove all assigned table cells were examined.
+Audit every row in the bundle's **Assigned review scopes (coverage checklist)**. Return one `coverage_audit` entry per scope ID and preserve the associated source ID exactly. Do not combine multiple scope IDs of the same source. Mark reviewed, partially reviewed, inaccessible, not present, or uncertain honestly. State the assigned unit locator in `audit_note`. A file being listed does not mean it was read. A table index does not prove all assigned table cells were examined.
 
 ## Output
 

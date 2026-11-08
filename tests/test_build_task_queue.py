@@ -297,6 +297,28 @@ class BuildTaskQueueTests(unittest.TestCase):
             self.assertTrue(all(task["paper_chunk_index_path"] for task in queue["tasks"]))
             self.assertTrue(all(task["source_unit_ids"]["SRC-LARGE-MAIN"] for task in queue["tasks"]))
             self.assertTrue(all(task["chunk_count"] == len(chunks) for task in queue["tasks"]))
+            self.assertTrue(all(task["source_scopes"] for task in queue["tasks"]))
+            self.assertTrue(all(task["scope_count"] == len(task["source_scopes"]) for task in queue["tasks"]))
+            worker_a_tasks = [task for task in queue["tasks"] if task["worker_role"] == "source_discovery"]
+            scopes = [scope for task in worker_a_tasks for scope in task["source_scopes"]]
+            self.assertEqual(len(scopes), len({scope["scope_id"] for scope in scopes}))
+            self.assertEqual({scope["source_id"] for scope in scopes}, {"SRC-LARGE-MAIN"})
+            self.assertEqual(
+                {scope["unit_id"] for scope in scopes},
+                {unit_id for task in worker_a_tasks for unit_id in task["unit_ids"]},
+            )
+
+            task_bundle = Path(queue["tasks"][0]["bundle_path"]).read_text(encoding="utf-8")
+            evidence_manifest_start = task_bundle.index("## Assigned evidence manifest")
+            scope_checklist_start = task_bundle.index("## Assigned review scopes (coverage checklist)")
+            review_requirements_start = task_bundle.index("## Review requirements")
+            self.assertLess(evidence_manifest_start, scope_checklist_start)
+            self.assertLess(scope_checklist_start, review_requirements_start)
+            for scope in queue["tasks"][0]["source_scopes"]:
+                self.assertIn(
+                    f"| {scope['scope_id']} | {scope['source_id']} | {scope['unit_id']} |",
+                    task_bundle,
+                )
 
             paper_index_path = Path(queue["tasks"][0]["paper_chunk_index_path"])
             paper_index = json.loads(paper_index_path.read_text(encoding="utf-8"))
