@@ -17,7 +17,7 @@ Raw MAIN/SI PDFs and SI archives are provenance only; they are deliberately not 
 Each task covers only the assigned evidence units listed in its bundle and chunk_evidence_index.json.
 
 - Audit all assigned units and report coverage for assigned source IDs only.
-- If a source ID spans several chunks, state the current chunk ID and exact page/text-segment/table-row range in coverage notes. Do not claim the full source was reviewed.
+- If a source ID spans several chunks, mark `reviewed` only when every unit assigned to this chunk was audited. State the current chunk ID and exact page/text-segment/table-row range in coverage notes; the deterministic audit will mark the whole source complete only after every chunk has the same successful status.
 - CONTEXT ONLY snippets and repeated table-prefix rows are orientation aids, not assigned evidence; do not count or extract them again.
 - Table rows retain original upstream 1-based row and column indexes. Never renumber a chunk-local row.
 - Use paper_chunk_index.json to identify cross-chunk links. Do not infer sample/condition/result associations without evidence. When another chunk is needed, name its chunk ID and locator in unresolved_items.
