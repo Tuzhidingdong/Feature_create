@@ -74,6 +74,9 @@ def build_bundle(
         f"- Article type from chem-literature: {paper.get('article_type') or 'not supplied'}",
         f"- Upstream landing page: {paper.get('landing_page_url') or 'not supplied'}",
         f"- Upstream paired status: {paper.get('pair_status', 'not recorded')}",
+        f"- Upstream preprocessing status: {paper.get('preprocessing_status', 'not recorded')}",
+        f"- Feature_create input status: {paper.get('input_status', 'not recorded')}",
+        f"- Upstream preprocessing package: {paper.get('preprocessing_path') or 'not supplied'}",
         "",
         f"- Upstream CSV row count: {paper.get('upstream_csv_row_count', 1)}",
         "",
@@ -85,9 +88,21 @@ def build_bundle(
         "",
         json.dumps(paper.get("upstream_csv_rows", []), ensure_ascii=False, indent=2),
         "",
+        "## Upstream preprocessing quality and scope",
+        "",
+        json.dumps(paper.get("processing_summary", {}), ensure_ascii=False, indent=2),
+        "",
+        "### Upstream QC warnings",
+        "",
+        *[f"- {item}" for item in paper.get("pair_warnings", [])],
+        "",
+        "### Supporting material preserved but not parsed upstream",
+        "",
+        json.dumps(paper.get("unparsed_material", []), ensure_ascii=False, indent=2),
+        "",
         "## Source manifest",
         "",
-        "| Source ID | Role | Type | Relative path | Parse status |",
+        "| Source ID | Component | Type | Locator context | Parse status |",
         "|---|---|---|---|---|",
     ]
     attachments: list[str] = []
@@ -96,48 +111,48 @@ def build_bundle(
     for source in source_records:
         rel = source["relative_path"].replace("|", "\\|")
         lines.append(
-            f"| {source['source_id']} | {source['source_role']} | "
-            f"{source['source_type']} | {rel} | {source['parse_status']} |"
-        )
-        source_path = Path(source["absolute_path"])
-        if source_path.is_file() and source_path.suffix.casefold() in {
-            ".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp",
-            ".zip", ".docx", ".xlsx"
-        }:
-            attachments.append(str(source_path.resolve()))
-
-        # Rendered figure/table pages are stored beside the source manifest.
-        # Add them explicitly so visual axes/panels are available to the worker.
-        for visual_page in source.get("visual_pages", []):
-            relative_visual_path = visual_page.get("relative_path")
-            if not relative_visual_path:
-                continue
-            visual_path = (source_output_root / "visual_assets" / relative_visual_path).resolve()
-            try:
-                visual_path.relative_to(source_output_root.resolve())
-            except ValueError as exc:
-                raise TaskQueueError(
-                    f"Visual asset path escapes prepared corpus directory: {visual_path}"
-                ) from exc
-            if visual_path.is_file():
-                attachments.append(str(visual_path))
+            locator = []
+            for key in ("page_number", "table_id", "figure_id", "bbox", "caption", "asset_type"):
+                if source.get(key) is not None:
+                    locator.append(f"{key}={source.get(key)}")
+            lines.append(
+                f"| {source['source_id']} | {source.get('component', 'other')} | "
+                f"{source['source_type']} | {'; '.join(locator) or rel} | {source['parse_status']} |"
+            )
+        # Only pre-extracted visual assets and the upstream evidence index are
+        # attached. MAIN/SI PDFs, archives and office originals are never passed
+        # to Feature_create workers for a second parsing pass.
+        for source in source_records:
+            attachment = source.get("attachment_path")
+            if attachment:
+                attachment_path = Path(attachment).resolve()
+                if attachment_path.is_file():
+                    attachments.append(str(attachment_path))
+        for key in ("evidence_index_copy", "qc_report_path"):
+            value = paper.get(key)
+            if value and Path(value).is_file():
+                attachments.append(str(Path(value).resolve()))
 
     lines.extend([
         "",
         "## Review requirements",
         "",
-        "- Review every listed source that is attached or represented by extracted text.",
+        "- Review every listed upstream-preprocessed text, structured table, figure caption, and image asset.",
+        "- Use the attached upstream evidence_index.json as the authoritative page/table/figure/SI coordinate and relationship index.",
+        "- Use the upstream PREPROCESSING_QC_REPORT.md and processing_summary to identify scanned pages, unsupported SI, and other incomplete coverage.",
+        "- The original MAIN/SI PDFs and archives are inventory/provenance only. Do not request or perform a second PDF/SI parsing pass.",
         "- Preserve source IDs exactly; they are required for provenance.",
         "- Do not claim a source was reviewed if it was only listed.",
         "- Each accepted result value must remain linked to the exact source and locator.",
         "- Keep sample identity, conditions, time/cycle facts, protocols, and result values separate.",
-        "- Figure images are attached individually where available. Original PDFs are also attached where present.",
-        "- If an attachment could not be read, report it in coverage and unresolved items.",
+        "- Figure and table image assets extracted upstream are attached individually when available.",
+        "- Original PDFs and SI archives are not attached; do not treat their physical presence as evidence that they were reviewed.",
+        "- If an upstream asset is missing, unreadable, scanned, or marked PRESERVED_NOT_PARSED, report it in coverage and unresolved items.",
         "",
-        "## Visual page attachments",
+        "## Upstream image/table attachments",
         "",
-        "- PDF pages containing figure/table/scheme captions are rendered into visual_assets and attached separately when available.",
-        "- These page images supplement the extracted text and original PDFs; a missing render is recorded in the source manifest.",
+        "- Images are the exact pre-extracted assets referenced by evidence_index.json and retain their upstream asset IDs, page numbers, captions, and hashes.",
+        "- The evidence index is authoritative for coordinates, table rows, SI references, and source relationships.",
         "",
         "## Extracted source text",
         "",
@@ -213,6 +228,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
             },
             "upstream_csv_rows": paper.get("upstream_csv_rows", []),
+            "evidence_index_sha256": paper.get("evidence_index_sha256"),
+            "qc_report_sha256": paper.get("qc_report_sha256"),
+            "preprocessing_status": paper.get("preprocessing_status"),
+            "raw_source_inventory": paper.get("raw_source_inventory", []),
         }
         paper_hash = hashlib.sha256(
             json.dumps(paper_input_fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -243,8 +262,10 @@ def main(argv: list[str] | None = None) -> int:
                 command_preview.extend(["--file", attachment_path])
             command_preview.append(f"Execute Feature_create task {task_id}. Return the contract JSON.")
             command_chars = len(subprocess.list2cmdline(command_preview))
-            if paper.get("pair_status") != "paired_files_verified":
+            if paper.get("pair_status") != "paired_files_verified" or paper.get("input_status") == "blocked_pair_integrity":
                 task_status = "blocked_pair_integrity"
+            elif str(paper.get("input_status", "")).startswith("blocked"):
+                task_status = "blocked_preprocessing"
             elif extracted_chars > args.max_bundle_chars:
                 task_status = "blocked_oversize"
             elif command_chars > args.max_command_chars:
@@ -267,6 +288,11 @@ def main(argv: list[str] | None = None) -> int:
                 "source_ids": [source["source_id"] for source in paper_sources],
                 "source_count": len(paper_sources),
                 "attachment_count": len(attachments),
+                "preprocessing_status": paper.get("preprocessing_status"),
+                "input_status": paper.get("input_status", "ready"),
+                "evidence_index_path": paper.get("evidence_index_copy"),
+                "evidence_index_sha256": paper.get("evidence_index_sha256"),
+                "raw_source_inventory": paper.get("raw_source_inventory", []),
                 "command_length_estimate": command_chars,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "input_fingerprint": paper_hash,
