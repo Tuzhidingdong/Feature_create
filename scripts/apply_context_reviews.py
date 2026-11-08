@@ -232,30 +232,46 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 }
                 added_fact_count = 0
+                enriched_fact_count = 0
                 for fact in facts:
                     target_field = _target_field(str(fact["context_role"]))
                     target_rows = record.setdefault(target_field, [])
                     normalized = _context_fact_for_record(fact, task)
-                    key = _canonical({
-                        "raw_label": normalized["raw_label"],
-                        "raw_value": normalized["raw_value"],
-                        "unit": normalized.get("unit"),
-                        "context_role": normalized["context_role"],
-                        "evidence_refs": normalized["evidence_refs"],
-                    })
-                    existing = {
-                        _canonical({
-                            "raw_label": item.get("raw_label"),
-                            "raw_value": item.get("raw_value"),
-                            "unit": item.get("unit"),
-                            "context_role": item.get("context_role"),
-                            "evidence_refs": item.get("evidence_refs", []),
-                        })
-                        for item in target_rows if isinstance(item, dict)
-                    }
-                    if key not in existing:
+                    existing_fact = next(
+                        (
+                            item for item in target_rows
+                            if isinstance(item, dict)
+                            and item.get("raw_label") == normalized["raw_label"]
+                            and item.get("raw_value") == normalized["raw_value"]
+                            and item.get("unit") == normalized.get("unit")
+                            and item.get("context_role") == normalized["context_role"]
+                        ),
+                        None,
+                    )
+                    if existing_fact is None:
                         target_rows.append(normalized)
                         added_fact_count += 1
+                        continue
+
+                    # Same fact already exists from first-pass extraction: keep one
+                    # row and merge the newly verified cross-chunk provenance.
+                    existing_refs = existing_fact.setdefault("evidence_refs", [])
+                    seen_refs = {_canonical(ref) for ref in existing_refs if isinstance(ref, dict)}
+                    refs_added = 0
+                    for ref in normalized["evidence_refs"]:
+                        ref_key = _canonical(ref)
+                        if ref_key not in seen_refs:
+                            existing_refs.append(ref)
+                            seen_refs.add(ref_key)
+                            refs_added += 1
+                    task_ids = existing_fact.setdefault("cross_chunk_review_task_ids", [])
+                    if task["task_id"] not in task_ids:
+                        task_ids.append(task["task_id"])
+                    unresolved_ids = existing_fact.setdefault("origin_unresolved_ids", [])
+                    if task["unresolved_id"] not in unresolved_ids:
+                        unresolved_ids.append(task["unresolved_id"])
+                    if refs_added:
+                        enriched_fact_count += 1
 
                 # Assert this stage cannot alter the result's identity or numerical value.
                 for key, original in original_value_snapshot.items():
@@ -293,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
                     "rationale": payload.get("rationale"),
                     "review_evidence_refs": payload.get("review_evidence_refs", []),
                     "context_facts_added": added_fact_count if decision == "association_confirmed" else 0,
+                    "context_facts_enriched": enriched_fact_count if decision == "association_confirmed" else 0,
                     "reviewed_at": utc_now(),
                 })
 
@@ -311,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
                 "unresolved_id": unresolved.get("unresolved_id"),
                 "decision": decision,
                 "context_facts_added": added_fact_count if decision == "association_confirmed" else 0,
+                "context_facts_enriched": enriched_fact_count if decision == "association_confirmed" else 0,
             })
 
         atomic_write_jsonl(records_path, list(records_by_id.values()))
@@ -332,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         },
         "context_facts_added": sum(item["context_facts_added"] for item in applied),
+        "context_facts_enriched": sum(item["context_facts_enriched"] for item in applied),
         "applied_tasks": applied,
         "skipped_tasks": skipped,
         "protected_result_fields": [
