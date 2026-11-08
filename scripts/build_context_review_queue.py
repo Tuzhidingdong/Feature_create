@@ -496,6 +496,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-context-chars", type=int, default=60000)
     parser.add_argument("--max-attachments", type=int, default=8)
     parser.add_argument("--max-command-chars", type=int, default=7600)
+    parser.add_argument(
+        "--retry-inconclusive",
+        action="store_true",
+        help="Rebuild tasks previously marked insufficient_evidence or conflicting_evidence.",
+    )
     args = parser.parse_args(argv)
 
     if args.max_context_chars < 5000 or args.max_attachments < 1 or args.max_command_chars < 1000:
@@ -539,7 +544,11 @@ def main(argv: list[str] | None = None) -> int:
         if unresolved.get("item_type") != "missing_context":
             continue
         resolution_status = str(unresolved.get("resolution_status") or "pending")
-        if resolution_status != "pending":
+        final_statuses = {"association_confirmed", "no_association"}
+        inconclusive_statuses = {"insufficient_evidence", "conflicting_evidence"}
+        if resolution_status in final_statuses or (
+            resolution_status in inconclusive_statuses and not args.retry_inconclusive
+        ) or resolution_status not in ({"pending"} | inconclusive_statuses | final_statuses):
             skipped.append({
                 "unresolved_id": unresolved.get("unresolved_id"),
                 "reason": f"already_reviewed_status:{resolution_status}",
@@ -741,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
         "blocked_count": sum(task["task_status"] != "pending" for task in tasks),
         "skipped_unresolved_count": len(skipped),
         "blocked_unresolved_count": len(blocked),
+        "retry_inconclusive_enabled": args.retry_inconclusive,
         "skipped_unresolved": skipped,
         "blocked_unresolved": blocked,
         "tasks": tasks,
