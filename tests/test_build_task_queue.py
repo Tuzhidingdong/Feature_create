@@ -300,24 +300,21 @@ class BuildTaskQueueTests(unittest.TestCase):
 
             paper_index_path = Path(queue["tasks"][0]["paper_chunk_index_path"])
             paper_index = json.loads(paper_index_path.read_text(encoding="utf-8"))
-            segment_locators = [
-                segment
-                for chunk in paper_index["chunks"]
-                for segment in chunk["text_segment_locators"]
-            ]
-            self.assertGreater(len(segment_locators), 1)
-            self.assertTrue(all(item["unit_id"] and item["source_id"] == "SRC-LARGE-MAIN" for item in segment_locators))
-            self.assertTrue(all(
-                item["source_text_offset_end"] > item["source_text_offset_start"]
-                for item in segment_locators
-            ))
-            ordered_segments = sorted(segment_locators, key=lambda item: item["source_text_offset_start"])
-            self.assertEqual(0, ordered_segments[0]["source_text_offset_start"])
-            self.assertEqual(len(text), ordered_segments[-1]["source_text_offset_end"])
-            for previous, following in zip(ordered_segments, ordered_segments[1:]):
+            boundaries = paper_index["cross_chunk_text_boundaries"]
+            self.assertGreater(len(boundaries), 1)
+            self.assertTrue(all(item["source_id"] == "SRC-LARGE-MAIN" for item in boundaries))
+            for boundary in boundaries:
+                self.assertGreater(
+                    boundary["from_segment"]["source_text_offset_end"],
+                    boundary["from_segment"]["source_text_offset_start"],
+                )
                 self.assertEqual(
-                    previous["source_text_offset_end"],
-                    following["source_text_offset_start"],
+                    boundary["from_segment"]["source_text_offset_end"],
+                    boundary["to_segment"]["source_text_offset_start"],
+                )
+                self.assertNotEqual(
+                    boundary["from_segment"]["chunk_id"],
+                    boundary["to_segment"]["chunk_id"],
                 )
 
 
