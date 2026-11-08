@@ -359,31 +359,55 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
     if payload.get("paper_id") != task["paper_id"]:
         problems.append("paper_id does not match the dispatched task.")
 
+    expected_scopes = {
+        str(scope.get("scope_id"))
+        for scope in task.get("source_scopes", [])
+        if scope.get("scope_id")
+    }
+    expected_source_ids = set(task.get("source_ids", []))
+
+    def validate_scope_coverage(rows: list[dict[str, Any]], label: str) -> None:
+        returned_scope_ids = [str(item.get("scope_id") or "") for item in rows]
+        if expected_scopes:
+            returned = set(returned_scope_ids)
+            missing = sorted(expected_scopes - returned)
+            unexpected = sorted(returned - expected_scopes)
+            duplicates = sorted({
+                scope_id for scope_id in returned_scope_ids
+                if scope_id and returned_scope_ids.count(scope_id) > 1
+            })
+            if missing:
+                problems.append(f"{label}: missing assigned scope_ids: " + ", ".join(missing))
+            if unexpected:
+                problems.append(f"{label}: unexpected scope_ids: " + ", ".join(unexpected))
+            if duplicates:
+                problems.append(f"{label}: duplicate scope_ids: " + ", ".join(duplicates))
+            for item in rows:
+                if item.get("source_id") not in expected_source_ids:
+                    problems.append(
+                        f"{label}: source_id {item.get('source_id')!r} was not assigned to this task."
+                    )
+        else:
+            # Compatibility with older queue files that predate scope-aware chunking.
+            returned_source_ids = {item.get("source_id") for item in rows}
+            for missing_source_id in sorted(expected_source_ids - returned_source_ids):
+                problems.append(
+                    f"{label}: source_id {missing_source_id!r} is missing from the coverage manifest."
+                )
+
     if task["worker_role"] == "source_discovery":
         observations = {
             item.get("candidate_observation_id")
             for item in payload.get("feature_observations", [])
         }
-        coverage_source_ids = {
-            item.get("source_id") for item in payload.get("coverage", [])
-        }
-        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
-            problems.append(
-                f"coverage: source_id {missing_source_id!r} is missing from the coverage manifest."
-            )
+        validate_scope_coverage(payload.get("coverage", []), "coverage")
         for index, record in enumerate(payload.get("result_records", [])):
             if record.get("candidate_observation_id") not in observations:
                 problems.append(
                     f"result_records/{index}: candidate_observation_id is not in feature_observations."
                 )
     elif task["worker_role"] == "feature_audit":
-        coverage_source_ids = {
-            item.get("source_id") for item in payload.get("coverage_audit", [])
-        }
-        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
-            problems.append(
-                f"coverage_audit: source_id {missing_source_id!r} is missing from the independent coverage review."
-            )
+        validate_scope_coverage(payload.get("coverage_audit", []), "coverage_audit")
     return problems
 
 
