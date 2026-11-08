@@ -112,6 +112,7 @@
       "required": [
         "component",
         "source_id",
+        "scope_id",
         "status"
       ],
       "properties": {
@@ -130,6 +131,11 @@
         "source_id": {
           "type": "string",
           "minLength": 1
+        },
+        "scope_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identity of the page/table-row/source segment assigned in this chunk."
         },
         "status": {
           "enum": [
