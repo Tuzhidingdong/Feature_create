@@ -1,8 +1,8 @@
 """Deterministic source-aware chunk planning for preprocessed paper evidence.
 
-Text is split on upstream page/paragraph boundaries; table chunks retain original
-row/column coordinates; figure/table image assets remain attached to their parent
-evidence unit. No source content is discarded.
+Text is split on upstream page/paragraph boundaries; oversized tables are split
+at original row/cell boundaries; extracted images stay attached to their parent
+evidence unit whenever possible. No source content is discarded.
 """
 from __future__ import annotations
 
@@ -39,7 +39,9 @@ def _read_source_text(output_root: Path, source: dict[str, Any]) -> str:
 
 
 def _split_ranges(text: str, limit: int) -> list[tuple[int, int]]:
-    """Split text without dropping or duplicating characters."""
+    """Return contiguous, non-overlapping ranges covering every input character."""
+    if limit < 1:
+        raise ValueError("Chunk character limit must be positive.")
     if not text:
         return [(0, 0)]
     ranges: list[tuple[int, int]] = []
@@ -69,30 +71,29 @@ def _text_units(source: dict[str, Any], text: str, max_chars: int) -> list[dict[
     matches = list(PAGE_HEADING_RE.finditer(text))
     sections: list[tuple[str, int | None, int, int, str]] = []
     if matches:
-        prefix = text[:matches[0].start()]
         for index, match in enumerate(matches):
-            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-            start = match.start()
-            section = text[start:end]
-            page_number = int(match.group(1))
-            doc_type = match.group(2).upper()
-            if index == 0 and prefix:
-                section = prefix + section
-                start = 0
-            sections.append((doc_type, page_number, start, end, section))
-        tail_start = matches[-1].end()
-        # Any text after the final page section is already part of that section.
-        _ = tail_start
+            # Attach any document preamble to page 1 so it is never dropped.
+            global_start = 0 if index == 0 else match.start()
+            global_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            sections.append((
+                match.group(2).upper(),
+                int(match.group(1)),
+                global_start,
+                global_end,
+                text[global_start:global_end],
+            ))
     else:
         role = str(source.get("source_role") or "other").upper()
         sections.append((role, None, 0, len(text), text))
 
     units: list[dict[str, Any]] = []
-    for doc_type, page_number, global_start, global_end, section in sections:
+    for doc_type, page_number, global_start, _global_end, section in sections:
         ranges = _split_ranges(section, max_chars)
         for part_index, (start, end) in enumerate(ranges, start=1):
             content = section[start:end]
-            if not content.strip():
+            # Whitespace-only ranges are retained: dropping them breaks exact
+            # source reconstruction and can obscure section/page boundaries.
+            if not content:
                 continue
             before = section[max(0, start - DEFAULT_CONTEXT_CHARS):start] if start else ""
             after = section[end:min(len(section), end + DEFAULT_CONTEXT_CHARS)]
@@ -103,10 +104,9 @@ def _text_units(source: dict[str, Any], text: str, max_chars: int) -> list[dict[
                 "text_segment_count": len(ranges),
                 "source_text_offset_start": global_start + start,
                 "source_text_offset_end": global_start + end,
+                "page_text_offset_start": start,
+                "page_text_offset_end": end,
             }
-            if page_number is not None:
-                locator["page_text_offset_start"] = start
-                locator["page_text_offset_end"] = end
             unit_id = _stable_id(
                 "UNIT",
                 f"{source['source_id']}|{json.dumps(locator, sort_keys=True)}",
@@ -141,6 +141,47 @@ def _render_row(row_index: int, row: list[Any]) -> str:
     )
 
 
+def _table_base(table_id: str, doc_type: str, page_number: Any, caption: str) -> str:
+    return (
+        f"TABLE_ID: {table_id}\nDOCUMENT: {doc_type}\nPAGE: {page_number}\n"
+        f"CAPTION: {caption}\n"
+    )
+
+
+def _make_table_unit(
+    source: dict[str, Any],
+    *,
+    table_id: str,
+    doc_type: str,
+    page_number: Any,
+    content: str,
+    locator: dict[str, Any],
+    sort_index: int,
+) -> dict[str, Any]:
+    unit_id = _stable_id("UNIT", f"{source['source_id']}|{json.dumps(locator, sort_keys=True)}")
+    return {
+        "unit_id": unit_id,
+        "source_id": source["source_id"],
+        "source_ids": [source["source_id"]],
+        "source_type": source.get("source_type", "main_table" if doc_type == "MAIN" else "si_table"),
+        "component": source.get("component", "main_tables" if doc_type == "MAIN" else "si_tables"),
+        "source_role": source.get("source_role", "main" if doc_type == "MAIN" else "si"),
+        "doc_type": doc_type,
+        "page_number": page_number,
+        "unit_kind": "table",
+        "locator": locator,
+        "content": content,
+        "context_before": "",
+        "context_after": "",
+        "attachment_paths": [],
+        "asset_ids": [],
+        "table_id": table_id,
+        "figure_id": None,
+        "sort_type": 1,
+        "table_sort_index": sort_index,
+    }
+
+
 def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]:
     table = source.get("table_data") or {}
     rows = table.get("rows") or []
@@ -148,47 +189,50 @@ def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]
     doc_type = str(table.get("doc_type") or ("MAIN" if source.get("source_role") == "main" else "SI")).upper()
     page_number = table.get("page_number") or source.get("page_number")
     caption = table.get("caption") or source.get("caption") or ""
-    if not rows:
-        content = (
-            f"TABLE_ID: {table_id}\nDOCUMENT: {doc_type}\nPAGE: {page_number}\n"
-            f"CAPTION: {caption}\n[No native table rows were supplied upstream.]\n"
-        )
-        locator = {"table_id": table_id, "page_number": page_number, "row_indices_1based": []}
-        return [{
-            "unit_id": _stable_id("UNIT", f"{source['source_id']}|empty_table"),
-            "source_id": source["source_id"], "source_ids": [source["source_id"]],
-            "source_type": source.get("source_type", "other"),
-            "component": source.get("component", "other"), "source_role": source.get("source_role", "other"),
-            "doc_type": doc_type, "page_number": page_number, "unit_kind": "table",
-            "locator": locator, "content": content, "context_before": "", "context_after": "",
-            "attachment_paths": [], "asset_ids": [], "table_id": table_id, "figure_id": None,
-            "sort_type": 1,
-        }]
+    base = _table_base(table_id, doc_type, page_number, caption)
 
-    # Do not assume a single header row: keep the first three original rows as
-    # context in every later chunk, while assigning each original row to exactly
-    # one extraction chunk. Their original 1-based row indexes never change.
+    if not rows:
+        locator = {
+            "table_id": table_id,
+            "page_number": page_number,
+            "row_indices_1based": [],
+        }
+        return [_make_table_unit(
+            source,
+            table_id=table_id,
+            doc_type=doc_type,
+            page_number=page_number,
+            content=base + "[No native table rows were supplied upstream.]\n",
+            locator=locator,
+            sort_index=1,
+        )]
+
     context_count = min(3, len(rows))
     context_rows = rows[:context_count]
-    base = (
-        f"TABLE_ID: {table_id}\nDOCUMENT: {doc_type}\nPAGE: {page_number}\n"
-        f"CAPTION: {caption}\n"
+    context_text_full = "TABLE PREFIX ROWS FOR STRUCTURAL/HEADER CONTEXT ONLY:\n"
+    context_text_full += "".join(
+        _render_row(index, row) for index, row in enumerate(context_rows, start=1)
     )
-    context_text = "TABLE PREFIX ROWS FOR HEADER/STRUCTURE CONTEXT ONLY; DO NOT EXTRACT AGAIN:\n"
-    context_text += "".join(_render_row(i, row) for i, row in enumerate(context_rows, start=1))
-    units: list[dict[str, Any]] = []
-    current: list[tuple[int, list[Any]]] = []
-    current_size = len(base) + len(context_text)
+    # A pathological header is kept in the attached chunk evidence index,
+    # rather than duplicated into every task bundle.
+    if len(context_text_full) <= max(256, int(max_chars * 0.30)):
+        context_text = context_text_full
+    else:
+        context_text = (
+            "HEADER CONTEXT: see header_context_rows in the attached "
+            "chunk_evidence_index.json; original row numbers are retained.\n"
+        )
 
-    def emit(group: list[tuple[int, list[Any]]], part_index: int) -> None:
+    context_budget = len(context_text)
+    current: list[tuple[int, list[Any]]] = []
+    current_size = len(base) + context_budget
+    units: list[dict[str, Any]] = []
+
+    def emit_rows(group: list[tuple[int, list[Any]]]) -> None:
         if not group:
             return
         row_indices = [index for index, _ in group]
         assigned = "".join(_render_row(index, row) for index, row in group)
-        content = base + context_text + (
-            f"\nASSIGNED ORIGINAL TABLE ROWS (review/extract these rows): "
-            f"{row_indices[0]}-{row_indices[-1]}\n"
-        ) + assigned
         locator = {
             "table_id": table_id,
             "page_number": page_number,
@@ -197,42 +241,141 @@ def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]
             "row_indices_1based": row_indices,
             "column_count": max((len(row) for _, row in group), default=0),
             "header_context_row_indices_1based": list(range(1, context_count + 1)),
-            "table_chunk_index_1based": part_index,
+            "table_chunk_index_1based": len(units) + 1,
         }
-        unit_id = _stable_id("UNIT", f"{source['source_id']}|{json.dumps(locator, sort_keys=True)}")
-        units.append({
-            "unit_id": unit_id,
-            "source_id": source["source_id"],
-            "source_ids": [source["source_id"]],
-            "source_type": source.get("source_type", "main_table" if doc_type == "MAIN" else "si_table"),
-            "component": source.get("component", "main_tables" if doc_type == "MAIN" else "si_tables"),
-            "source_role": source.get("source_role", "main" if doc_type == "MAIN" else "si"),
-            "doc_type": doc_type,
-            "page_number": page_number,
-            "unit_kind": "table",
-            "locator": locator,
-            "content": content,
-            "context_before": "",
-            "context_after": "",
-            "attachment_paths": [],
-            "asset_ids": [],
-            "table_id": table_id,
-            "figure_id": None,
-            "sort_type": 1,
-        })
+        content = (
+            base + context_text
+            + f"\nASSIGNED ORIGINAL TABLE ROWS (review/extract these rows): {row_indices[0]}-{row_indices[-1]}\n"
+            + assigned
+        )
+        units.append(_make_table_unit(
+            source,
+            table_id=table_id,
+            doc_type=doc_type,
+            page_number=page_number,
+            content=content,
+            locator=locator,
+            sort_index=len(units) + 1,
+        ))
+
+    def emit_cell_fragments(row_index: int, row: list[Any]) -> None:
+        nonlocal units
+        row_header = str(row[0]) if row else ""
+        column_headers: list[str] = []
+        for column_index in range(len(row)):
+            header_parts = [
+                str(context_row[column_index])
+                for context_row in context_rows
+                if column_index < len(context_row) and context_row[column_index] not in (None, "")
+            ]
+            column_headers.append(" / ".join(header_parts))
+
+        prefix = (
+            base + context_text
+            + f"\nASSIGNED ORIGINAL TABLE ROW: {row_index}\n"
+            + f"ROW LABEL (column 1, when present): {row_header}\n"
+        )
+        fragments: list[tuple[int, int, int, int, str, int]] = []
+        cell_budget = max(128, max_chars - len(prefix) - 240)
+        for column_index, value in enumerate(row, start=1):
+            cell_text = "" if value is None else str(value)
+            pieces = _split_ranges(cell_text, cell_budget)
+            for segment_index, (start, end) in enumerate(pieces, start=1):
+                fragments.append((
+                    column_index,
+                    start,
+                    end,
+                    segment_index,
+                    cell_text[start:end],
+                    len(pieces),
+                ))
+
+        current_fragments: list[tuple[int, int, int, int, str, int]] = []
+        current_len = len(prefix)
+
+        def emit_fragments(group: list[tuple[int, int, int, int, str, int]]) -> None:
+            if not group:
+                return
+            rendered_cells = []
+            cell_locators = []
+            for column_index, start, end, segment_index, value, segment_count in group:
+                header = column_headers[column_index - 1] if column_index <= len(column_headers) else ""
+                rendered_cells.append(
+                    "ASSIGNED_CELL_FRAGMENT_JSON: "
+                    + json.dumps({
+                        "original_row_index_1based": row_index,
+                        "original_column_index_1based": column_index,
+                        "column_header_context": header,
+                        "cell_text_offset_start": start,
+                        "cell_text_offset_end": end,
+                        "cell_text_segment_index_1based": segment_index,
+                        "cell_text_segment_count": segment_count,
+                        "cell_text_fragment": value,
+                    }, ensure_ascii=False, separators=(",", ":"))
+                )
+                cell_locators.append({
+                    "row_index_1based": row_index,
+                    "column_index_1based": column_index,
+                    "cell_text_offset_start": start,
+                    "cell_text_offset_end": end,
+                    "cell_text_segment_index_1based": segment_index,
+                    "cell_text_segment_count": segment_count,
+                })
+            locator = {
+                "table_id": table_id,
+                "page_number": page_number,
+                "row_index_1based": row_index,
+                "row_indices_1based": [row_index],
+                "column_indices_1based": sorted({cell["column_index_1based"] for cell in cell_locators}),
+                "cell_fragments": cell_locators,
+                "row_header": row_header,
+                "header_context_row_indices_1based": list(range(1, context_count + 1)),
+                "cell_level_chunk_index_1based": len(units) + 1,
+            }
+            content = prefix + "\n".join(rendered_cells) + "\n"
+            units.append(_make_table_unit(
+                source,
+                table_id=table_id,
+                doc_type=doc_type,
+                page_number=page_number,
+                content=content,
+                locator=locator,
+                sort_index=len(units) + 1,
+            ))
+
+        for fragment in fragments:
+            rendered = "ASSIGNED_CELL_FRAGMENT_JSON: " + json.dumps({
+                "original_row_index_1based": row_index,
+                "original_column_index_1based": fragment[0],
+                "cell_text_offset_start": fragment[1],
+                "cell_text_offset_end": fragment[2],
+                "cell_text_fragment": fragment[4],
+            }, ensure_ascii=False, separators=(",", ":"))
+            if current_fragments and current_len + len(rendered) > max_chars:
+                emit_fragments(current_fragments)
+                current_fragments = []
+                current_len = len(prefix)
+            current_fragments.append(fragment)
+            current_len += len(rendered)
+        emit_fragments(current_fragments)
 
     for row_index, row in enumerate(rows, start=1):
         rendered = _render_row(row_index, row)
-        extra = len(rendered)
-        if current and current_size + extra > max_chars:
-            emit(current, len(units) + 1)
+        row_size = len(rendered)
+        if row_size + len(base) + context_budget > max_chars:
+            emit_rows(current)
             current = []
-            current_size = len(base) + len(context_text)
+            current_size = len(base) + context_budget
+            emit_cell_fragments(row_index, row)
+            continue
+        if current and current_size + row_size > max_chars:
+            emit_rows(current)
+            current = []
+            current_size = len(base) + context_budget
         current.append((row_index, row))
-        current_size += extra
-        # A single exceptionally large native row is kept as one explicit
-        # atomic evidence unit; it is never silently omitted or truncated.
-    emit(current, len(units) + 1)
+        current_size += row_size
+
+    emit_rows(current)
     return units
 
 
@@ -245,6 +388,10 @@ def build_evidence_units(
     parent_lookup: dict[tuple[str, str], int] = {}
 
     for source in sources:
+        # Visual assets are attached in the second pass to avoid creating a
+        # duplicate standalone source unit when a matching caption/table exists.
+        if source.get("is_visual_asset"):
+            continue
         source_type = str(source.get("source_type") or "other")
         if source_type in {"main_text", "si_text"}:
             text = _read_source_text(source_output_root, source)
@@ -295,13 +442,16 @@ def build_evidence_units(
             units.append(unit)
 
     # Attach already-extracted images to their exact figure/table evidence unit.
-    # Each image is assigned once (to the first table-row chunk for tables).
+    # A table crop is assigned once to the first evidence unit for that table.
     for source in sources:
         if not source.get("is_visual_asset"):
             continue
         path = source.get("attachment_path")
         kind = "table" if source.get("table_id") else "figure" if source.get("figure_id") else None
-        parent_index = parent_lookup.get((kind, str(source.get("table_id") or source.get("figure_id")))) if kind else None
+        parent_index = (
+            parent_lookup.get((kind, str(source.get("table_id") or source.get("figure_id"))))
+            if kind else None
+        )
         if parent_index is not None:
             parent = units[parent_index]
             if path:
@@ -348,6 +498,7 @@ def build_evidence_units(
         0 if unit.get("source_role") == "main" else 1,
         int(unit.get("page_number") or 0),
         int(unit.get("sort_type") or 0),
+        int(unit.get("table_sort_index") or 0),
         str(unit.get("unit_id")),
     ))
     for unit in units:
@@ -361,6 +512,8 @@ def group_units_into_chunks(
     max_chars: int,
     max_attachments: int,
 ) -> list[dict[str, Any]]:
+    if max_chars < 1 or max_attachments < 1:
+        raise ValueError("Chunk size and attachment limits must be positive.")
     if not units:
         return []
     chunks: list[dict[str, Any]] = []
@@ -384,7 +537,11 @@ def group_units_into_chunks(
             "source_count": len(source_ids),
             "content_chars": current_chars,
             "attachment_paths": sorted(current_attachments),
-            "oversize_atomic_unit": any(len(unit.get("content", "")) > max_chars for unit in current),
+            "oversize_atomic_unit": any(
+                len(unit.get("content", "")) > max_chars
+                or len(unit.get("attachment_paths", [])) > max_attachments
+                for unit in current
+            ),
         })
         current = []
         current_chars = 0
@@ -393,19 +550,16 @@ def group_units_into_chunks(
     for unit in units:
         content_chars = len(str(unit.get("content") or ""))
         unit_attachments = set(unit.get("attachment_paths") or [])
-        would_exceed = (
-            current
-            and (
-                current_chars + content_chars > max_chars
-                or len(current_attachments | unit_attachments) > max_attachments
-            )
+        would_exceed = current and (
+            current_chars + content_chars > max_chars
+            or len(current_attachments | unit_attachments) > max_attachments
         )
         if would_exceed:
             flush()
         current.append(unit)
         current_chars += content_chars
         current_attachments.update(unit_attachments)
-        if content_chars > max_chars:
+        if content_chars > max_chars or len(unit_attachments) > max_attachments:
             flush()
     flush()
     total = len(chunks)
