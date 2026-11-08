@@ -170,6 +170,24 @@ Python applies a merge only when the Worker B recommendation is SAME_FEATURE and
 
 After a merge, pairs that still reference the retired Feature ID are invalidated and regenerated against the surviving Feature ID. Raw observations and decision history are retained.
 
+## 10. Export the two formal TXT files
+
+Only after all active Features are confirmed and all candidate pairs are resolved:
+
+```powershell
+python scripts/export_txt.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_output"
+```
+
+The exporter creates exactly two formal TXT files:
+- `result_feature_records.txt`
+- `result_feature_list.txt`
+
+Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal `export_audit.json` for diagnostics; that audit file is not a formal deliverable.
+
 ## 10. Inspect the run
 
 Key files:
@@ -181,14 +199,14 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 11. Important limitations in v0.1
+## 12. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - PDF page/paragraph/table locators are not yet enriched beyond page markers and model-provided locators.
 - Table quote verification is text-occurrence checking, not yet cell-coordinate verification against structured table data.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
 - Oversized paper bundles are blocked rather than chunked automatically.
-- The cross-paper Registry review/merge mechanism is implemented but must be checked on a manually inspected pilot; existing-schema FEATURE_ID mapping and final TXT export are not yet implemented.
+- The cross-paper Registry review/merge mechanism and final TXT exporter are implemented but still require a manually inspected pilot. Existing-schema FEATURE_ID mapping is not yet implemented.
 - The worker runner and preparation pipeline still require a local Windows smoke test against the installed OpenCode CLI version before production use.
 
 Do not treat this version as production-ready until the local smoke test and a manually inspected pilot paper are successful.
