@@ -354,6 +354,12 @@ def add_observation(
         candidate_id,
         source_id,
         raw_name,
+        str(candidate.get("raw_definition") or ""),
+        str(candidate.get("reported_unit") or ""),
+        str(candidate.get("reported_method") or ""),
+        str(candidate.get("result_type") or ""),
+        str(candidate.get("variable_role") or ""),
+        json.dumps(evidence_refs if (evidence_refs := candidate.get("evidence_refs") or []) else [], sort_keys=True, ensure_ascii=False),
     )
     existing_observation = next(
         (item for item in registry["observations"] if item["observation_id"] == observation_id),
@@ -366,7 +372,6 @@ def add_observation(
             existing_observation,
         )
 
-    evidence_refs = candidate.get("evidence_refs") or []
     summary = evidence_summary(evidence_refs, source_map, manifest_root)
     variable_role = candidate.get("variable_role", "uncertain")
     if variable_role in {"condition_only", "sample_descriptor"}:
@@ -468,6 +473,7 @@ def make_record(
     observation_id: str,
     registry_feature_id: str | None,
     raw_feature_name: str,
+    reported_method: str | None,
     source_map: dict[str, dict[str, Any]],
     manifest_root: Path,
 ) -> dict[str, Any]:
@@ -486,12 +492,25 @@ def make_record(
     if value_status == "visual_only" and candidate_record.get("numeric_value") is not None:
         extraction_status = "under_review"
 
+    context_fingerprint = json.dumps(
+        {
+            "sample_identity": candidate_record.get("sample_identity", []),
+            "condition_facts": candidate_record.get("condition_facts", []),
+            "time_cycle_facts": candidate_record.get("time_cycle_facts", []),
+            "protocol_facts": candidate_record.get("protocol_facts", []),
+            "other_context_facts": candidate_record.get("other_context_facts", []),
+            "evidence_refs": refs,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
     record_id = stable_id(
         "REC",
         task["task_id"],
         str(candidate_record["candidate_record_id"]),
         str(candidate_record["source_id"]),
         str(candidate_record["raw_value"]),
+        context_fingerprint,
     )
     source = source_map.get(candidate_record["source_id"], {})
     source_type = refs[0].get("source_type") if refs else None
@@ -518,7 +537,7 @@ def make_record(
         "time_cycle_facts": candidate_record.get("time_cycle_facts", []),
         "protocol_facts": candidate_record.get("protocol_facts", []),
         "other_context_facts": candidate_record.get("other_context_facts", []),
-        "measurement_or_calculation_method": None,
+        "measurement_or_calculation_method": reported_method,
         "source_id": candidate_record["source_id"],
         "source_type": source_type,
         "source_location": [ref.get("locator", {}) for ref in refs],
@@ -597,8 +616,10 @@ def build_feature_pair_queue(registry: dict[str, Any], output_path: Path) -> dic
                     best_containment = max(best_containment, containment)
                     exact_name = exact_name or normalize_text(str(name_a)) == normalize_text(str(name_b))
                     acronym = acronym or acronym_match(str(name_a), str(name_b)) or acronym_match(str(name_b), str(name_a))
-            definition_ratio, definition_overlap, definition_containment = similarity(
-                " ".join(left_definitions), " ".join(right_definitions)
+            definition_ratio, definition_overlap, definition_containment = (
+                similarity(" ".join(left_definitions), " ".join(right_definitions))
+                if any(left_definitions) and any(right_definitions)
+                else (0.0, 0.0, 0.0)
             )
             best_overlap = max(best_overlap, definition_overlap)
             best_containment = max(best_containment, definition_containment)
@@ -646,7 +667,7 @@ def build_feature_pair_queue(registry: dict[str, Any], output_path: Path) -> dic
                     "definition": left.get("definition"),
                     "semantic_signature": left.get("semantic_signature"),
                     "aliases": left.get("aliases", []),
-                    "units": left.get("unit_dimensions", []),
+                    "units": sorted(left_units),
                     "observation_ids": left.get("observation_ids", []),
                 },
                 "feature_b": {
@@ -654,7 +675,7 @@ def build_feature_pair_queue(registry: dict[str, Any], output_path: Path) -> dic
                     "definition": right.get("definition"),
                     "semantic_signature": right.get("semantic_signature"),
                     "aliases": right.get("aliases", []),
-                    "units": right.get("unit_dimensions", []),
+                    "units": sorted(right_units),
                     "observation_ids": right.get("observation_ids", []),
                 },
                 "candidate_retrieval": {
