@@ -6,90 +6,92 @@
 - Python 3.10+.
 - OpenCode CLI installed and authenticated for OpenCode Go.
 - Current OpenCode Go plan/account allows access to the selected limited-time free models in the user's region.
-- A completed [chem-literature](https://github.com/Tuzhidingdong/chem-literature) run.
-- The resulting `research_corpus_paired.csv` and the PDF/SI files referenced by its `local_pdf_path` and `local_si_info` columns.
-- Enough local disk space for extracted text, expanded SI ZIP members, visual pages, task bundles, raw worker outputs, and session exports.
+- A completed [chem-literature preprocessing-branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) run.
+- \`research_corpus_paired.csv\` contains \`preprocessing_path\`, \`preprocessing_status\`, and the referenced \`01_preprocessing/\` packages.
+- Enough local disk space for task bundles, pre-extracted image attachments, worker outputs, and session exports. Feature_create does not create another parsed PDF/SI corpus.
 
 Install dependencies:
 
-```powershell
+~~~powershell
 python -m pip install -r requirements.txt
-```
+~~~
 
 Check the current CLI version and model command syntax:
 
-```powershell
+~~~powershell
 opencode --version
 opencode models --help
 opencode run --help
 opencode export --help
-```
+~~~
 
-The exact flags are checked against the installed CLI version by the user before the first real dispatch. The workflow uses current documented `opencode run --model`, `--agent`, `--file`, `--format json`, `--title`, and `--dir` options.
+The workflow uses \`opencode run --model\`, \`--agent\`, \`--file\`, \`--format json\`, \`--title\`, and \`--dir\`.
 
-## 2. Prepare the chem-literature paired corpus
+## 2. Prepare the upstream-preprocessed corpus
 
-Run `chem-literature` first. Its final curated artifact is:
+Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. The final \`research_corpus_paired.csv\` must include:
+- \`local_pdf_path\` and \`local_si_info\` for raw-source provenance and hash verification;
+- \`preprocessing_path\` pointing to that paper's \`01_preprocessing/\`;
+- \`preprocessing_status\` matching \`evidence_index.json\`;
+- \`preprocessing_qc_report\` (recommended).
 
-`research_corpus_paired.csv`
+Each package must include:
+- \`evidence_index.json\` and \`PREPROCESSING_QC_REPORT.md\`;
+- \`main_analysis.md\` and \`si_analysis.md\`;
+- \`extracted_tables/\` and \`extracted_figures/\` assets;
+- page, table, figure, SI-reference, coordinate, and hash metadata in the evidence index.
 
-The CSV contains the selected original-research papers and the local file paths in:
-- `local_pdf_path` — full-text PDF path;
-- `local_si_info` — supporting-information file path (currently one path per row).
+The CSV is the complete paper-selection authority. Feature_create does not scan the upstream folders, add unlisted files, repeat article screening, or substitute missing PDFs/SI.
 
-The paired CSV is authoritative. Feature_create must not recursively scan `papers_pdf/` or `papers_si/`, add unlisted files, re-filter articles, or attempt to repair a missing pair by finding a similarly named file.
+The current chem-literature workflow writes relative paths against the directory from which \`run_workflow.py\` was executed. For example, when it is run from:
 
-The current chem-literature workflow writes its CSV and `papers_pdf/` / `papers_si/` paths relative to the directory from which `run_workflow.py` is executed. For example, when it is run from:
+\`E:\\Zinc_batters_datas\\chem-literature\`
 
-`E:\\Zinc_batters_datas\\chem-literature`
+index the upstream packages:
 
-use:
-
-```powershell
-python scripts/prepare_corpus.py `
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
+~~~powershell
+python scripts/prepare_corpus.py \`
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
+  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" \`
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
-```
+~~~
 
-`--corpus-root` is the base directory against which relative CSV paths are resolved. It defaults to the directory containing the CSV, but should be explicit when the upstream workflow was run from another working directory.
+The preparation adapter:
+- reads only rows from \`research_corpus_paired.csv\`;
+- resolves each row's \`preprocessing_path\`;
+- validates package version, CSV/package DOI, preprocessing status, QC report, and evidence index;
+- hashes CSV-listed raw MAIN/SI files to verify they still match upstream inventory records;
+- validates extracted image hashes and referenced table exports;
+- preserves page blocks, table rows/cells, figure IDs/bounding boxes, SI references, scan flags, QC warnings, and unsupported-SI status;
+- copies the evidence index byte-for-byte into the Feature_create run.
 
-The preparation step:
-- reads only rows present in `research_corpus_paired.csv`;
-- verifies the physical existence of every referenced main PDF and SI file;
-- records missing files and invalid PDF magic as blocked pair-integrity items;
-- extracts text from main PDFs and supported SI files;
-- safely expands SI ZIP archives into the Feature_create run directory, without modifying the upstream archive;
-- parses PDF, DOCX, XLSX, CSV/TSV, HTML, XML/TEI, and plain-text SI files;
-- renders PDF pages with Figure/Table/Scheme captions for visual inspection;
-- records the upstream CSV path and SHA-256 in the derived internal manifest.
+It does **not** parse PDFs, render pages, extract tables, unpack SI archives, or parse DOCX/XLSX. Raw MAIN/SI files are not attached to workers.
 
 Outputs:
-- `source_manifest.json` — internal manifest derived only from the curated CSV and its referenced files;
-- `extracted_text/` — extracted text for each listed source;
-- `si_archives/` — safe copies of supported members from listed SI ZIP archives;
-- `visual_assets/` — rendered figure/table pages from listed PDFs;
-- `prepare_summary.json` — row, paper, source, and file-pair integrity counts.
+- \`source_manifest.json\` — internal logical-source index derived from the paired CSV and upstream packages;
+- \`extracted_text/\` — exact staging copies of upstream MAIN/SI text and structured table/caption text for evidence checking;
+- \`upstream_evidence_indexes/\` — exact copies of upstream \`evidence_index.json\` files;
+- \`prepare_summary.json\` — ready/blocked paper and source counts.
 
-A separate `research_corpus_paired_manifest.json` is not required; the current upstream workflow generates the CSV. The internal Feature_create manifest is derived downstream from that CSV.
-
-A listed file that is missing or invalid remains visible in the manifest and blocks that paper's Worker A/B tasks. It is never replaced by an unlisted file. A scanned PDF with no extractable text remains recorded as partially/unparsed evidence; this step does not perform OCR.
+\`COMPLETE\` packages may proceed normally. \`WARNING_SCANNED_PAGES\`, \`PARTIAL_SI_UNSUPPORTED\`, and \`PARTIAL_NO_SI\` are preserved as warnings and must remain visible to both workers. A missing/corrupt package, unsupported package version, raw-source hash mismatch, or missing MAIN parsed text blocks the paper instead of falling back to raw-document parsing.
 
 ## 3. Build isolated Worker tasks
 
-```powershell
+~~~powershell
 python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
-```
+~~~
 
-One independent Worker A and Worker B task is created per paper. The first-pass outputs are isolated. Each task has:
-- stable task ID;
-- exact pinned model reference;
-- worker prompt;
-- consolidated source text bundle;
-- original PDF and image attachments when present;
-- source ID and file provenance.
+One independent Worker A and Worker B task is created per eligible paper. Each task has:
+- stable task ID and exact pinned model reference;
+- worker prompt and consolidated upstream-parsed text/table bundle;
+- exact upstream \`evidence_index.json\` and QC report attachments;
+- pre-extracted figure/table image assets when available;
+- stable source IDs and original page/table/figure/SI locators;
+- raw PDF/SI hash inventory for provenance only.
 
-If the bundle exceeds the configured maximum, it is marked blocked rather than silently truncated. A later task splitter will allow oversized papers to be processed in bounded chunks without losing source coverage.
+The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and source-index/QC files. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding coverage incomplete.
+
+If the bundle exceeds the configured maximum, it is marked blocked rather than silently truncated. Bounded semantic chunking will be handled as a separate task-splitting stage; it must split only upstream-parsed content and preserve the original source IDs and locators.
 
 ## 4. Verify the free model pair before dispatch
 
