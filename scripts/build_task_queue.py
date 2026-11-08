@@ -453,24 +453,44 @@ def main(argv: list[str] | None = None) -> int:
         units = build_evidence_units(
             paper_sources,
             manifest_root,
-            max_unit_chars=max(1024, int(args.max_bundle_chars * 0.65)),
+            max_unit_chars=max(1024, int(args.max_bundle_chars * 0.45)),
         )
-        chunks = group_units_into_chunks(
-            units,
-            max_chars=max(1024, int(args.max_bundle_chars * 0.78)),
-            max_attachments=args.max_attachments_per_chunk,
-        )
+        if not units:
+            continue
+
+        # Iteratively reduce the content budget if the rendered bundle (including
+        # paper-wide navigation metadata) still exceeds the requested hard limit.
+        chunks: list[dict[str, Any]] = []
+        paper_index: dict[str, Any] = {}
+        bundle_lengths: dict[str, int] = {}
+        for fraction in (0.55, 0.42, 0.30, 0.20):
+            candidate_chunks = group_units_into_chunks(
+                units,
+                max_chars=max(1024, int(args.max_bundle_chars * fraction)),
+                max_attachments=args.max_attachments_per_chunk,
+            )
+            candidate_index = _paper_chunk_index(
+                paper,
+                candidate_chunks,
+                upstream_index,
+                paper.get("evidence_index_sha256"),
+            )
+            candidate_lengths = {}
+            for candidate in candidate_chunks:
+                candidate_bundle, _, _ = build_bundle(
+                    paper, candidate, candidate_index, Path("chunk_evidence_index.json")
+                )
+                candidate_lengths[candidate["chunk_id"]] = len(candidate_bundle)
+            chunks = candidate_chunks
+            paper_index = candidate_index
+            bundle_lengths = candidate_lengths
+            if all(length <= args.max_bundle_chars for length in candidate_lengths.values()):
+                break
         if not chunks:
             continue
 
         paper_dir = output_root / "tasks" / hashlib.sha1(paper["paper_id"].encode("utf-8")).hexdigest()[:10]
         paper_dir.mkdir(parents=True, exist_ok=True)
-        paper_index = _paper_chunk_index(
-            paper,
-            chunks,
-            upstream_index,
-            paper.get("evidence_index_sha256"),
-        )
         paper_index_path = paper_dir / "paper_chunk_index.json"
         paper_index_path.write_text(
             json.dumps(paper_index, ensure_ascii=False, indent=2),
@@ -515,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             bundle_path = chunk_dir / "task_input.md"
             bundle_path.write_text(bundle, encoding="utf-8", newline="\n")
+            bundle_char_count = len(bundle)
             if chunk["oversize_atomic_unit"]:
                 oversize_atomic_unit_count += 1
 
@@ -570,6 +591,8 @@ def main(argv: list[str] | None = None) -> int:
                     task_status = "blocked_pair_integrity"
                 elif str(paper.get("input_status", "")).startswith("blocked"):
                     task_status = "blocked_preprocessing"
+                elif bundle_char_count > args.max_bundle_chars:
+                    task_status = "blocked_bundle_over_limit"
                 elif command_chars > args.max_command_chars:
                     task_status = "blocked_command_line"
                 else:
@@ -613,7 +636,9 @@ def main(argv: list[str] | None = None) -> int:
                     "command_length_estimate": command_chars,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "input_fingerprint": chunk_hash,
+                    "bundle_char_count": bundle_char_count,
                     "max_bundle_chars": args.max_bundle_chars,
+                    "bundle_within_limit": bundle_char_count <= args.max_bundle_chars,
                     "oversize_atomic_unit": chunk["oversize_atomic_unit"],
                 }
                 task_path = task_dir / "task.json"
@@ -640,6 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         "pending_count": sum(task["task_status"] == "pending" for task in tasks),
         "blocked_count": sum(task["task_status"] != "pending" for task in tasks),
         "oversize_atomic_unit_count": oversize_atomic_unit_count,
+        "bundle_over_limit_count": sum(1 for task in tasks if task.get("task_status") == "blocked_bundle_over_limit"),
         "chunking_policy": {
             "text_boundary": "upstream page headings, then paragraph/newline boundaries",
             "table_boundary": "original source table rows with global 1-based row and column indices",
@@ -659,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
         "pending_count": queue["pending_count"],
         "blocked_count": queue["blocked_count"],
         "oversize_atomic_unit_count": oversize_atomic_unit_count,
+        "bundle_over_limit_count": queue["bundle_over_limit_count"],
         "queue": str(queue_path),
     }
     (output_root / "queue_summary.json").write_text(
