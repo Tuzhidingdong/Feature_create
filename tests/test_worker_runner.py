@@ -123,6 +123,61 @@ class WorkerRunnerTests(unittest.TestCase):
             for problem in problems
         ))
 
+    def test_cross_chunk_context_worker_uses_worker_b_and_requires_both_sides(self) -> None:
+        task = {
+            "task_id": "TASK-CONTEXT-1",
+            "paper_id": "PAPER-1",
+            "worker_role": "cross_chunk_context",
+            "unresolved_id": "UNRES-1",
+            "record_id": "REC-1",
+            "current_unit_ids": ["UNIT-A"],
+            "target_unit_ids": ["UNIT-B"],
+            "evidence_unit_map": [
+                {"unit_id": "UNIT-A", "chunk_id": "CHUNK-A", "source_ids": ["SRC-A"]},
+                {"unit_id": "UNIT-B", "chunk_id": "CHUNK-B", "source_ids": ["SRC-B"]},
+            ],
+        }
+        current_ref = {
+            "evidence_side": "current",
+            "source_id": "SRC-A",
+            "locator": {"chunk_id": "CHUNK-A", "unit_id": "UNIT-A"},
+            "evidence_status": "verified_text",
+            "quote_or_cell_value": "Capacity for S-01 was 152.",
+        }
+        target_ref = {
+            "evidence_side": "target",
+            "source_id": "SRC-B",
+            "locator": {"chunk_id": "CHUNK-B", "unit_id": "UNIT-B"},
+            "evidence_status": "verified_text",
+            "quote_or_cell_value": "S-01 denotes the additive electrolyte.",
+        }
+        payload = {
+            "contract_version": "0.1",
+            "task_type": "cross_chunk_context",
+            "task_id": "TASK-CONTEXT-1",
+            "paper_id": "PAPER-1",
+            "unresolved_id": "UNRES-1",
+            "record_id": "REC-1",
+            "decision": "association_confirmed",
+            "rationale": "Exact sample identifier is shared.",
+            "review_evidence_refs": [current_ref, target_ref],
+            "context_facts": [{
+                "context_role": "sample_identity",
+                "raw_label": "S-01",
+                "raw_value": "additive electrolyte",
+                "unit": None,
+                "evidence_refs": [current_ref, target_ref],
+            }],
+        }
+        self.assertEqual(validate_worker_payload(payload, task), [])
+
+        invalid = json.loads(json.dumps(payload))
+        invalid["context_facts"][0]["evidence_refs"][1]["locator"]["chunk_id"] = "CHUNK-A"
+        self.assertTrue(any(
+            "chunk_id does not match" in item
+            for item in validate_worker_payload(invalid, task)
+        ))
+
     def test_legacy_queue_accepts_source_level_coverage_without_scope_id(self) -> None:
         task = {
             "task_id": "TASK-LEGACY",
