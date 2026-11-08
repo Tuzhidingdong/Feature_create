@@ -9,6 +9,86 @@ from scripts.audit_records import main
 
 
 class AuditRecordsTests(unittest.TestCase):
+    def test_cost_audit_includes_cross_paper_and_schema_mapping_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            recon_out = root / "recon"
+            mapping_out = root / "mapping"
+            recon_out.mkdir()
+            mapping_out.mkdir()
+            common_state = {
+                "status": "complete",
+                "requested_model": "opencode-go/beam-free",
+                "observed_models": ["opencode-go/beam-free"],
+                "reported_cost": 0,
+                "tokens": {
+                    "input": 100, "output": 20, "reasoning": 0,
+                    "cache_read": 0, "cache_write": 0,
+                },
+            }
+            (recon_out / "task_state.json").write_text(json.dumps(common_state), encoding="utf-8")
+            (mapping_out / "task_state.json").write_text(json.dumps(common_state), encoding="utf-8")
+
+            manifest = {"corpus_fingerprint": "fingerprint", "sources": [], "papers": []}
+            queue = {"tasks": []}
+            recon_queue = {"tasks": [{
+                "task_id": "RECON-1",
+                "worker_role": "semantic_reconciliation",
+                "model_ref": "opencode-go/beam-free",
+                "output_dir": str(recon_out),
+            }]}
+            mapping_queue = {"tasks": [{
+                "task_id": "MAPPING-1",
+                "worker_role": "existing_schema_mapping",
+                "model_ref": "opencode-go/beam-free",
+                "output_dir": str(mapping_out),
+            }]}
+            registry = {"canonical_features": []}
+
+            paths = {
+                "manifest": root / "manifest.json",
+                "queue": root / "queue.json",
+                "recon": root / "reconciliation.json",
+                "mapping": root / "mapping.json",
+                "registry": root / "registry.json",
+                "records": root / "records.jsonl",
+                "review": root / "review.jsonl",
+                "output": root / "audit.json",
+            }
+            paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+            paths["queue"].write_text(json.dumps(queue), encoding="utf-8")
+            paths["recon"].write_text(json.dumps(recon_queue), encoding="utf-8")
+            paths["mapping"].write_text(json.dumps(mapping_queue), encoding="utf-8")
+            paths["registry"].write_text(json.dumps(registry), encoding="utf-8")
+            paths["records"].write_text("", encoding="utf-8")
+            paths["review"].write_text("", encoding="utf-8")
+
+            code = main([
+                "--manifest", str(paths["manifest"]),
+                "--queue", str(paths["queue"]),
+                "--reconciliation-queue", str(paths["recon"]),
+                "--mapping-queue", str(paths["mapping"]),
+                "--registry", str(paths["registry"]),
+                "--records", str(paths["records"]),
+                "--review-queue", str(paths["review"]),
+                "--run-dir", str(root / "run"),
+                "--output", str(paths["output"]),
+            ])
+            self.assertEqual(code, 0)
+            report = json.loads(paths["output"].read_text(encoding="utf-8"))
+            self.assertEqual(report["worker_task_totals"]["all_worker_task_count"], 2)
+            self.assertEqual(
+                report["model_usage_and_cost"]["semantic_reconciliation"]["reported_cost_sum"],
+                0,
+            )
+            self.assertEqual(
+                report["model_usage_and_cost"]["existing_schema_mapping"]["token_usage_sum"]["input"],
+                100,
+            )
+            self.assertFalse(
+                report["model_usage_and_cost"]["semantic_reconciliation"]["paid_cost_detected"]
+            )
+
     def test_counts_sources_from_both_worker_coverage_not_model_self_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
