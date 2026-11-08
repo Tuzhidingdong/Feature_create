@@ -254,6 +254,7 @@ python scripts/audit_records.py `
   --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
   --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
   --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --reconciliation-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
   --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
   --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_audit.json"
