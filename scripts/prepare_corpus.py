@@ -415,7 +415,11 @@ def add_source(
         if path.suffix.casefold() in PDF_EXTENSIONS and not digest:
             parse_status = "missing_file"
     source_material = "|".join([
-        paper_id, role, str(path), digest or parse_status,
+        paper_id,
+        role,
+        str(original_path.resolve()),
+        archive_member or "",
+        digest or parse_status,
     ])
     source_id = stable_id("SRC", source_material)
     visual_pages: list[dict[str, Any]] = []
