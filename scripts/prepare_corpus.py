@@ -557,31 +557,34 @@ def main(argv: list[str] | None = None) -> int:
     paired_csv = args.paired_csv.expanduser().resolve()
     output = args.output.expanduser().resolve()
     corpus_root = args.corpus_root.expanduser().resolve() if args.corpus_root else paired_csv.parent
-    if not paired_csv.is_file():
-        raise CorpusError(f"Paired corpus CSV does not exist: {paired_csv}")
-    output.mkdir(parents=True, exist_ok=True)
-    manifest = build_manifest_from_paired_csv(paired_csv, output, corpus_root)
-    manifest_path = output / "source_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
-    summary = {
-        "status": "complete" if manifest["blocked_paper_count"] == 0 else "partial",
-        "upstream_csv": str(paired_csv), "upstream_row_count": manifest["upstream_row_count"],
-        "paper_count": manifest["paper_count"], "source_count": manifest["source_count"],
-        "ready_paper_count": manifest["ready_paper_count"],
-        "blocked_paper_count": manifest["blocked_paper_count"],
-        "parsing_performed_by_feature_create": False,
-        "manifest": str(manifest_path),
-    }
-    (output / "prepare_summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
-    )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0
+    try:
+        if not paired_csv.is_file():
+            raise CorpusError(f"Paired corpus CSV does not exist: {paired_csv}")
+        output.mkdir(parents=True, exist_ok=True)
+        manifest = build_manifest_from_paired_csv(paired_csv, output, corpus_root)
+        manifest_path = output / "source_manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8", newline="\n",
+        )
+        summary = {
+            "status": "complete" if manifest["blocked_paper_count"] == 0 else "partial",
+            "upstream_csv": str(paired_csv), "upstream_row_count": manifest["upstream_row_count"],
+            "paper_count": manifest["paper_count"], "source_count": manifest["source_count"],
+            "ready_paper_count": manifest["ready_paper_count"],
+            "blocked_paper_count": manifest["blocked_paper_count"],
+            "parsing_performed_by_feature_create": False,
+            "manifest": str(manifest_path),
+        }
+        (output / "prepare_summary.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+    except CorpusError as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except CorpusError as exc:
-        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        raise SystemExit(2)
+    raise SystemExit(main())
