@@ -542,6 +542,11 @@ def main(argv: list[str] | None = None) -> int:
         for task in queue.get("tasks", [])
         if task.get("worker_role") == "source_discovery" and task.get("chunk_id")
     }
+    worker_b_tasks_by_chunk = {
+        (str(task.get("paper_id")), str(task.get("chunk_id"))): task
+        for task in queue.get("tasks", [])
+        if task.get("worker_role") == "feature_audit" and task.get("chunk_id")
+    }
 
     output_root = args.output.expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -724,6 +729,36 @@ def main(argv: list[str] | None = None) -> int:
             })
             continue
 
+        # Keep the exact Worker B model used for the first-pass audit in every
+        # implicated chunk. Do not silently switch to a newly edited config.
+        implicated_chunks = {current_chunk_id, *[str(item["chunk_id"]) for item in target_units]}
+        paired_worker_b = [
+            worker_b_tasks_by_chunk.get((str(unresolved.get("paper_id")), chunk_id))
+            for chunk_id in sorted(implicated_chunks)
+        ]
+        if any(item is None for item in paired_worker_b):
+            blocked.append({
+                "unresolved_id": unresolved.get("unresolved_id"),
+                "reason": "paired_first_pass_worker_b_task_missing_for_current_or_target_chunk",
+            })
+            continue
+        first_pass_worker_b_models = {
+            str(item.get("model_ref") or "") for item in paired_worker_b if item
+        }
+        if len(first_pass_worker_b_models) != 1 or "" in first_pass_worker_b_models:
+            blocked.append({
+                "unresolved_id": unresolved.get("unresolved_id"),
+                "reason": "first_pass_worker_b_model_mismatch_across_implicated_chunks",
+            })
+            continue
+        pinned_context_model = next(iter(first_pass_worker_b_models))
+        if pinned_context_model != str(model_ref):
+            blocked.append({
+                "unresolved_id": unresolved.get("unresolved_id"),
+                "reason": "configured_worker_b_model_differs_from_first_pass_model",
+            })
+            continue
+
         review_history = unresolved.get("resolution_history") or []
         review_attempt = len(review_history)
         if args.retry_inconclusive and resolution_status in inconclusive_statuses:
@@ -743,7 +778,7 @@ def main(argv: list[str] | None = None) -> int:
                 sources=source_map,
                 root=manifest_root,
                 output_root=output_root,
-                model_ref=str(model_ref),
+                model_ref=pinned_context_model,
                 max_chars=args.max_context_chars,
                 max_attachments=args.max_attachments,
                 max_command_chars=args.max_command_chars,
