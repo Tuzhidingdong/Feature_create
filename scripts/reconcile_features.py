@@ -542,6 +542,7 @@ def make_record(
 
     return {
         "record_id": record_id,
+        "origin_candidate_record_id": candidate_record.get("candidate_record_id"),
         "paper_id": paper["paper_id"],
         "doi": paper.get("doi"),
         "registry_feature_id": registry_feature_id,
@@ -890,18 +891,20 @@ def main(argv: list[str] | None = None) -> int:
                         str(unresolved_item.get("related_candidate_record_id") or ""),
                         str(unresolved_item.get("related_candidate_observation_id") or ""),
                     )
-                    unresolved_to_add.append({
+                    persisted_unresolved_item = {
+                        **unresolved_item,
                         "unresolved_id": unresolved_id,
                         "paper_id": paper["paper_id"],
                         "worker_task_id": task_id,
-                        **unresolved_item,
-                    })
+                        "resolution_status": "pending",
+                    }
+                    unresolved_to_add.append(persisted_unresolved_item)
                     linked_record_id = unresolved_item.get("related_candidate_record_id")
                     linked_observation_id = unresolved_item.get("related_candidate_observation_id")
                     if linked_record_id:
-                        unresolved_by_record.setdefault(str(linked_record_id), []).append(unresolved_item)
+                        unresolved_by_record.setdefault(str(linked_record_id), []).append(persisted_unresolved_item)
                     if linked_observation_id:
-                        unresolved_by_observation.setdefault(str(linked_observation_id), []).append(unresolved_item)
+                        unresolved_by_observation.setdefault(str(linked_observation_id), []).append(persisted_unresolved_item)
 
                 for result in payload.get("result_records", []):
                     candidate_observation_id = result["candidate_observation_id"]
@@ -919,10 +922,13 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     normalized_issues = [
                         {
+                            "unresolved_id": item.get("unresolved_id"),
                             "item_type": item.get("item_type"),
                             "description": item.get("description"),
                             "evidence_refs": item.get("evidence_refs", []),
                             "suggested_review": item.get("suggested_review"),
+                            "cross_chunk_target": item.get("cross_chunk_target"),
+                            "resolution_status": item.get("resolution_status", "pending"),
                         }
                         for item in deduplicated_linked.values()
                     ]
