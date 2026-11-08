@@ -31,12 +31,18 @@ try:
 except ImportError:  # handled as an explicit preflight error
     Draft202012Validator = None  # type: ignore[assignment]
 
-from validate_free_models import (
-    ModelPolicyError,
-    fetch_live_catalog,
-    read_json,
-    validate_policy,
-)
+try:
+    from .validate_free_models import (
+        ModelPolicyError,
+        fetch_live_catalog,
+        validate_policy,
+    )
+except ImportError:  # direct execution as python scripts/run_workers.py
+    from validate_free_models import (
+        ModelPolicyError,
+        fetch_live_catalog,
+        validate_policy,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -196,70 +202,84 @@ def extract_export_details(export_text: str) -> dict[str, Any]:
     try:
         document = json.loads(export_text)
     except json.JSONDecodeError:
-        return {"assistant_text": "", "model_refs": [], "cost_reported": False, "reported_cost": None, "tokens": None}
+        return {
+            "assistant_text": "",
+            "model_refs": [],
+            "cost_reported": False,
+            "reported_cost": None,
+            "usage_reported": False,
+            "tokens": None,
+        }
 
     messages: list[dict[str, Any]] = []
     model_refs: set[str] = set()
-    costs: list[float] = []
-    tokens_total = {"input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
-    usage_seen = False
+    assistant_info_costs: list[float] = []
+    step_costs: list[float] = []
+    info_tokens = {"input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
+    step_tokens = {"input": 0, "output": 0, "reasoning": 0, "cache_read": 0, "cache_write": 0}
+    info_usage_seen = False
+    step_usage_seen = False
 
     for obj in _walk_objects(document):
         model_ref = _model_ref_from_object(obj)
         if model_ref:
             model_refs.add(model_ref)
-        role = None
+
         info = obj.get("info")
-        if isinstance(info, dict):
-            role = info.get("role")
-            info_model = info.get("model")
-            if isinstance(info_model, dict):
-                model_ref = _model_ref_from_object({"model": info_model})
-                if model_ref:
-                    model_refs.add(model_ref)
+        if isinstance(info, dict) and info.get("role") == "assistant":
+            messages.append(obj)
+            model_ref = _model_ref_from_object(info)
+            if model_ref:
+                model_refs.add(model_ref)
             cost = info.get("cost")
             if isinstance(cost, (int, float)):
-                costs.append(float(cost))
+                assistant_info_costs.append(float(cost))
             tokens = info.get("tokens")
             if isinstance(tokens, dict):
-                usage_seen = True
-                tokens_total["input"] += int(tokens.get("input") or 0)
-                tokens_total["output"] += int(tokens.get("output") or 0)
-                tokens_total["reasoning"] += int(tokens.get("reasoning") or 0)
+                info_usage_seen = True
+                info_tokens["input"] += int(tokens.get("input") or 0)
+                info_tokens["output"] += int(tokens.get("output") or 0)
+                info_tokens["reasoning"] += int(tokens.get("reasoning") or 0)
                 cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
-                tokens_total["cache_read"] += int(cache.get("read") or 0)
-                tokens_total["cache_write"] += int(cache.get("write") or 0)
-        if role == "assistant" and isinstance(obj.get("parts"), list):
-            messages.append(obj)
+                info_tokens["cache_read"] += int(cache.get("read") or 0)
+                info_tokens["cache_write"] += int(cache.get("write") or 0)
 
-        part_type = obj.get("type")
-        if part_type == "step-finish":
+        if obj.get("type") == "step-finish":
             cost = obj.get("cost")
             if isinstance(cost, (int, float)):
-                costs.append(float(cost))
+                step_costs.append(float(cost))
             tokens = obj.get("tokens")
             if isinstance(tokens, dict):
-                usage_seen = True
-                tokens_total["input"] += int(tokens.get("input") or 0)
-                tokens_total["output"] += int(tokens.get("output") or 0)
-                tokens_total["reasoning"] += int(tokens.get("reasoning") or 0)
+                step_usage_seen = True
+                step_tokens["input"] += int(tokens.get("input") or 0)
+                step_tokens["output"] += int(tokens.get("output") or 0)
+                step_tokens["reasoning"] += int(tokens.get("reasoning") or 0)
                 cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
-                tokens_total["cache_read"] += int(cache.get("read") or 0)
-                tokens_total["cache_write"] += int(cache.get("write") or 0)
+                step_tokens["cache_read"] += int(cache.get("read") or 0)
+                step_tokens["cache_write"] += int(cache.get("write") or 0)
 
-    assistant_texts = []
+    assistant_texts: list[str] = []
     for message in messages:
         for part in message.get("parts", []):
             if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
                 assistant_texts.append(part["text"])
 
+    # Prefer message-level totals when present; do not add step totals to them.
+    cost_values = assistant_info_costs if assistant_info_costs else step_costs
+    if info_usage_seen:
+        tokens_result = info_tokens
+    elif step_usage_seen:
+        tokens_result = step_tokens
+    else:
+        tokens_result = None
+
     return {
         "assistant_text": "\n".join(assistant_texts),
         "model_refs": sorted(model_refs),
-        "cost_reported": bool(costs),
-        "reported_cost": sum(costs) if costs else None,
-        "usage_reported": usage_seen,
-        "tokens": tokens_total if usage_seen else None,
+        "cost_reported": bool(cost_values),
+        "reported_cost": sum(cost_values) if cost_values else None,
+        "usage_reported": info_usage_seen or step_usage_seen,
+        "tokens": tokens_result,
     }
 
 
