@@ -90,20 +90,81 @@ The Feature dictionary must not contain:
 
 A method may be listed as a general method for the Feature only when it is supported by one or more source observations. Paper-specific method/value associations belong in the records file.
 
-## 4. Serialization invariants
+## 4. Exact TXT serialization (v0.1)
+
+Both files are UTF-8 TSV (tab-separated text) despite the `.txt` extension. This keeps them plain-text and easy to read while allowing reliable parsing. Fields containing nested arrays/objects are serialized as compact UTF-8 JSON inside one TSV cell. The exporter uses standard CSV quoting with a tab delimiter and LF line endings. Embedded tabs, quotes, and newlines are therefore escaped by the TSV writer rather than by model-generated formatting.
+
+### result_feature_records.txt — exact column order
+
+```text
+Record_ID
+Paper_ID
+DOI
+FEATURE_ID
+RAW_FEATURE_NAME
+CANONICAL_NAME
+RAW_VALUE
+NUMERIC_VALUE
+REPORTED_UNIT
+RESULT_TYPE
+SAMPLE_IDENTITY
+CONDITION_FACTS
+TIME_CYCLE_FACTS
+PROTOCOL_FACTS
+OTHER_CONTEXT_FACTS
+MEASUREMENT_OR_CALCULATION_METHOD
+SOURCE_TYPE
+SOURCE_LOCATION
+EVIDENCE_REFS
+EVIDENCE_STATUS
+EXTRACTION_STATUS
+UNRESOLVED_ISSUES
+```
+
+The actual file contains these labels as one tab-separated header row, in exactly this order. Every subsequent row is one result record. The context and evidence columns are JSON arrays/objects; a missing optional scalar is an empty TSV cell, while an empty fact collection is the JSON array `[]`.
+
+### result_feature_list.txt — exact column order
+
+```text
+FEATURE_ID
+CANONICAL_NAME
+ALIASES
+DEFINITION
+RESULT_TYPE
+UNITS_AND_DIMENSION
+MEASUREMENT_METHODS
+CALCULATION_METHODS
+STANDARDIZATION_NOTES
+COMPARABILITY_NOTES
+```
+
+The actual file contains these labels as one tab-separated header row, in exactly this order. Each subsequent row is one canonical Feature. Aliases, result types, units/dimensions, and method lists are JSON cells. No paper/sample/result-value data may be added to this file.
+
+### Export gate
+
+The exporter refuses to create either formal TXT file when:
+- any active Canonical Feature remains provisional, under review, or split-pending;
+- a result record has no valid Feature ID or maps to an unconfirmed feature;
+- a record ID is duplicated;
+- a visual-only result contains an exact numeric value;
+- a candidate Feature pair remains pending, blocked, or under review;
+- the Registry fails its JSON Schema.
+
+Retired merged IDs are resolved through their redirect to the surviving Feature ID. Raw Feature names and values remain unchanged in the records file. The internal audit JSON is not a third formal deliverable; the only formal output files are the two TXT files above.
+
+## 5. Serialization invariants
 
 The exporter must:
-- emit UTF-8 text;
-- use stable field labels and deterministic ordering;
-- escape multiline values unambiguously;
-- preserve Unicode symbols and scientific notation;
-- distinguish null/missing/unknown from empty strings;
-- guarantee unique Record_ID and FEATURE_ID values;
-- preserve every accepted result record and every canonical Feature exactly once;
-- reject accidental mixing of record-level values into the Feature dictionary.
+- emit UTF-8 text with deterministic TSV headers, row ordering, quoting, and LF line endings;
+- preserve Unicode symbols, inequalities, significant figures, ranges, and scientific notation;
+- distinguish unavailable scalar fields (empty TSV cell) from empty collections (JSON `[]`);
+- guarantee unique Record_ID values and one row per canonical FEATURE_ID;
+- preserve every eligible result record and every confirmed canonical Feature exactly once;
+- reject accidental mixing of record-level values into the Feature dictionary;
+- never overwrite raw source strings with normalized/converted values.
 
-The concrete record-block delimiters and escaping implementation must be defined in the exporter and tested against the downstream consumer before production use. Field labels and semantic separation in this document must not be silently renamed. Any parser-breaking format change requires an explicit contract-version change and migration.
+Any parser-breaking format change requires an explicit contract-version change and migration. Field labels and semantic separation in this document must not be silently renamed.
 
-## 5. Final counts
+## 6. Final counts
 
 Run counts are reported separately in the run summary/log, not inserted into either TXT file. Counts must be computed from source inventory, validated records, Registry state, and unresolved queues.
