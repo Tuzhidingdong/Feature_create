@@ -94,7 +94,7 @@ Python must never silently change the provider/model to continue a failed task.
 3. Record source inventory, hashes, availability, and parsing status.
 4. Refresh/check the available OpenCode model catalog.
 5. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
-6. Verify both models are currently Free for input, output, cached reads, and cached writes using current model/catalog pricing metadata or a fresh official price snapshot.
+6. Verify both models are currently Free for input, output, and cached reads using the refreshed verbose model catalog. The published cached-write field may be a dash/not listed; reject any positive cached-write price.
 7. Check that deterministic task titles are supplied and no helper-model default can select a paid model.
 8. If any cost/availability check is inconclusive, stop before dispatching semantic work.
 
