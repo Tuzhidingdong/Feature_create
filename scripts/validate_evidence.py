@@ -565,7 +565,17 @@ def validate_payload(
                     errors.append(
                         f"context_facts/{index}: confirmed facts require locally verifiable text or table-cell evidence."
                     )
-        elif payload.get("context_facts"):
+        elif decision in {"no_association", "conflicting_evidence"}:
+            verified_sides = {
+                ref.get("evidence_side")
+                for ref in payload.get("review_evidence_refs", [])
+                if ref.get("evidence_status") in {"verified_text", "verified_table_cell"}
+            }
+            if not {"current", "target"}.issubset(verified_sides):
+                errors.append(
+                    f"{decision} requires verified text/table evidence from both current and target sides; otherwise use insufficient_evidence."
+                )
+        elif payload.get("context_facts"): 
             errors.append("Non-confirmed context decisions cannot add context_facts.")
 
     if role == "source_discovery":
