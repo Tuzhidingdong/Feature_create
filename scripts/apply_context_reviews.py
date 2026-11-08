@@ -99,6 +99,69 @@ def _canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def verify_context_artifact_hashes(
+    task: dict[str, Any],
+    validation: dict[str, Any],
+    validation_item: dict[str, Any],
+) -> str | None:
+    """Re-check every immutable input that the evidence validator hashed."""
+    observed = validation_item.get("artifact_sha256")
+    if not isinstance(observed, dict):
+        return "validated_context_input_hashes_missing"
+
+    validation_manifest_path = Path(str(validation.get("manifest_path") or "")).resolve()
+    task_manifest_path = Path(str(task.get("source_manifest_path") or "")).resolve()
+    if not validation.get("manifest_sha256") or validation_manifest_path != task_manifest_path:
+        return "source_manifest_identity_missing_or_mismatched"
+
+    checks = [
+        ("source_manifest", task_manifest_path, task.get("source_manifest_sha256")),
+        (
+            "context_evidence_manifest",
+            Path(str(task.get("context_evidence_manifest_path") or "")).resolve(),
+            task.get("context_evidence_manifest_sha256"),
+        ),
+        ("bundle", Path(str(task.get("bundle_path") or "")).resolve(), task.get("bundle_sha256")),
+        ("prompt", Path(str(task.get("prompt_path") or "")).resolve(), task.get("prompt_sha256")),
+    ]
+    if observed.get("source_manifest") != validation.get("manifest_sha256"):
+        return "source_manifest_hash_changed_after_validation"
+
+    for label, path, task_expected in checks:
+        if not path.is_file():
+            return f"context_artifact_missing:{label}"
+        actual = sha256_file(path)
+        if not task_expected or actual != task_expected:
+            return f"context_artifact_changed_after_queue_build:{label}"
+        if observed.get(label) != actual:
+            return f"context_artifact_changed_after_evidence_validation:{label}"
+
+    expected_attachments = task.get("attachment_sha256") or {}
+    observed_attachments = observed.get("attachments")
+    if not isinstance(observed_attachments, dict):
+        return "validated_visual_attachment_hashes_missing"
+    for attachment, expected_hash in expected_attachments.items():
+        path = Path(str(attachment)).resolve()
+        if not path.is_file():
+            return "context_visual_attachment_missing"
+        actual = sha256_file(path)
+        if actual != expected_hash:
+            return "context_visual_attachment_changed_after_queue_build"
+        if observed_attachments.get(str(path)) != actual:
+            return "context_visual_attachment_changed_after_evidence_validation"
+    if set(observed_attachments) != {str(Path(item).resolve()) for item in expected_attachments}:
+        return "context_visual_attachment_inventory_changed"
+    return None
+
+
 def _target_field(context_role: str) -> str:
     return {
         "sample_identity": "sample_identity",
@@ -189,6 +252,10 @@ def main(argv: list[str] | None = None) -> int:
             actual_response_sha256 = hashlib.sha256(response_path.read_bytes()).hexdigest()
             if not expected_response_sha256 or actual_response_sha256 != expected_response_sha256:
                 skipped.append({"task_id": task_id, "reason": "response_file_changed_after_evidence_validation"})
+                continue
+            artifact_problem = verify_context_artifact_hashes(task, validation, validation_item)
+            if artifact_problem:
+                skipped.append({"task_id": task_id, "reason": artifact_problem})
                 continue
             payload = read_json(response_path)
             if (
