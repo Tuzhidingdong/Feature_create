@@ -1,0 +1,31 @@
+{
+  "config_version": "0.1",
+  "semantic_provider": "antigravity_host",
+  "opencode": {
+    "allowed": false,
+    "model_calls_target": 0,
+    "token_usage_target": 0,
+    "fallback_allowed": false,
+    "worker_dispatch_allowed": false,
+    "session_creation_allowed": false,
+    "cli_inference_allowed": false
+  },
+  "antigravity": {
+    "use_current_host_model": true,
+    "model_identifier": "host_reported_or_unknown",
+    "native_task_delegation": "capability_detected_only",
+    "allow_sequential_execution": true,
+    "pause_if_unavailable": true
+  },
+  "execution": {
+    "local_deterministic_processing": true,
+    "persist_after_each_completed_task": true,
+    "resume_from_checkpoint": true,
+    "never_silently_change_provider": true
+  },
+  "accounting": {
+    "opencode_calls_must_equal": 0,
+    "opencode_tokens_must_equal": 0,
+    "antigravity_usage": "record_if_exposed_otherwise_unknown"
+  }
+}
