@@ -31,7 +31,8 @@ KEY_ALIASES = {
     "ALIASES": {"aliases", "alias", "synonyms", "abbreviations"},
     "DEFINITION": {"definition", "feature definition", "description"},
     "RESULT_TYPE": {"result_type", "result type", "type"},
-    "UNITS_AND_DIMENSION": {"units_and_dimension", "units and dimension", "unit", "units", "dimension", "dimensions"},
+    "UNITS_AND_DIMENSION": {"units_and_dimension", "units and dimension", "units/dimension", "unit and dimension"},
+
     "MEASUREMENT_METHODS": {"measurement_methods", "measurement methods", "measurement_method", "measurement method"},
     "CALCULATION_METHODS": {"calculation_methods", "calculation methods", "calculation_method", "calculation method"},
     "STANDARDIZATION_NOTES": {"standardization_notes", "standardization notes", "standardization"},
@@ -107,13 +108,29 @@ def canonicalize_row(raw: dict[str, Any]) -> dict[str, Any]:
         for key, value in raw.items()
     }
     definition = mapped.get("DEFINITION")
+    combined_unit_info = parse_units(mapped.get("UNITS_AND_DIMENSION"))
+    separate_units: list[str] = []
+    separate_dimensions: list[str] = []
+    for key, value in lookup.items():
+        if key in {"unit", "units", "reported unit", "reported units", "unit reported"}:
+            separate_units.extend(split_values(value))
+        elif key in {"dimension", "dimensions", "unit dimension", "unit dimensions"}:
+            separate_dimensions.extend(split_values(value))
+    combined_unit_info["reported_units"] = sorted(
+        set(combined_unit_info["reported_units"] + separate_units),
+        key=str.casefold,
+    )
+    combined_unit_info["dimensions"] = sorted(
+        set(combined_unit_info["dimensions"] + separate_dimensions),
+        key=str.casefold,
+    )
     return {
         "FEATURE_ID": feature_id,
         "CANONICAL_NAME": canonical_name,
         "ALIASES": sorted(set(split_values(mapped.get("ALIASES"))), key=str.casefold),
         "DEFINITION": str(definition).strip() if definition not in (None, "") else None,
         "RESULT_TYPE": sorted(set(split_values(mapped.get("RESULT_TYPE")))),
-        "UNITS_AND_DIMENSION": parse_units(mapped.get("UNITS_AND_DIMENSION")),
+        "UNITS_AND_DIMENSION": combined_unit_info,
         "MEASUREMENT_METHODS": sorted(set(split_values(mapped.get("MEASUREMENT_METHODS")))),
         "CALCULATION_METHODS": sorted(set(split_values(mapped.get("CALCULATION_METHODS")))),
         "STANDARDIZATION_NOTES": (
