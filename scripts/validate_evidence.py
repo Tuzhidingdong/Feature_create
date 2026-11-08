@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = {
     "source_discovery": ROOT / "contracts" / "worker-a.schema.json",
     "feature_audit": ROOT / "contracts" / "worker-b.schema.json",
+    "cross_chunk_context": ROOT / "contracts" / "worker-context-review.schema.json",
 }
 
 
@@ -206,7 +207,27 @@ def verify_table_cell(
 
 
 def load_assigned_chunk_units(task: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Load the exact unit locator slice assigned to a chunked task."""
+    """Load the exact unit inventory assigned to a single- or multi-chunk task."""
+    if task.get("worker_role") == "cross_chunk_context":
+        path_value = task.get("context_evidence_manifest_path")
+        if not path_value:
+            raise EvidenceValidationError("Cross-chunk context task is missing context_evidence_manifest_path.")
+        path = Path(str(path_value)).resolve()
+        if not path.is_file():
+            raise EvidenceValidationError(f"Context evidence manifest is missing: {path}")
+        index = read_json(path)
+        assigned = index.get("assigned_units")
+        if not isinstance(assigned, list):
+            raise EvidenceValidationError("Context evidence manifest has no assigned_units array.")
+        result = {
+            str(item["unit_id"]): item
+            for item in assigned if isinstance(item, dict) and item.get("unit_id")
+        }
+        expected = set(task.get("assigned_unit_ids") or [])
+        if expected and expected != set(result):
+            raise EvidenceValidationError("Context task assigned_unit_ids do not match its evidence manifest.")
+        return result
+
     path_value = task.get("chunk_evidence_index_path")
     if not task.get("chunk_id"):
         return {}
@@ -299,7 +320,8 @@ def validate_payload(
     except EvidenceValidationError as exc:
         assigned_units = {}
         errors.append(str(exc))
-    is_chunked_task = bool(task.get("chunk_id"))
+    is_chunked_task = bool(task.get("chunk_id") or task.get("context_evidence_manifest_path"))
+    is_multi_chunk_task = task.get("worker_role") == "cross_chunk_context"
 
     if payload.get("task_id") != task.get("task_id"):
         errors.append("Payload task_id does not match task.json.")
@@ -314,6 +336,12 @@ def validate_payload(
             errors.append(f"{location}: unknown source_id {source_id!r}.")
             continue
         assigned_source_ids = set(task.get("source_ids", []))
+        if is_multi_chunk_task:
+            assigned_source_ids = {
+                str(source_id)
+                for unit in assigned_units.values()
+                for source_id in unit.get("source_ids", [])
+            }
         if source_id not in assigned_source_ids:
             errors.append(
                 f"{location}: source_id {source_id!r} was not assigned to this worker task."
@@ -332,11 +360,16 @@ def validate_payload(
         if is_chunked_task:
             unit_id = locator.get("unit_id")
             cited_chunk_id = locator.get("chunk_id")
-            if cited_chunk_id != task.get("chunk_id"):
-                errors.append(
-                    f"{location}: locator chunk_id must equal assigned chunk {task.get('chunk_id')!r}."
-                )
             assigned_unit = assigned_units.get(str(unit_id)) if unit_id else None
+            expected_chunk_id = (
+                assigned_unit.get("chunk_id") if is_multi_chunk_task and assigned_unit
+                else task.get("chunk_id")
+            )
+            if cited_chunk_id != expected_chunk_id:
+                errors.append(
+                    f"{location}: locator chunk_id must equal the chunk assigned to unit "
+                    f"{unit_id!r} ({expected_chunk_id!r})."
+                )
             if not unit_id or assigned_unit is None:
                 errors.append(
                     f"{location}: locator unit_id must identify one evidence unit assigned to this task."
@@ -411,6 +444,29 @@ def validate_payload(
                 "location": location,
                 "warning": f"Evidence status is {status}; this reference is not counted as verified.",
             })
+
+    if role == "cross_chunk_context":
+        if payload.get("unresolved_id") != task.get("unresolved_id"):
+            errors.append("Payload unresolved_id does not match task.json.")
+        if payload.get("record_id") != task.get("record_id"):
+            errors.append("Payload record_id does not match task.json.")
+        decision = payload.get("decision")
+        review_sides = {
+            ref.get("evidence_side") for ref in payload.get("review_evidence_refs", [])
+        }
+        if decision == "association_confirmed":
+            if not {"current", "target"}.issubset(review_sides):
+                errors.append("Confirmed context association requires current and target review evidence.")
+            for index, fact in enumerate(payload.get("context_facts", [])):
+                fact_sides = {
+                    ref.get("evidence_side") for ref in fact.get("evidence_refs", [])
+                }
+                if not {"current", "target"}.issubset(fact_sides):
+                    errors.append(
+                        f"context_facts/{index}: each context fact must cite current and target evidence."
+                    )
+        elif payload.get("context_facts"):
+            errors.append("Non-confirmed context decisions cannot add context_facts.")
 
     if role == "source_discovery":
         observations = {
