@@ -2,7 +2,7 @@ name: deterministic-tests
 
 on:
   push:
-    branches: [main, feat/scope-aware-chunk-dispatch]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
