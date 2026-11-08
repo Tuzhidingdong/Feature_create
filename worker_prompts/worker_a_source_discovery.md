@@ -95,7 +95,7 @@ Return one JSON object conforming exactly to `contracts/worker-a.schema.json`.
 - Candidate IDs are task-local only; never allocate persistent Registry IDs or final FEATURE_IDs.
 - Include all discovered observations and result record candidates.
 - Include coverage for every source component in the manifest.
-- Put ambiguity, missing context, unverified values, unreadable figures, and source-access limitations into `unresolved_items`.
+- Put ambiguity, missing context, unverified values, unreadable figures, and source-access limitations into `unresolved_items`. Whenever an unresolved issue belongs to a specific value, populate `related_candidate_record_id`; when it belongs to a Feature occurrence, populate `related_candidate_observation_id`. Do not leave these links empty when the association is clear.
 - Do not include commentary outside the JSON object.
 - Do not claim a source is fully reviewed unless you actually reviewed it.
 
