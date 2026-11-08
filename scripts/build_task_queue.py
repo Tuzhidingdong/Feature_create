@@ -72,7 +72,12 @@ def build_bundle(
         f"- Year: {paper.get('year') or 'not supplied'}",
         f"- Journal: {paper.get('journal') or 'not supplied'}",
         f"- Article type from chem-literature: {paper.get('article_type') or 'not supplied'}",
+        f"- Upstream landing page: {paper.get('landing_page_url') or 'not supplied'}",
         f"- Upstream paired status: {paper.get('pair_status', 'not recorded')}",
+        "",
+        "## Upstream abstract",
+        "",
+        str(paper.get("abstract") or "[No abstract supplied in paired CSV.]"),
         "",
         "## Source manifest",
         "",
@@ -189,11 +194,22 @@ def main(argv: list[str] | None = None) -> int:
             continue
         paper_sources.sort(key=lambda s: (s["source_role"] != "main", s["relative_path"].casefold()))
         bundle, attachments, extracted_chars = build_bundle(paper, paper_sources, manifest_root)
-        paper_hash = hashlib.sha256(
-            "|".join(sorted(
+        paper_input_fingerprint = {
+            "source_fingerprints": sorted(
                 str(source.get("sha256") or source.get("parse_status") or "unknown")
                 for source in paper_sources
-            )).encode("utf-8")
+            ),
+            "paper_metadata": {
+                key: paper.get(key)
+                for key in (
+                    "paper_id", "doi", "title", "year", "journal",
+                    "article_type", "landing_page_url", "abstract",
+                )
+            },
+            "upstream_artifact_sha256": manifest.get("upstream_artifact_sha256"),
+        }
+        paper_hash = hashlib.sha256(
+            json.dumps(paper_input_fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ).hexdigest()
         paper_dir = output_root / "tasks" / hashlib.sha1(paper["paper_id"].encode("utf-8")).hexdigest()[:10]
         paper_dir.mkdir(parents=True, exist_ok=True)
