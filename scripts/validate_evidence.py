@@ -96,6 +96,17 @@ def validate_context_task_artifacts(
             errors.append(f"Context task {label} SHA-256 differs from the queued task fingerprint.")
 
     expected_attachments = task.get("attachment_sha256") or {}
+    context_manifest_path = str(Path(str(task.get("context_evidence_manifest_path") or "")).resolve())
+    declared_attachments = {
+        str(Path(str(item)).resolve())
+        for item in task.get("attachment_paths", [])
+    }
+    expected_attachment_set = {context_manifest_path} | {
+        str(Path(str(item)).resolve()) for item in expected_attachments
+    }
+    if declared_attachments != expected_attachment_set:
+        errors.append("Context task attachment list differs from its hashed evidence-manifest/visual-asset inventory.")
+
     attachment_hashes: dict[str, str] = {}
     for attachment, expected_hash in expected_attachments.items():
         path = Path(str(attachment)).resolve()
