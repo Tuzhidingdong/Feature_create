@@ -42,6 +42,7 @@ class ApplyContextReviewTests(unittest.TestCase):
         })
         return {
             "source_manifest": task["source_manifest_sha256"],
+            "source_texts": {},
             "context_evidence_manifest": task["context_evidence_manifest_sha256"],
             "bundle": task["bundle_sha256"],
             "prompt": task["prompt_sha256"],
@@ -422,6 +423,111 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(0, report["tasks_applied"])
             self.assertEqual(
                 "context_artifact_changed_after_evidence_validation:bundle",
+                report["skipped_tasks"][0]["reason"],
+            )
+
+    def test_rejects_source_text_modified_after_evidence_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            registry_path = self._write_registry_lock_target(root)
+            run_dir = root / "context_runs"
+            task_output = root / "task_output"
+            task_id = "FC-CX-SOURCE-TAMPER"
+            record_id = "REC-SOURCE"
+            unresolved_id = "UNRES-SOURCE"
+            model = "opencode-go/beam-free"
+            task = {
+                "task_id": task_id,
+                "worker_role": "cross_chunk_context",
+                "task_status": "pending",
+                "paper_id": "PAPER-1",
+                "model_ref": model,
+                "output_dir": str(task_output),
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "origin_worker_task_id": "TASK-A",
+            }
+            artifact_hashes = self._bind_context_artifacts(task, root)
+            source_text = root / "extracted_text.md"
+            source_text.write_text("Original assigned source text.", encoding="utf-8")
+            source_manifest_path = Path(task["source_manifest_path"])
+            self._write_json(source_manifest_path, {
+                "sources": [{
+                    "source_id": "SRC-A",
+                    "extracted_text_path": source_text.name,
+                }],
+            })
+            task["source_manifest_sha256"] = hashlib.sha256(source_manifest_path.read_bytes()).hexdigest()
+            source_text_hash = hashlib.sha256(source_text.read_bytes()).hexdigest()
+            task["source_text_sha256"] = {"SRC-A": source_text_hash}
+            artifact_hashes["source_manifest"] = task["source_manifest_sha256"]
+            artifact_hashes["source_texts"] = {"SRC-A": source_text_hash}
+
+            queue_path = root / "queue.json"
+            self._write_json(queue_path, {"tasks": [task]})
+            self._write_json(task_output / "task_state.json", {
+                "status": "complete",
+                "requested_model": model,
+                "observed_models": [model],
+            })
+            self._write_json(task_output / "response.json", {
+                "contract_version": "0.1",
+                "task_type": "cross_chunk_context",
+                "task_id": task_id,
+                "paper_id": "PAPER-1",
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "decision": "insufficient_evidence",
+                "rationale": "The selected remote source does not explicitly identify this result.",
+                "review_evidence_refs": [
+                    {"evidence_side": "current", "source_id": "SRC-A", "locator": {"chunk_id": "A", "unit_id": "UA"}, "evidence_status": "unverified"},
+                    {"evidence_side": "target", "source_id": "SRC-B", "locator": {"chunk_id": "B", "unit_id": "UB"}, "evidence_status": "unverified"},
+                ],
+                "context_facts": [],
+            })
+            response_sha = hashlib.sha256((task_output / "response.json").read_bytes()).hexdigest()
+            self._write_json(run_dir / "evidence_validation.json", {
+                "manifest_path": task["source_manifest_path"],
+                "manifest_sha256": task["source_manifest_sha256"],
+                "tasks": [{
+                    "task_id": task_id,
+                    "status": "evidence_checked",
+                    "response_sha256": response_sha,
+                    "artifact_sha256": artifact_hashes,
+                }],
+            })
+
+            source_text.write_text("Changed after validation.", encoding="utf-8")
+            records_path = root / "records.jsonl"
+            records_path.write_text(json.dumps({
+                "record_id": record_id,
+                "paper_id": "PAPER-1",
+                "worker_task_id": "TASK-A",
+                "raw_value": "12",
+                "numeric_value": 12,
+                "sample_identity": [],
+                "unresolved_issues": [{"unresolved_id": unresolved_id, "resolution_status": "pending"}],
+            }) + "\n", encoding="utf-8")
+            unresolved_path = root / "unresolved.jsonl"
+            unresolved_path.write_text(json.dumps({
+                "unresolved_id": unresolved_id,
+                "paper_id": "PAPER-1",
+                "resolution_status": "pending",
+            }) + "\n", encoding="utf-8")
+
+            report_path = root / "apply_report.json"
+            self.assertEqual(main([
+                "--queue", str(queue_path),
+                "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
+                "--records", str(records_path),
+                "--unresolved", str(unresolved_path),
+                "--report", str(report_path),
+            ]), 0)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, report["tasks_applied"])
+            self.assertEqual(
+                "context_source_text_changed_after_queue_build:SRC-A",
                 report["skipped_tasks"][0]["reason"],
             )
 
