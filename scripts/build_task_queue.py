@@ -188,26 +188,68 @@ def _chunk_evidence_index(
         for unit in units
         if unit.get("page_number") is not None
     }
-    page_rows = [
-        page for page in upstream_index.get("pages", [])
-        if (str(page.get("doc_type") or "").upper(), int(page.get("page_number") or 0)) in selected_pages
-    ]
+    page_rows = []
+    for page in upstream_index.get("pages", []):
+        if (str(page.get("doc_type") or "").upper(), int(page.get("page_number") or 0)) not in selected_pages:
+            continue
+        page_slice = dict(page)
+        # The assigned text range lives in the unit content; avoid duplicating
+        # every text block from a page when that page is split across chunks.
+        page_slice["blocks"] = [
+            {
+                "block_index": block.get("block_index"),
+                "bbox": block.get("bbox"),
+                "type": block.get("type"),
+                "char_count": len(str(block.get("text") or "")),
+                "text_sha256": hashlib.sha256(
+                    str(block.get("text") or "").encode("utf-8")
+                ).hexdigest(),
+            }
+            for block in page.get("blocks", [])
+        ]
+        page_rows.append(page_slice)
 
-    table_rows: dict[str, set[int]] = {}
+    table_assignments: dict[str, dict[str, Any]] = {}
     for unit in units:
         locator = unit.get("locator") or {}
         table_id = unit.get("table_id") or locator.get("table_id")
-        if table_id and locator.get("row_indices_1based"):
-            table_rows.setdefault(str(table_id), set()).update(
-                int(value) for value in locator["row_indices_1based"]
-            )
+        if not table_id:
+            continue
+        assignment = table_assignments.setdefault(
+            str(table_id), {"row_indices": set(), "cell_fragments": []}
+        )
+        cell_fragments = locator.get("cell_fragments") or []
+        if cell_fragments:
+            assignment["cell_fragments"].extend(cell_fragments)
+        else:
+            row_indices = locator.get("row_indices_1based") or []
+            if locator.get("row_index_1based") is not None:
+                row_indices = [*row_indices, locator["row_index_1based"]]
+            assignment["row_indices"].update(int(value) for value in row_indices)
+
     selected_tables = []
     for table in upstream_index.get("tables", []):
         table_id = str(table.get("table_id") or "")
-        if table_id not in table_rows:
+        if table_id not in table_assignments:
             continue
-        selected = table_rows[table_id]
+        assignment = table_assignments[table_id]
+        selected_rows = assignment["row_indices"]
         rows = table.get("rows") or []
+        selected_cell_fragments = []
+        for cell in assignment["cell_fragments"]:
+            row_index = int(cell["row_index_1based"])
+            column_index = int(cell["column_index_1based"])
+            if not (1 <= row_index <= len(rows) and 1 <= column_index <= len(rows[row_index - 1])):
+                continue
+            original_value = rows[row_index - 1][column_index - 1]
+            original_text = "" if original_value is None else str(original_value)
+            start = int(cell.get("cell_text_offset_start", 0))
+            end = int(cell.get("cell_text_offset_end", len(original_text)))
+            selected_cell_fragments.append({
+                **cell,
+                "original_cell_char_count": len(original_text),
+                "cell_text_fragment": original_text[start:end],
+            })
         selected_tables.append({
             "table_id": table_id,
             "doc_type": table.get("doc_type"),
@@ -218,8 +260,9 @@ def _chunk_evidence_index(
             "col_count_original": table.get("col_count"),
             "assigned_rows": [
                 {"row_index_1based": index, "cells": rows[index - 1]}
-                for index in sorted(selected) if 1 <= index <= len(rows)
+                for index in sorted(selected_rows) if 1 <= index <= len(rows)
             ],
+            "assigned_cell_fragments": selected_cell_fragments,
             "header_context_rows": [
                 {"row_index_1based": index, "cells": rows[index - 1]}
                 for index in range(1, min(3, len(rows)) + 1)
