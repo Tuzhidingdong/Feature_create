@@ -194,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--queue", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--registry", type=Path, required=True, help="Same Registry JSON path used by reconcile_features.py; coordinates the shared Registry lock.")
     parser.add_argument("--records", type=Path, required=True)
     parser.add_argument("--unresolved", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -210,17 +211,24 @@ def main(argv: list[str] | None = None) -> int:
         item.get("task_id"): item for item in validation.get("tasks", [])
     }
 
+    registry_path = args.registry.resolve()
     records_path = args.records.resolve()
     unresolved_path = args.unresolved.resolve()
-    records_by_id = {item.get("record_id"): item for item in read_jsonl(records_path)}
-    unresolved_items = read_jsonl(unresolved_path)
-    unresolved_by_id = {item.get("unresolved_id"): item for item in unresolved_items}
 
     applied: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
-    lock_path = records_path.with_suffix(records_path.suffix + ".context.lock")
+    # Use exactly the same lock path as reconcile_features.py and the other
+    # Registry mutation stages, so records/unresolved cannot be overwritten by
+    # an ingestion process holding a different lock.
+    lock_path = registry_path.with_suffix(registry_path.suffix + ".lock")
 
     with exclusive_lock(lock_path):
+        # Read only after taking the shared Registry lock. Reading before the
+        # lock would allow a stale snapshot to overwrite a concurrent ingestion.
+        records_by_id = {item.get("record_id"): item for item in read_jsonl(records_path)}
+        unresolved_items = read_jsonl(unresolved_path)
+        unresolved_by_id = {item.get("unresolved_id"): item for item in unresolved_items}
+
         for task in queue.get("tasks", []):
             task_id = str(task.get("task_id") or "")
             if task.get("task_status") != "pending":
