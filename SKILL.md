@@ -89,7 +89,7 @@ Python must never silently change the provider/model to continue a failed task.
 
 ### Phase 0 — Preflight and cost gate
 
-1. Require `research_corpus_paired.csv` from the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage), not a harvesting-only CSV.
+1. Require `research_corpus_paired.csv` from the [chem-literature `main` branch](https://github.com/Tuzhidingdong/chem-literature/tree/main), not a harvesting-only CSV.
 2. Require `preprocessing_path` and `preprocessing_status` on every selected CSV row.
 3. Resolve `preprocessing_path`, `local_pdf_path`, and `local_si_info` against the upstream workflow working directory (CSV directory by default, or an explicit corpus root).
 4. Treat CSV rows as the complete and authoritative paper list. Do not scan for extra papers, repeat article screening, or substitute unlisted files.
@@ -120,11 +120,16 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 
 ### Phase 2 — Independent discovery and extraction
 
-For each paper/SI bundle:
+For each paper, the task builder creates one or more bounded chunks from the upstream-preprocessed paper/SI bundle. Text is split at explicit upstream page boundaries, with a further text-boundary split only when one page is too large. Structured tables are split by original row ranges, repeating the original header row as context where needed. Extracted figures remain independent source scopes and are attached as upstream assets.
+
+Each chunk carries stable `scope_id` values and the original `source_id` for every assigned page/text segment/table-row range/asset. Workers must return one coverage entry per assigned scope. Evidence citations must retain the upstream page number and original table row/column indexes; chunk-local row numbering is forbidden.
+
+For each paper/SI chunk:
 
 - Worker A returns raw feature observations, individual result-value candidates, context facts, evidence references, coverage, and unresolved items.
 - Worker B independently returns feature observations, coverage audits, omission candidates, semantic distinctions, and unresolved items.
 - Neither worker receives the other's first-pass output.
+- A source is considered fully reviewed only when every scope across every chunk has its own completed coverage state from that worker. A completed chunk must never be represented as a completed whole-paper review.
 - Existing schema entries may be used only as a post-discovery mapping reference; they must never become the discovery boundary.
 - Run the two tasks with different free model IDs.
 
