@@ -96,7 +96,7 @@ Return one JSON object conforming exactly to `contracts/worker-a.schema.json`.
 - `worker_role` must be `source_discovery`.
 - Candidate IDs are task-local only; never allocate persistent Registry IDs or final FEATURE_IDs.
 - Include all discovered observations and result record candidates.
-- Include coverage for every source ID assigned to this chunk. In coverage notes, name the chunk ID and the exact assigned page, text-segment, or original table-row range. If one source ID spans multiple chunks, do not mark the whole source as fully reviewed from a partial assignment.
+- Include coverage for every source ID assigned to this chunk. In coverage notes, name the chunk ID and the exact assigned page, text-segment, or original table-row range. If one source ID spans multiple chunks, mark the assigned scope fully reviewed only when every assigned unit in this task was inspected. In notes, explicitly state that `fully_reviewed` means this chunk's assigned scope only; the deterministic audit will mark the whole source complete only after every chunk has the same successful status.
 - Put ambiguity, missing context, unverified values, unreadable figures, and source-access limitations into `unresolved_items`. Whenever an unresolved issue belongs to a specific value, populate `related_candidate_record_id`; when it belongs to a Feature occurrence, populate `related_candidate_observation_id`. Do not leave these links empty when the association is clear.
 - Do not include commentary outside the JSON object.
 - Do not claim a source is fully reviewed unless you actually reviewed it.
