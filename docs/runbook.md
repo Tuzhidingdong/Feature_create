@@ -6,7 +6,7 @@
 - Python 3.10+.
 - OpenCode CLI installed and authenticated for OpenCode Go.
 - Current OpenCode Go plan/account allows access to the selected limited-time free models in the user's region.
-- A completed [chem-literature preprocessing-branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) run.
+- A completed [chem-literature preprocessing-branch](https://github.com/Tuzhidingdong/chem-literature) run.
 - `research_corpus_paired.csv` contains `preprocessing_path`, `preprocessing_status`, and the referenced `01_preprocessing/` packages.
 - Enough local disk space for task bundles, pre-extracted image attachments, worker outputs, and session exports. Feature_create does not create another parsed PDF/SI corpus.
 
@@ -81,17 +81,17 @@ Outputs:
 python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
 ~~~
 
-One independent Worker A and Worker B task is created per eligible paper. Each task has:
+One independent Worker A task and one independent Worker B task are created for every deterministic chunk of an eligible paper. Each task has:
 - stable task ID and exact pinned model reference;
-- worker prompt and consolidated upstream-parsed text/table bundle;
-- exact upstream `evidence_index.json` and QC report attachments;
+- worker prompt and only the assigned upstream-parsed text/table evidence units;
+- a per-chunk `chunk_evidence_index.json` locator slice, a compact paper-wide `paper_chunk_index.json`, and the relevant QC report;
 - pre-extracted figure/table image assets when available;
-- stable source IDs and original page/table/figure/SI locators;
+- stable source IDs, `unit_id`, `chunk_id`, and original page/table/row/column/figure/SI locators;
 - raw PDF/SI hash inventory for provenance only.
 
-The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and source-index/QC files. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding coverage incomplete.
+The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and bounded chunk/paper index plus QC files. The unchanged complete upstream evidence index remains in the prepared run for provenance. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding coverage incomplete.
 
-If the bundle exceeds the configured maximum, it is marked blocked rather than silently truncated. Bounded semantic chunking will be handled as a separate task-splitting stage; it must split only upstream-parsed content and preserve the original source IDs and locators.
+Large papers are split automatically before dispatch. Text chunks preserve exact source character offsets and upstream page numbers; table chunks preserve original 1-based row/column indexes, including cell fragments for a single oversized row; related pre-extracted images are attached once. Context-only snippets and repeated table headers do not count as assigned coverage. The planner reduces the chunk budget iteratively; any irreducible atomic bundle above the hard limit is explicitly blocked rather than silently truncated.
 
 ## 4. Verify the free model pair before dispatch
 
@@ -121,7 +121,7 @@ Dry-run verifies the model pair and task-to-model assignments but does not make 
 python scripts/run_workers.py --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
 ```
 
-Default concurrency is four model calls (two papers × two workers). It is configurable using `--max-workers`, but is capped at four by default. On 429/rate-limit errors, the scheduler lowers concurrency for later batches. Retries retain the same explicitly pinned model.
+Default concurrency is four model calls (four chunk tasks across the corpus; each chunk has separate A/B tasks). It is configurable using `--max-workers`, but is capped at four by default. On 429/rate-limit errors, the scheduler lowers concurrency for later batches. Retries retain the same explicitly pinned model.
 
 The runner:
 - pins both `model` and `small_model` to the worker's selected free model;
@@ -142,9 +142,9 @@ The runner does not delete OpenCode sessions automatically. This preserves the e
 python scripts/validate_evidence.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
 ```
 
-This validates schema shape, task/paper identity, source IDs, non-empty evidence locators, quoted text/table values against locally extracted text, digitization artifact references, and the prohibition on exact numeric values for `visual_only` data.
+This validates schema shape, task/paper identity, source IDs, the task's exact `chunk_id` and assigned `unit_id`, non-empty original locators, quoted text within the exact assigned text range, table values against original row/column/cell or cell-fragment offsets, digitization artifact references, and the prohibition on exact numeric values for `visual_only` data. A reference to another chunk or an unassigned row/cell is rejected.
 
-This is a deterministic first-pass evidence validator. It does not prove that the scientific interpretation is correct, fully verify row/column semantics for all table layouts, or establish complete context association.
+This is a deterministic first-pass evidence validator. It proves source/unit assignment and quoted text/cell provenance, but it does not prove that the scientific interpretation is correct or automatically resolve every long-range sample/condition/result relationship that requires content from distant chunks. Such cross-chunk links must remain explicitly unresolved until supported by the relevant evidence.
 
 ## 7. Ingest observations and result records
 
@@ -315,7 +315,8 @@ A missing usage/cost field is recorded as not exposed, not automatically treated
 - Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
 - Figure panel/bounding-box interpretation is not automatically validated. The image and upstream coordinates support review, but workers must not claim automated figure digitization or exact values without digitization evidence.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
-- Oversized paper bundles are blocked rather than chunked automatically.
+- Scanned pages remain un-OCRed unless chem-literature has already supplied OCR-derived text and QC evidence; Feature_create does not perform OCR.
+- Deterministic chunking preserves text ranges and table row/cell locators, but does not automatically infer a long-range context relationship between separate chunks. Unresolved cross-chunk associations are retained, not guessed.
 - The cross-paper Registry review/merge mechanism, existing FEATURE_ID mapping, and final TXT exporter are implemented but still require a manually inspected pilot and validation against the user's actual legacy schema file.
 - The worker runner and preparation pipeline still require a local Windows smoke test against the installed OpenCode CLI version before production use.
 
