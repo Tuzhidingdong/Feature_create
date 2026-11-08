@@ -220,6 +220,10 @@ class BuildContextReviewQueueTests(unittest.TestCase):
             self.assertEqual(1, queue["task_count"])
             task = queue["tasks"][0]
             self.assertEqual("cross_chunk_context", task["worker_role"])
+            self.assertTrue(task["input_fingerprint"])
+            self.assertTrue(task["prompt_sha256"])
+            self.assertTrue(task["bundle_sha256"])
+            self.assertTrue(task["context_evidence_manifest_sha256"])
             policy = json.loads(
                 (Path(__file__).resolve().parents[1] / "config" / "execution_policy.json").read_text(encoding="utf-8")
             )
