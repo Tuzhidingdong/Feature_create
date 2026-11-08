@@ -311,12 +311,14 @@ class BuildTaskQueueTests(unittest.TestCase):
                 item["source_text_offset_end"] > item["source_text_offset_start"]
                 for item in segment_locators
             ))
-            self.assertEqual(
-                sorted(item["source_text_offset_start"] for item in segment_locators),
-                [item["source_text_offset_start"] for item in sorted(
-                    segment_locators, key=lambda item: item["source_text_offset_start"]
-                )],
-            )
+            ordered_segments = sorted(segment_locators, key=lambda item: item["source_text_offset_start"])
+            self.assertEqual(0, ordered_segments[0]["source_text_offset_start"])
+            self.assertEqual(len(text), ordered_segments[-1]["source_text_offset_end"])
+            for previous, following in zip(ordered_segments, ordered_segments[1:]):
+                self.assertEqual(
+                    previous["source_text_offset_end"],
+                    following["source_text_offset_start"],
+                )
 
 
 if __name__ == "__main__":
