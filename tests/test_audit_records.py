@@ -197,9 +197,16 @@ class ChunkCoverageAggregationTests(unittest.TestCase):
                     {"source_id": "SRC-1", "scope_id": "SCP-2"},
                 ],
             }
+            coverage = coverage_for_task(task)
             self.assertEqual(
                 {"SCP-1": "fully_reviewed", "SCP-2": "partially_reviewed"},
-                coverage_for_task(task),
+                coverage,
+            )
+            self.assertEqual(
+                {"SRC-1": "partially_reviewed"},
+                aggregate_chunk_coverage(
+                    {"SRC-1": list(coverage.values())}, "fully_reviewed"
+                ),
             )
 
     def test_duplicate_scope_coverage_cannot_be_counted_as_complete(self) -> None:
@@ -219,6 +226,28 @@ class ChunkCoverageAggregationTests(unittest.TestCase):
             self.assertEqual(
                 {"SCP-1": "duplicate_coverage_entry"},
                 coverage_for_task(task),
+            )
+
+    def test_misattributed_scope_cannot_count_as_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            (output / "response.json").write_text(json.dumps({
+                "coverage": [
+                    {"source_id": "SRC-WRONG", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                ]
+            }), encoding="utf-8")
+            task = {
+                "worker_role": "source_discovery",
+                "output_dir": str(output),
+                "source_scopes": [{"source_id": "SRC-1", "scope_id": "SCP-1"}],
+            }
+            coverage = coverage_for_task(task)
+            self.assertEqual({"SCP-1": "invalid_scope_mapping"}, coverage)
+            self.assertEqual(
+                {"SRC-1": "partially_reviewed"},
+                aggregate_chunk_coverage(
+                    {"SRC-1": list(coverage.values())}, "fully_reviewed"
+                ),
             )
 
     def test_source_is_complete_only_when_every_assigned_chunk_is_complete(self) -> None:
