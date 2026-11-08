@@ -679,10 +679,16 @@ def main(argv: list[str] | None = None) -> int:
         paper_count_with_sources += 1
         upstream_index_path = _safe_output_path(paper.get("evidence_index_copy"))
         upstream_index = load_json(upstream_index_path) if upstream_index_path else {}
+        # Atomic evidence units must fit even in the final conservative packing
+        # pass (20% of the bundle cap). Previously units were allowed to reach
+        # 45% of the cap, so the final pass marked them oversize instead of
+        # ever being able to pack them. Small units also leave room for scope
+        # checklist rows, original-source context snippets, and fixed metadata.
+        max_unit_chars = max(1024, int(args.max_bundle_chars * 0.12))
         units = build_evidence_units(
             paper_sources,
             manifest_root,
-            max_unit_chars=max(1024, int(args.max_bundle_chars * 0.45)),
+            max_unit_chars=max_unit_chars,
         )
         if not units:
             continue
