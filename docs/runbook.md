@@ -170,7 +170,61 @@ Python applies a merge only when the Worker B recommendation is SAME_FEATURE and
 
 After a merge, pairs that still reference the retired Feature ID are invalidated and regenerated against the surviving Feature ID. Raw observations and decision history are retained.
 
-## 10. Export the two formal TXT files
+## 10. Import the existing Feature Schema
+
+Use the existing authoritative feature dictionary as a mapping reference. For the current local corpus, the known source path is:
+
+```powershell
+python scripts/import_existing_schema.py `
+  --input "E:\\Zinc_batters_datas\\preprocessed\\result_feature_list.txt" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json"
+```
+
+The importer supports TSV, JSON, and common key/value text blocks. It preserves existing FEATURE_ID values and records the source file hash. If the local legacy file uses an unsupported layout, the importer stops and reports the parse issue; do not manually fabricate a schema.
+
+## 11. Build Worker B existing-ID mapping tasks
+
+```powershell
+python scripts/build_schema_mapping_queue.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch"
+```
+
+Worker B compares every confirmed Registry Feature with the imported legacy Feature candidates. The legacy schema is not used to filter discovery. The mapping decisions are separate from Feature-to-Feature merges.
+
+Run the no-inference preflight:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs" `
+  --dry-run
+```
+
+Then dispatch using the same verified-free Worker B model:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs"
+```
+
+Apply mapping decisions:
+
+```powershell
+python scripts/apply_existing_feature_mapping.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
+  --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs\\mapping_report.json"
+```
+
+A mapping is applied only when Worker B selects one exact old FEATURE_ID, all seven compatibility checks are affirmative, definitions and source evidence exist, unit strings are conservatively compatible, and that old ID is not already assigned to another active Registry Feature. Otherwise the Registry Feature keeps its new Registry ID.
+
+## 12. Export the two formal TXT files
 
 Only after all active Features are confirmed and all candidate pairs are resolved:
 
@@ -188,7 +242,7 @@ The exporter creates exactly two formal TXT files:
 
 Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal `export_audit.json` for diagnostics; that audit file is not a formal deliverable.
 
-## 10. Inspect the run
+## 13. Inspect the run
 
 Key files:
 - `worker_runs/model_preflight.json`
@@ -199,14 +253,14 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 12. Important limitations in v0.1
+## 14. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - PDF page/paragraph/table locators are not yet enriched beyond page markers and model-provided locators.
 - Table quote verification is text-occurrence checking, not yet cell-coordinate verification against structured table data.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
 - Oversized paper bundles are blocked rather than chunked automatically.
-- The cross-paper Registry review/merge mechanism and final TXT exporter are implemented but still require a manually inspected pilot. Existing-schema FEATURE_ID mapping is not yet implemented.
+- The cross-paper Registry review/merge mechanism, existing FEATURE_ID mapping, and final TXT exporter are implemented but still require a manually inspected pilot and validation against the user's actual legacy schema file.
 - The worker runner and preparation pipeline still require a local Windows smoke test against the installed OpenCode CLI version before production use.
 
 Do not treat this version as production-ready until the local smoke test and a manually inspected pilot paper are successful.
