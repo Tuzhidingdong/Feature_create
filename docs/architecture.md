@@ -109,7 +109,22 @@ The unit of semantic work is a bounded chunk, not an entire paper. Python create
 
 Cross-chunk relationships are preserved through stable unit/chunk identities, original source locators, same-row table identities, paper-wide navigation, and explicit unresolved items. A worker must not infer a sample/condition/result link from proximity. Full-source coverage is aggregated only after all its `(source_id, unit_id)` scopes are successful for the relevant Worker; no source-level status may overwrite the status of another unit.
 
-## 6. Model pair and run isolation
+## 6. Targeted cross-chunk context review
+
+Long-range result context is handled as a selective second pass after first-pass evidence validation and Registry ingestion. This stage is not a paper-wide reread and does not add another worker model.
+
+1. Worker A may attach a cross_chunk_target nomination to a value-specific missing_context unresolved item. The nomination contains the requested context role, a relation basis, a rationale, and exact remote chunk_id/unit_id/source_id descriptors.
+2. The context queue builder resolves each descriptor against the paper-wide unit_navigation inventory, checks source/chunk identity, confirms it is in another chunk, and checks the declared adjacency/same-row relation where applicable.
+3. It builds one small evidence packet from the current-side unit(s), the nominated target unit(s), and the linked result record's current context fields. It does not attach the full paper or read either first-pass Worker output.
+4. The task is routed to the configured Worker B model using a dedicated context-review schema/prompt. The four decisions are association_confirmed, no_association, insufficient_evidence, and conflicting_evidence.
+5. Every confirmed context fact requires verified evidence from both sides. Evidence references must point to assigned unit IDs and their actual owning chunk IDs. Text quotes are checked against exact source offsets; structured table cells are checked against original row/column and cell offsets.
+6. The apply step may append only sample identity, condition, time/cycle, protocol, statistical-scope, or other context facts. It protects the raw/numeric result value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, and first-pass evidence references.
+7. no_association closes the investigated question without adding a fact. Insufficient or conflicting evidence stays unresolved for human review. The decision and two-sided citations are recorded in both the unresolved item and linked result record history.
+8. The run audit reports context review task states, decision counts, and the number of unresolved context items remaining.
+
+Only value-specific unresolved items with a linked result record and a verifiable remote target are eligible. Feature-level ambiguity without a result record, unindexed targets, inaccessible sources, and non-context unresolved issues remain in the ordinary unresolved queue. The navigation index is not evidence; only the target unit's assigned content can support a context fact.
+
+## 8. Model pair and run isolation
 
 The two workers must use different exact model references. The current preferred pair is:
 - `opencode-go/crouton-alpha-free`;
@@ -119,7 +134,7 @@ They are limited-time offers, so the pair is configurable and must be verified b
 
 Every paper/task invocation explicitly pins its model. Use deterministic titles and avoid implicit helper-model calls. A task must not fall back to an OpenCode paid model or to the Antigravity model when the selected free worker fails.
 
-## 7. Parallelism and quota protection
+## 8. Parallelism and quota protection
 
 Keep concurrency configurable. The intended initial operating point is:
 - up to 2 papers active at once;
@@ -128,7 +143,7 @@ Keep concurrency configurable. The intended initial operating point is:
 
 The orchestrator must also implement bounded retries, backoff, and a global rate limiter. Do not assume unlimited request allowances mean unlimited safe concurrency. HTTP 429 or service errors should reduce concurrency and preserve tasks for retry; never switch to a paid model.
 
-## 8. Deterministic processing
+## 9. Deterministic processing
 
 chem-literature owns all scientific-document preprocessing: PDF/SI text extraction, page/layout indexing, table extraction, figure/table image extraction, SI parsing, evidence-index generation, and preprocessing QC.
 
@@ -148,13 +163,13 @@ Feature_create Python owns:
 
 A model may identify or interpret a scientific feature, value, or context. It cannot allocate persistent Registry IDs, claim unverified evidence is verified, or directly commit Registry mutations.
 
-## 9. Registry lifecycle
+## 10. Registry lifecycle
 
 A raw discovery is an immutable Observation. An Observation may initially be linked to a provisional Canonical Feature. Later reconciliation may confirm the candidate, link it to an existing Canonical Feature, leave it under review, split it from an incorrectly broad candidate, or exclude it as a condition/non-result item.
 
 Canonical Feature IDs are stable internal identities. Merge/split history is retained. A merge creates a redirect from the retired ID to the surviving ID; a split creates new canonical identities and reassigns observations through an explicit decision event. No historical decision is silently erased.
 
-## 10. Context model
+## 11. Context model
 
 Do not predefine a narrow universal list of experimental condition names. Store context as evidence-backed facts with:
 - raw label;
@@ -163,13 +178,13 @@ Do not predefine a narrow universal list of experimental condition names. Store 
 - context role (sample identity, condition, time/cycle, protocol, statistical scope, or other);
 - evidence locator.
 
-## 11. Evidence model
+## 12. Evidence model
 
 Every accepted result value references one or more evidence locators. The locator should identify the source file and the most precise available position: page, section, paragraph, table, row, column, cell, figure, panel, caption, or digitization artifact.
 
 Visual-only interpretation is not an exact numeric extraction. A plotted trend may support feature discovery and series identification without supporting precise result values.
 
-## 12. Incremental execution
+## 13. Incremental execution
 
 Each source and task has a deterministic identity derived from source hash, task type, contract version, and relevant configuration. Completed tasks are skipped on resume only when inputs and contract versions still match.
 
