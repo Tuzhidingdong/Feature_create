@@ -24,6 +24,10 @@ Package/hash validation and logical-source indexing
 (no PDF/SI parsing in Feature_create)
       |
       v
+Deterministic source-aware chunk planner
+(page/text ranges + original table rows/cells + image links)
+      |
+      v
 Antigravity Supervisor (thin coordination only)
       |
       +--------------------------------------+
@@ -31,7 +35,7 @@ Antigravity Supervisor (thin coordination only)
       v                                      v
 OpenCode Worker A                       OpenCode Worker B
 verified free model A                   verified free model B
-source-centric extraction               feature-centric audit
+chunk-scoped extraction                 independent chunk-scoped audit
       |                                      |
       +------------------+-------------------+
                          |
@@ -69,7 +73,7 @@ It must not read the entire corpus and perform the same scientific extraction it
 
 ### Worker A — source-centric discovery
 
-Worker A reviews the assigned upstream-preprocessed paper/SI bundle (parsed text, structured tables, and extracted visual assets) and extracts:
+Worker A reviews one assigned bounded evidence chunk from the upstream-preprocessed paper/SI package (parsed text ranges, original table rows/cell fragments, and related extracted visual assets) and extracts:
 - all raw result-feature observations;
 - individual reported result values;
 - sample identities and dynamically associated context;
@@ -78,7 +82,7 @@ Worker A reviews the assigned upstream-preprocessed paper/SI bundle (parsed text
 
 ### Worker B — feature-centric discovery and audit
 
-Worker B independently reviews the same upstream-preprocessed paper/SI bundle and discovers the result-feature inventory. It focuses on:
+Worker B independently reviews the same assigned chunk as Worker A (without seeing A's first-pass output) and discovers the result-feature inventory. It focuses on:
 - variables that appear only in SI, tables, figures, or secondary analysis;
 - omissions and additional result series;
 - same-name/different-definition cases;
@@ -89,7 +93,21 @@ Worker B need not duplicate every value Worker A extracted. It should produce ev
 
 The first-pass outputs must remain isolated: neither Worker sees the other's output before its own first-pass review is complete.
 
-## 5. Model pair and run isolation
+## 5. Deterministic evidence chunking
+
+The unit of semantic work is a bounded chunk, not an entire paper. Python creates stable evidence units from the already-parsed upstream package:
+
+- Text units split on upstream page headings and then paragraph/newline boundaries. Each unit retains exact source-text character offsets, document type, and original page number. Units are sorted by original source offsets before grouping.
+- Tables normally group complete original rows. If one row is too large, it is split into cell fragments retaining the original table ID, 1-based row and column indexes, cell offsets, and header-context references.
+- Pre-extracted figure/table assets are attached once to the matching evidence unit when the upstream index provides the relation; otherwise they remain explicit orphan visual units.
+- A task bundle contains only its assigned units. A separate paper-wide navigation index identifies all chunks and candidate MAIN-to-SI references; a per-chunk evidence index carries the exact assigned page/table/figure locators and the upstream index SHA-256.
+- Adjacent text and repeated table-header rows are explicitly context-only. They can help interpret the assigned evidence but do not count as additional assigned coverage.
+- Every evidence reference must cite `chunk_id` and `unit_id` in addition to the original upstream locator. Deterministic validation rejects references to unassigned chunks/units, text quotes outside the assigned text range, or table rows/cells outside the assigned unit.
+- The planner iteratively reduces chunk size when the rendered bundle exceeds its hard character limit. If an indivisible asset/metadata item still exceeds limits, the task is explicitly blocked and reported; content is never silently truncated.
+
+Cross-chunk relationships are preserved through stable unit/chunk identities, original source locators, same-row table identities, paper-wide navigation, and explicit unresolved items. A worker must not infer a sample/condition/result link from proximity. Full-source coverage is aggregated only after all its chunk assignments are successful for the relevant Worker.
+
+## 6. Model pair and run isolation
 
 The two workers must use different exact model references. The current preferred pair is:
 - `opencode-go/crouton-alpha-free`;
@@ -99,7 +117,7 @@ They are limited-time offers, so the pair is configurable and must be verified b
 
 Every paper/task invocation explicitly pins its model. Use deterministic titles and avoid implicit helper-model calls. A task must not fall back to an OpenCode paid model or to the Antigravity model when the selected free worker fails.
 
-## 6. Parallelism and quota protection
+## 7. Parallelism and quota protection
 
 Keep concurrency configurable. The intended initial operating point is:
 - up to 2 papers active at once;
@@ -108,7 +126,7 @@ Keep concurrency configurable. The intended initial operating point is:
 
 The orchestrator must also implement bounded retries, backoff, and a global rate limiter. Do not assume unlimited request allowances mean unlimited safe concurrency. HTTP 429 or service errors should reduce concurrency and preserve tasks for retry; never switch to a paid model.
 
-## 7. Deterministic processing
+## 8. Deterministic processing
 
 chem-literature owns all scientific-document preprocessing: PDF/SI text extraction, page/layout indexing, table extraction, figure/table image extraction, SI parsing, evidence-index generation, and preprocessing QC.
 
@@ -116,7 +134,8 @@ Feature_create Python owns:
 - ingestion of the upstream chem-literature preprocessed paired CSV (not independent corpus discovery);
 - verification and hashing of the CSV-listed raw MAIN/SI files without parsing them;
 - validation/indexing of upstream evidence_index, parsed text, structured tables, media assets, and QC;
-- provenance indexing, chunking of upstream-parsed content, and task queue construction;
+- provenance indexing, deterministic chunking of upstream-parsed content, and chunk-scoped task queue construction;
+- exact assigned-unit/chunk validation for every worker evidence reference;
 - stable ID allocation;
 - Registry persistence and decision logs;
 - schema validation;
@@ -127,13 +146,13 @@ Feature_create Python owns:
 
 A model may identify or interpret a scientific feature, value, or context. It cannot allocate persistent Registry IDs, claim unverified evidence is verified, or directly commit Registry mutations.
 
-## 8. Registry lifecycle
+## 9. Registry lifecycle
 
 A raw discovery is an immutable Observation. An Observation may initially be linked to a provisional Canonical Feature. Later reconciliation may confirm the candidate, link it to an existing Canonical Feature, leave it under review, split it from an incorrectly broad candidate, or exclude it as a condition/non-result item.
 
 Canonical Feature IDs are stable internal identities. Merge/split history is retained. A merge creates a redirect from the retired ID to the surviving ID; a split creates new canonical identities and reassigns observations through an explicit decision event. No historical decision is silently erased.
 
-## 9. Context model
+## 10. Context model
 
 Do not predefine a narrow universal list of experimental condition names. Store context as evidence-backed facts with:
 - raw label;
@@ -142,19 +161,19 @@ Do not predefine a narrow universal list of experimental condition names. Store 
 - context role (sample identity, condition, time/cycle, protocol, statistical scope, or other);
 - evidence locator.
 
-## 10. Evidence model
+## 11. Evidence model
 
 Every accepted result value references one or more evidence locators. The locator should identify the source file and the most precise available position: page, section, paragraph, table, row, column, cell, figure, panel, caption, or digitization artifact.
 
 Visual-only interpretation is not an exact numeric extraction. A plotted trend may support feature discovery and series identification without supporting precise result values.
 
-## 11. Incremental execution
+## 12. Incremental execution
 
 Each source and task has a deterministic identity derived from source hash, task type, contract version, and relevant configuration. Completed tasks are skipped on resume only when inputs and contract versions still match.
 
 The Registry uses append-only decision events and atomic writes/locks. A crash must not leave half-written canonical state or duplicate IDs.
 
-## 12. Deliverable boundary
+## 13. Deliverable boundary
 
 Internal run files may include JSON/JSONL, evidence maps, checkpoints, metrics, and review queues. Formal output remains exactly:
 - `result_feature_records.txt`
