@@ -197,6 +197,10 @@ def table_row_segments(source: dict[str, Any], max_unit_chars: int) -> list[dict
             "row_start": start_row,
             "row_end": end_row,
             "context_rows": context_rows,
+            "bbox": table.get("bbox"),
+            "caption": table.get("caption"),
+            "doc_type": table.get("doc_type"),
+            "entity_id": table_id,
             "text": rendered,
         })
     return result
@@ -233,7 +237,8 @@ def make_source_units(
                     f"SOURCE_TYPE: {source_type}\n"
                     f"PARSE_STATUS: {source.get('parse_status')}\n"
                     f"LOCATOR: page={source.get('page_number')}; bbox={source.get('bbox')}; "
-                    f"figure_id={source.get('figure_id')}; table_id={source.get('table_id')}\n"
+                    f"figure_id={source.get('figure_id')}; table_id={source.get('table_id')}; "
+                    f"asset_id={source.get('asset_id')}\n"
                     f"CAPTION: {source.get('caption') or ''}\n"
                 )
             segments = []
@@ -245,6 +250,13 @@ def make_source_units(
                     "scope_type": "source_item" if len(pieces) == 1 else "source_item_segment",
                     "scope_label": f"{source.get('label') or source['source_id']} {descriptor if len(pieces) > 1 else ''}".strip(),
                     "page_number": source.get("page_number"),
+                    "table_id": source.get("table_id"),
+                    "figure_id": source.get("figure_id"),
+                    "bbox": source.get("bbox"),
+                    "asset_id": source.get("asset_id"),
+                    "asset_type": source.get("asset_type"),
+                    "caption": source.get("caption"),
+                    "entity_id": source.get("table_id") or source.get("figure_id"),
                     "part_index": part_index,
                     "part_count": len(pieces),
                     "text": part,
