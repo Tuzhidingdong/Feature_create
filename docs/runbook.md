@@ -162,20 +162,20 @@ python scripts/reconcile_features.py `
 
 This step creates immutable raw Feature Observations and provisional canonical Feature candidates. Worker A result values are stored as per-value JSONL records. Worker B omissions and semantic distinctions are stored separately. Python does not automatically merge similar feature names.
 
-## 9. Targeted cross-chunk context review
+## 8. Targeted cross-chunk context review
 
 Run this stage after Registry ingestion. It is selective: only Worker A missing_context issues with an explicit cross_chunk_target and a linked result record can create a second-pass task. Items without a deterministic remote unit, or whose target is not connected by the declared navigation relation, remain unresolved and are reported as skipped/blocked.
 
 Build the context-review queue:
 
 ~~~powershell
-python scripts/build_context_review_queue.py \`
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" \`
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" \`
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" \`
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" \`
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch" \`
-  --max-context-chars 60000 \`
+python scripts/build_context_review_queue.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch" `
+  --max-context-chars 60000 `
   --max-attachments 8
 ~~~
 
@@ -189,43 +189,43 @@ It does not attach the entire paper, read other workers' outputs, or parse raw P
 Run the free-model preflight without inference:
 
 ~~~powershell
-python scripts/run_workers.py \`
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" \`
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" `
   --dry-run
 ~~~
 
 Dispatch only after the regular current free-model price gate passes:
 
 ~~~powershell
-python scripts/run_workers.py \`
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
   --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
 ~~~
 
 Validate both CURRENT and TARGET citations against their assigned unit, original source offsets/table cells, and exact quotes:
 
 ~~~powershell
-python scripts/validate_evidence.py \`
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" \`
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+python scripts/validate_evidence.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
   --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
 ~~~
 
 Apply only the context decision after evidence validation passes:
 
 ~~~powershell
-python scripts/apply_context_reviews.py \`
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" \`
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" \`
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" \`
+python scripts/apply_context_reviews.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
   --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs\\application_report.json"
 ~~~
 
 A confirmed fact is appended only to its matching context category (sample_identity, condition_facts, time_cycle_facts, protocol_facts, or other_context_facts). The applier protects the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, and first-pass evidence references. no_association closes that specific question without adding a fact. insufficient_evidence and conflicting_evidence remain open for human review. Every decision and its two-sided citations are retained in the unresolved item and the linked result record's context-review history.
 
-## 10. Build global cross-paper Feature review tasks
+## 9. Build global cross-paper Feature review tasks
 
 ```powershell
 python scripts/build_reconciliation_queue.py `
@@ -355,6 +355,7 @@ python scripts/audit_records.py `
   --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
   --reconciliation-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
   --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
+  --context-review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
   --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_audit.json"
 ```
