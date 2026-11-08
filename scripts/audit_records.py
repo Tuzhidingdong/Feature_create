@@ -75,6 +75,23 @@ def coverage_for_task(task: dict[str, Any]) -> dict[str, str]:
     return result
 
 
+def aggregate_chunk_coverage(
+    assignments: dict[str, list[str]],
+    success_status: str,
+) -> dict[str, str]:
+    """A source is complete only when every assigned chunk for that worker is complete."""
+    result: dict[str, str] = {}
+    partial_statuses = {"partially_reviewed", "uncertain", "needs_targeted_review"}
+    for source_id, statuses in assignments.items():
+        if statuses and all(status == success_status for status in statuses):
+            result[source_id] = success_status
+        elif any(status in partial_statuses or status == success_status for status in statuses):
+            result[source_id] = "partially_reviewed"
+        else:
+            result[source_id] = "not_reviewed"
+    return result
+
+
 def context_issue_count(record: dict[str, Any]) -> int:
     explicit = record.get("unresolved_issues") or []
     count = 0
@@ -138,6 +155,10 @@ def main(argv: list[str] | None = None) -> int:
 
     source_a_status: dict[str, str] = {}
     source_b_status: dict[str, str] = {}
+    coverage_assignments: dict[str, dict[str, list[str]]] = {
+        "source_discovery": {},
+        "feature_audit": {},
+    }
     task_status_counts: dict[str, Counter[str]] = {}
     model_refs: dict[str, set[str]] = {}
     requested_model_refs: dict[str, set[str]] = {}
@@ -146,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     costs: dict[str, list[float]] = {}
     unknown_cost_tasks: dict[str, list[str]] = {}
     usage: dict[str, list[dict[str, int]]] = {}
+    chunk_role_complete: dict[str, dict[str, bool]] = {}
+    chunk_to_paper: dict[str, str] = {}
 
     for task in all_tasks:
         role = task.get("worker_role")
@@ -155,12 +178,24 @@ def main(argv: list[str] | None = None) -> int:
             or (task.get("task_status") if task.get("task_status") != "pending" else "not_started")
         )
         task_status_counts.setdefault(str(role), Counter())[status] += 1
-        if status == "complete":
-            coverage = coverage_for_task(task)
-            if role == "source_discovery":
-                source_a_status.update(coverage)
-            elif role == "feature_audit":
-                source_b_status.update(coverage)
+        coverage = coverage_for_task(task) if status == "complete" else {}
+        if role in {"source_discovery", "feature_audit"}:
+            expected_sources = task.get("source_ids") or list(coverage)
+            for source_id in expected_sources:
+                coverage_status = coverage.get(source_id, "missing_chunk_coverage")
+                coverage_assignments[str(role)].setdefault(str(source_id), []).append(coverage_status)
+
+        chunk_id = task.get("chunk_id")
+        if chunk_id and role in {"source_discovery", "feature_audit"}:
+            chunk_to_paper[str(chunk_id)] = str(task.get("paper_id") or "")
+            expected_sources = task.get("source_ids") or []
+            required_status = "fully_reviewed" if role == "source_discovery" else "reviewed"
+            chunk_role_complete.setdefault(str(chunk_id), {})[str(role)] = bool(
+                status == "complete"
+                and expected_sources
+                and all(coverage.get(source_id) == required_status for source_id in expected_sources)
+            )
+
         role_key = str(role)
         requested_model = task.get("model_ref")
         if requested_model:
@@ -178,16 +213,45 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(state.get("tokens"), dict):
             usage.setdefault(str(role), []).append(state["tokens"])
 
+    source_a_status = aggregate_chunk_coverage(
+        coverage_assignments["source_discovery"], "fully_reviewed"
+    )
+    source_b_status = aggregate_chunk_coverage(
+        coverage_assignments["feature_audit"], "reviewed"
+    )
     source_by_id = {source["source_id"]: source for source in sources}
     a_full = {sid for sid, status in source_a_status.items() if status == "fully_reviewed"}
     b_full = {sid for sid, status in source_b_status.items() if status == "reviewed"}
     fully_reviewed_both = a_full & b_full
-    partially_reviewed = {
+    sources_with_any_review = {
         sid for sid in set(source_a_status) | set(source_b_status)
-        if source_a_status.get(sid) not in {"fully_reviewed"}
-        or source_b_status.get(sid) not in {"reviewed"}
+        if source_a_status.get(sid) != "not_reviewed"
+        or source_b_status.get(sid) != "not_reviewed"
     }
-    sources_never_reviewed = set(source_by_id) - (set(source_a_status) | set(source_b_status))
+    partially_reviewed = {
+        sid for sid in sources_with_any_review
+        if source_a_status.get(sid) != "fully_reviewed"
+        or source_b_status.get(sid) != "reviewed"
+    }
+    sources_never_reviewed = set(source_by_id) - sources_with_any_review
+
+    chunk_ids = sorted(chunk_to_paper)
+    chunks_full_both = {
+        chunk_id for chunk_id in chunk_ids
+        if chunk_role_complete.get(chunk_id, {}).get("source_discovery", False)
+        and chunk_role_complete.get(chunk_id, {}).get("feature_audit", False)
+    }
+    chunk_counts_by_paper: dict[str, dict[str, int]] = {}
+    for chunk_id in chunk_ids:
+        paper_id = chunk_to_paper.get(chunk_id) or "unknown"
+        item = chunk_counts_by_paper.setdefault(
+            paper_id, {"planned_chunks": 0, "fully_reviewed_by_both": 0, "partial_or_missing": 0}
+        )
+        item["planned_chunks"] += 1
+        if chunk_id in chunks_full_both:
+            item["fully_reviewed_by_both"] += 1
+        else:
+            item["partial_or_missing"] += 1
 
     inaccessible = {
         sid for sid, source in source_by_id.items()
@@ -214,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         source_ids = set(paper.get("source_ids", []))
         if source_ids and source_ids.issubset(fully_reviewed_both):
             paper_fully_reviewed += 1
-        elif source_ids & (set(source_a_status) | set(source_b_status)):
+        elif source_ids & sources_with_any_review:
             paper_partial_reviewed += 1
 
     record_status_counts = Counter(str(item.get("extraction_status", "not_set")) for item in records)
@@ -325,7 +389,11 @@ def main(argv: list[str] | None = None) -> int:
             "cross_paper_reconciliation_task_count": len(reconciliation_tasks),
             "existing_schema_mapping_task_count": len(mapping_tasks),
             "all_worker_task_count": len(all_tasks),
+            "planned_paper_chunk_count": len(chunk_ids),
+            "chunks_fully_reviewed_by_both": len(chunks_full_both),
+            "chunks_partial_or_missing": len(chunk_ids) - len(chunks_full_both),
         },
+        "paper_chunk_coverage": chunk_counts_by_paper,
         "existing_schema_mapping": {
             "mapping_task_count": len(mapping_queue.get("tasks", [])),
             "mapping_task_status_counts": dict(Counter(mapping_task_states)),
