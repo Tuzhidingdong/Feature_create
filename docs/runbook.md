@@ -84,14 +84,14 @@ python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Fea
 One independent Worker A task and one independent Worker B task are created for every deterministic chunk of an eligible paper. Each task has:
 - stable task ID and exact pinned model reference;
 - worker prompt and only the assigned upstream-parsed text/table evidence units;
-- a per-chunk `chunk_evidence_index.json` locator slice, a compact paper-wide `paper_chunk_index.json`, and the relevant QC report;
+- a per-chunk `chunk_evidence_index.json` locator slice, a compact paper-wide `paper_chunk_index.json` (including adjacent text-segment links and same-original-row table links across chunks), and the relevant QC report;
 - pre-extracted figure/table image assets when available;
 - stable source IDs, `unit_id`, `chunk_id`, and original page/table/row/column/figure/SI locators;
 - raw PDF/SI hash inventory for provenance only.
 
 The task builder must never attach raw PDF, ZIP, DOCX, or XLSX source files. It attaches only pre-extracted visual assets and bounded chunk/paper index plus QC files. The unchanged complete upstream evidence index remains in the prepared run for provenance. If a source package is partial, the bundle carries its warnings and unparsed materials; workers must mark the corresponding coverage incomplete.
 
-Large papers are split automatically before dispatch. Text chunks preserve exact source character offsets and upstream page numbers; table chunks preserve original 1-based row/column indexes, including cell fragments for a single oversized row; related pre-extracted images are attached once. Context-only snippets and repeated table headers do not count as assigned coverage. The planner reduces the chunk budget iteratively; any irreducible atomic bundle above the hard limit is explicitly blocked rather than silently truncated.
+Large papers are split automatically before dispatch. Text chunks preserve exact source character offsets and upstream page numbers; table chunks preserve original 1-based row/column indexes, including cell fragments for a single oversized row; related pre-extracted images are attached once. Context-only snippets and repeated table headers do not count as assigned coverage. The planner reduces the chunk budget iteratively; any irreducible atomic bundle above the hard limit is explicitly blocked rather than silently truncated. The paper-wide navigation index preserves the exact offset adjacency of text segments and connects every split table-row/cell unit that shares the same original `table_id + row index`; these links allow targeted cross-chunk review without asserting unsupported sample/condition/result relationships.
 
 ## 4. Verify the free model pair before dispatch
 
