@@ -61,3 +61,58 @@ Antigravity may be used as the Supervisor control plane, but not as the paper-re
 Architecture/contract baseline: **v0.1**  
 End-to-end implementation: **not yet declared complete**  
 Production readiness: **not yet established**
+
+
+## Local execution quick start (Windows PowerShell)
+
+Install Python dependencies:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Prepare the corpus:
+
+```powershell
+python scripts/prepare_corpus.py `
+  --input "E:\\Zinc_batters_datas" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+```
+
+Build the isolated Worker A/B queue:
+
+```powershell
+python scripts/build_task_queue.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
+```
+
+First perform model-price preflight and command planning without inference:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
+  --dry-run
+```
+
+Only after the dry run passes, dispatch the two free workers:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+```
+
+Validate result-value evidence:
+
+```powershell
+python scripts/validate_evidence.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+```
+
+The first run should be performed on a small paper subset to validate the local OpenCode CLI version, model availability, task bundle size, and JSON event/export format. Do not start a large corpus run until the local smoke test succeeds.
+
+More detail: [docs/runbook.md](docs/runbook.md).
