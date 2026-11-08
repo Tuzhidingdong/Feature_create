@@ -115,10 +115,14 @@ def text_page_segments(text: str, source: dict[str, Any], max_unit_chars: int) -
     result: list[dict[str, Any]] = []
     for page_number, page_text in raw_pages:
         parts = split_text_preserving_content(page_text, max_unit_chars)
+        offset = 0
         for part_index, part in enumerate(parts, start=1):
             page_label = f"page_{page_number}" if page_number is not None else "unpaged_text"
             part_label = f"_part_{part_index}_of_{len(parts)}" if len(parts) > 1 else ""
             descriptor = f"{page_label}{part_label}"
+            context_before = page_text[max(0, offset - 600):offset]
+            part_end = offset + len(part)
+            context_after = page_text[part_end:part_end + 600]
             result.append({
                 "scope_id": stable_scope_id(source["source_id"], descriptor, part),
                 "scope_type": "page_text" if len(parts) == 1 else "page_text_segment",
@@ -127,8 +131,11 @@ def text_page_segments(text: str, source: dict[str, Any], max_unit_chars: int) -
                 "page_numbers": [page_number] if page_number is not None else list(source.get("page_numbers") or []),
                 "part_index": part_index,
                 "part_count": len(parts),
+                "context_before": context_before,
+                "context_after": context_after,
                 "text": part,
             })
+            offset = part_end
     return result
 
 
@@ -178,7 +185,7 @@ def table_row_segments(source: dict[str, Any], max_unit_chars: int) -> list[dict
     result: list[dict[str, Any]] = []
     for start_row, end_row in segments:
         primary_rows = list(range(start_row, end_row + 1))
-        context_rows = [1] if start_row > 1 and len(rows) > 1 else []
+        context_rows = list(range(1, min(3, len(rows)) + 1)) if start_row > 1 else []
         rendered = render_table_rows(table, primary_rows, context_rows)
         descriptor = f"table_{table_id}_rows_{start_row}_{end_row}"
         result.append({
@@ -381,7 +388,7 @@ def render_bundle(
         "- Return one coverage entry for every assigned scope_id; repeated source_id values may have different scope_id values.",
         "- A source is fully reviewed only when every scope assigned to this task has been reviewed completely.",
         "- Keep the original source_id unchanged in all evidence references. Use the original page number and original 1-based table row/column positions.",
-        "- For split table sources, inspect only the primary original row range for new result extraction; a repeated context row is only for reading column labels unless it is also in this scope's primary range.",
+        "- For split table sources, inspect only the primary original row range for new result extraction; the first up to three repeated context rows are for multi-row headers/table structure and must not be extracted again unless they are also in this scope's primary range.",
         "- Use the upstream evidence index and QC status as authoritative. Raw MAIN/SI source files are provenance only; never parse them again.",
         "- Preserve sample identity, conditions, time/cycle facts, protocol facts, and reported result values as separate facts.",
         "- Figure/table images are already-extracted upstream assets. Inspect all attached assets; an asset's existence alone does not prove it was interpreted.",
@@ -401,9 +408,20 @@ def render_bundle(
             f"Original locator: page={scope.get('page_number')}; table={scope.get('table_id')}; "
             f"primary rows={scope.get('row_start')}-{scope.get('row_end')}.",
             "",
-            unit["text"],
-            "",
         ])
+        if scope.get("context_before"):
+            lines.extend([
+                "[CONTEXT BEFORE — same original page; use only to resolve local context, not as separately assigned coverage]",
+                str(scope["context_before"]),
+                "",
+            ])
+        lines.extend([unit["text"], ""])
+        if scope.get("context_after"):
+            lines.extend([
+                "[CONTEXT AFTER — same original page; use only to resolve local context, not as separately assigned coverage]",
+                str(scope["context_after"]),
+                "",
+            ])
     return "\n".join(lines), sorted(set(attachments)), extracted_chars, scopes
 
 
@@ -532,7 +550,15 @@ def main(argv: list[str] | None = None) -> int:
             for unit in chunk_units:
                 scope = unit["scope"]
                 scope_text_path = scope_text_dir / f"{scope['scope_id']}.txt"
-                scope_text_path.write_text(unit["text"], encoding="utf-8", newline="\n")
+                scope_text = "\n".join([
+                    "[CONTEXT BEFORE]",
+                    str(scope.get("context_before") or ""),
+                    "[PRIMARY SCOPE]",
+                    unit["text"],
+                    "[CONTEXT AFTER]",
+                    str(scope.get("context_after") or ""),
+                ])
+                scope_text_path.write_text(scope_text, encoding="utf-8", newline="\n")
                 scope["scope_text_path"] = str(scope_text_path.resolve())
                 scope["content_sha256"] = unit["content_sha256"]
             bundle_path = chunk_dir / "task_input.md"
