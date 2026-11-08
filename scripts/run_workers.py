@@ -51,11 +51,13 @@ SCHEMA_PATHS = {
     "source_discovery": ROOT / "contracts" / "worker-a.schema.json",
     "feature_audit": ROOT / "contracts" / "worker-b.schema.json",
     "semantic_reconciliation": ROOT / "contracts" / "feature-reconciliation-batch.schema.json",
+    "existing_schema_mapping": ROOT / "contracts" / "existing-feature-mapping-batch.schema.json",
 }
 WORKER_AGENTS = {
     "source_discovery": "feature_create_worker_a",
     "feature_audit": "feature_create_worker_b",
     "semantic_reconciliation": "feature_create_worker_b",
+    "existing_schema_mapping": "feature_create_worker_b",
 }
 TOOL_DENY_MAP = {
     name: False
@@ -320,22 +322,38 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
     ]
     if payload.get("task_id") != task["task_id"]:
         problems.append("task_id does not match the dispatched task.")
-    if task["worker_role"] == "semantic_reconciliation":
-        if payload.get("task_type") != "semantic_reconciliation":
-            problems.append("task_type must be semantic_reconciliation.")
+    if task["worker_role"] in {"semantic_reconciliation", "existing_schema_mapping"}:
+        expected_task_type = task["worker_role"]
+        if payload.get("task_type") != expected_task_type:
+            problems.append(f"task_type must be {expected_task_type}.")
         if payload.get("registry_id") != task.get("registry_id"):
-            problems.append("registry_id does not match the dispatched reconciliation task.")
-        returned_pairs = {
-            item.get("candidate_pair_id") for item in payload.get("pair_decisions", [])
-        }
-        expected_pairs = set(task.get("candidate_pair_ids", []))
-        if returned_pairs != expected_pairs:
-            missing = sorted(expected_pairs - returned_pairs)
-            unexpected = sorted(returned_pairs - expected_pairs)
-            if missing:
-                problems.append("Missing pair decisions: " + ", ".join(missing))
-            if unexpected:
-                problems.append("Unexpected pair decisions: " + ", ".join(unexpected))
+            problems.append("registry_id does not match the dispatched Registry task.")
+        if task["worker_role"] == "semantic_reconciliation":
+            returned_ids = {
+                item.get("candidate_pair_id") for item in payload.get("pair_decisions", [])
+            }
+            expected_ids = set(task.get("candidate_pair_ids", []))
+            if returned_ids != expected_ids:
+                missing = sorted(expected_ids - returned_ids)
+                unexpected = sorted(returned_ids - expected_ids)
+                if missing:
+                    problems.append("Missing pair decisions: " + ", ".join(missing))
+                if unexpected:
+                    problems.append("Unexpected pair decisions: " + ", ".join(unexpected))
+        else:
+            if payload.get("existing_schema_sha256") != task.get("existing_schema_sha256"):
+                problems.append("existing_schema_sha256 does not match the task input schema.")
+            returned_ids = {
+                item.get("registry_feature_id") for item in payload.get("mapping_decisions", [])
+            }
+            expected_ids = set(task.get("registry_feature_ids", []))
+            if returned_ids != expected_ids:
+                missing = sorted(expected_ids - returned_ids)
+                unexpected = sorted(returned_ids - expected_ids)
+                if missing:
+                    problems.append("Missing mapping decisions: " + ", ".join(missing))
+                if unexpected:
+                    problems.append("Unexpected mapping decisions: " + ", ".join(unexpected))
         return problems
 
     if payload.get("paper_id") != task["paper_id"]:
