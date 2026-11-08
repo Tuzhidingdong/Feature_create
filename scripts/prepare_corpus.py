@@ -79,8 +79,14 @@ def normalize_doi(value: str | None) -> str | None:
     if not value:
         return None
     candidate = value.strip().lower()
+    candidate = re.sub(r"\.(pdf|md|txt|xml|csv|xlsx|html?)$", "", candidate)
+    candidate = re.sub(
+        r"([_-](si|supp|supplement|supplementary|supporting|supporting-information|supplementary-information)([_-].*)?)$",
+        "",
+        candidate,
+    )
     candidate = re.sub(r"[\])}>,.;:]+$", "", candidate)
-    if not candidate.startswith("10."):
+    if not re.match(r"^10\.\d{4,9}/", candidate):
         return None
     return candidate
 
@@ -97,9 +103,13 @@ def find_doi(*values: str) -> str | None:
 
 def clean_stem(stem: str) -> str:
     value = stem.casefold()
-    value = re.sub(r"^(si|supp|supporting|supplementary)[_-]+", "", value)
-    value = re.sub(r"[_-](si|supp|supporting|supplementary|supporting_information|supplementary_information)$", "", value)
-    value = re.sub(r"\.(pdf|md|txt|xml|csv|xlsx)$", "", value)
+    value = re.sub(r"\.(pdf|md|txt|xml|csv|xlsx|html?)$", "", value)
+    value = re.sub(
+        r"([_-](si|supp|supplement|supplementary|supporting|supporting_information|supplementary_information)([_-].*)?)$",
+        "",
+        value,
+    )
+    value = re.sub(r"^(si|supp|supplement|supplementary|supporting)[_-]+", "", value)
     value = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
     return value or "unnamed"
 
@@ -253,8 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         source_type = infer_source_type(path, relative, is_si)
         digest = sha256_file(path)
         text, parse_status, page_count = extract_text(path)
-        doi = find_doi(str(relative), text[:200000])
-        paper_key = f"doi:{doi}" if doi else f"stem:{clean_stem(path.stem)}"
+        # Prefer DOI found in the document text. Filename DOI is a fallback,
+        # with SI suffixes removed by normalize_doi().
+        doi = find_doi(text[:200000], str(relative))
+        stem_key = clean_stem(path.stem)
+        paper_key = f"doi:{doi}" if doi else f"stem:{stem_key}""
         source_id = stable_id("SRC", relative.as_posix() + "|" + digest)
         text_path: str | None = None
         if text:
@@ -266,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
         sources.append({
             "source_id": source_id,
             "paper_key": paper_key,
+            "stem_key": stem_key,
             "paper_id": None,
             "doi": doi,
             "source_role": "si" if is_si else "main",
@@ -283,7 +297,30 @@ def main(argv: list[str] | None = None) -> int:
             "is_visual_asset": path.suffix.casefold() in IMAGE_EXTENSIONS,
         })
 
-    # Stable paper IDs: DOI where found; otherwise use a cleaned source stem.
+    # Attach DOI-less SI/material files to a DOI-bearing paper only when
+    # their normalized filename stem maps uniquely to one DOI in the corpus.
+    doi_by_stem: dict[str, set[str]] = {}
+    for source in sources:
+        if source.get("doi"):
+            doi_by_stem.setdefault(source["stem_key"], set()).add(source["doi"])
+
+    unique_doi_by_stem = {
+        stem: next(iter(dois))
+        for stem, dois in doi_by_stem.items()
+        if len(dois) == 1
+    }
+    for source in sources:
+        if not source.get("doi"):
+            matched_doi = unique_doi_by_stem.get(source["stem_key"])
+            if matched_doi:
+                source["doi"] = matched_doi
+                source["paper_key"] = f"doi:{matched_doi}"
+                source["doi_match_method"] = "unique_normalized_filename_stem"
+            else:
+                source["doi_match_method"] = "unmatched_or_ambiguous"
+
+    # Stable paper IDs: DOI where resolved; otherwise retain an explicit
+    # stem-derived ID so ambiguous files are not silently merged.
     groups: dict[str, list[dict[str, Any]]] = {}
     for source in sources:
         key = source["paper_key"]
