@@ -441,8 +441,15 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
                 problems.append(f"evidence_refs/{index}: unit_id is not assigned to the declared evidence_side.")
         if not {"current", "target"}.issubset(sides):
             problems.append("Every context decision requires review evidence from both current and target sides.")
+        if payload.get("decision") in {"no_association", "conflicting_evidence"}:
+            verified_sides = {
+                ref.get("evidence_side") for ref in payload.get("review_evidence_refs", [])
+                if ref.get("evidence_status") in {"verified_text", "verified_table_cell"}
+            }
+            if not {"current", "target"}.issubset(verified_sides):
+                problems.append("no_association/conflicting_evidence requires verified text/table evidence from both sides; otherwise return insufficient_evidence.")
         if payload.get("decision") == "association_confirmed":
-            if not payload.get("context_facts"):
+            if not payload.get("context_facts"): 
                 problems.append("association_confirmed requires at least one context_fact.")
             for index, fact in enumerate(payload.get("context_facts", [])):
                 fact_refs = fact.get("evidence_refs", [])
