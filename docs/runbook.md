@@ -312,8 +312,8 @@ A missing usage/cost field is recorded as not exposed, not automatically treated
 ## 15. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
-- PDF page/paragraph/table locators are not yet enriched beyond page markers and model-provided locators.
-- Table quote verification is text-occurrence checking, not yet cell-coordinate verification against structured table data.
+- Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
+- Figure panel/bounding-box interpretation is not automatically validated. The image and upstream coordinates support review, but workers must not claim automated figure digitization or exact values without digitization evidence.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
 - Oversized paper bundles are blocked rather than chunked automatically.
 - The cross-paper Registry review/merge mechanism, existing FEATURE_ID mapping, and final TXT exporter are implemented but still require a manually inspected pilot and validation against the user's actual legacy schema file.
