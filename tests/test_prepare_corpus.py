@@ -14,6 +14,31 @@ class PrepareCorpusTests(unittest.TestCase):
         self.assertEqual(clean_stem("paper_supporting_information.md"), "paper")
         self.assertEqual(clean_stem("SI_paper_supplementary.xlsx"), "paper")
 
+
+    def test_renders_pdf_pages_with_figure_and_table_captions(self) -> None:
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest("PyMuPDF is not installed")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "corpus"
+            output = Path(temp) / "prepared"
+            root.mkdir()
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, 72), "Figure 1. Cycling performance\nTable S1. Additional data")
+            document.save(root / "paper.pdf")
+            document.close()
+
+            exit_code = main(["--input", str(root), "--output", str(output)])
+            self.assertEqual(exit_code, 0)
+            manifest = json.loads((output / "source_manifest.json").read_text(encoding="utf-8"))
+            source = manifest["sources"][0]
+            self.assertEqual(source["parse_status"], "parsed")
+            self.assertEqual(len(source["visual_pages"]), 1)
+            visual = output / "visual_assets" / source["visual_pages"][0]["relative_path"]
+            self.assertTrue(visual.is_file())
+
     def test_groups_doi_less_si_with_unique_main_stem(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "corpus"
