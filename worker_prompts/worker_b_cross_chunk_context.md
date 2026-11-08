@@ -42,7 +42,7 @@ For a split text source, exact source offsets and page locators establish adjace
 Return exactly one decision:
 
 - association_confirmed: at least one specific context fact is jointly supported by current and target evidence. Return one or more context_facts, each with at least one CURRENT and one TARGET evidence reference.
-- no_association: the assigned target evidence was inspected and verified text/table content shows that it does not support the proposed association or explicitly rules it out. Cite locally verifiable evidence from both CURRENT and TARGET sides. If either side cannot be verified, use insufficient_evidence instead. Return no context facts and explain why.
+- no_association: verified text/table content explicitly identifies the proposed target as belonging to a different sample/series, or explicitly states that the proposed condition/protocol/scope does not apply to the current result. Cite the exact positive counter-evidence from both CURRENT and TARGET sides. Mere absence of a matching label or a missing explanation is not proof of no association; use insufficient_evidence in that case. If either side cannot be verified, use insufficient_evidence instead. Return no context facts and explain why.
 - insufficient_evidence: the assigned target evidence does not contain enough information to decide. Return no context facts and state what exact evidence is still missing.
 - conflicting_evidence: verified text/table evidence from both CURRENT and TARGET sides makes incompatible statements that cannot be reconciled from this bundle. Cite both conflicting statements. If either side cannot be verified, use insufficient_evidence instead. Return no context facts and identify the conflict.
 
