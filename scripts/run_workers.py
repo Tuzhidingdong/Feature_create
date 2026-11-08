@@ -456,6 +456,75 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
                 problems.append(
                     f"result_records/{index}: candidate_observation_id is not in feature_observations."
                 )
+
+        if any(item.get("cross_chunk_target") for item in payload.get("unresolved_items", [])):
+            index_path = Path(str(task.get("paper_chunk_index_path") or "")).resolve()
+            if not index_path.is_file():
+                problems.append("cross_chunk_target: paper_chunk_index.json is missing.")
+            else:
+                paper_index = read_json(index_path)
+                navigation = {
+                    str(item.get("unit_id")): item
+                    for item in paper_index.get("unit_navigation", [])
+                    if item.get("unit_id")
+                }
+                adjacent_pairs = {
+                    (
+                        str((item.get("from_segment") or {}).get("unit_id") or ""),
+                        str((item.get("to_segment") or {}).get("unit_id") or ""),
+                    )
+                    for item in paper_index.get("cross_chunk_text_boundaries", [])
+                }
+                row_groups = [
+                    {str(unit.get("unit_id")) for unit in group.get("units", [])}
+                    for group in paper_index.get("same_original_table_row_groups", [])
+                ]
+                for issue_index, issue in enumerate(payload.get("unresolved_items", [])):
+                    target = issue.get("cross_chunk_target")
+                    if not target:
+                        continue
+                    current_ids = {
+                        str((ref.get("locator") or {}).get("unit_id"))
+                        for ref in issue.get("evidence_refs", [])
+                        if (ref.get("locator") or {}).get("unit_id")
+                    }
+                    target_rows = target.get("target_units", [])
+                    target_ids = set()
+                    for target_index, target_unit in enumerate(target_rows):
+                        unit_id = str(target_unit.get("unit_id") or "")
+                        nav = navigation.get(unit_id)
+                        if not nav:
+                            problems.append(
+                                f"unresolved_items/{issue_index}/cross_chunk_target/target_units/{target_index}: unit_id is not in paper navigation index."
+                            )
+                            continue
+                        if str(target_unit.get("chunk_id")) != str(nav.get("chunk_id")):
+                            problems.append(
+                                f"unresolved_items/{issue_index}/cross_chunk_target/target_units/{target_index}: chunk_id does not match unit navigation."
+                            )
+                        if str(target_unit.get("source_id")) not in set(nav.get("source_ids") or []):
+                            problems.append(
+                                f"unresolved_items/{issue_index}/cross_chunk_target/target_units/{target_index}: source_id does not match unit navigation."
+                            )
+                        if str(nav.get("chunk_id")) == str(task.get("chunk_id")):
+                            problems.append(
+                                f"unresolved_items/{issue_index}/cross_chunk_target/target_units/{target_index}: target must be in another chunk."
+                            )
+                        target_ids.add(unit_id)
+                    basis = target.get("relation_basis")
+                    linked = True
+                    if basis == "adjacent_text_boundary":
+                        linked = any(
+                            (left in current_ids and right in target_ids)
+                            or (right in current_ids and left in target_ids)
+                            for left, right in adjacent_pairs
+                        )
+                    elif basis == "same_original_table_row":
+                        linked = any(bool(group & current_ids) and bool(group & target_ids) for group in row_groups)
+                    if not linked:
+                        problems.append(
+                            f"unresolved_items/{issue_index}/cross_chunk_target: nominated units do not match relation_basis {basis!r}."
+                        )
     elif task["worker_role"] == "feature_audit":
         validate_scope_coverage(payload.get("coverage_audit", []), "coverage_audit")
     return problems
