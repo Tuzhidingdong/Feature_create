@@ -110,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--records", type=Path, required=True)
     parser.add_argument("--review-queue", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--reconciliation-queue", type=Path)
     parser.add_argument("--mapping-queue", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -122,19 +123,31 @@ def main(argv: list[str] | None = None) -> int:
     records = read_jsonl(args.records.resolve())
     review_rows = read_jsonl(args.review_queue.resolve())
     tasks = queue.get("tasks", [])
+    reconciliation_queue = (
+        read_json(args.reconciliation_queue.resolve(), required=False)
+        if args.reconciliation_queue else {}
+    )
+    mapping_queue = read_json(args.mapping_queue.resolve(), required=False) if args.mapping_queue else {}
+    reconciliation_tasks = reconciliation_queue.get("tasks", [])
+    mapping_tasks = mapping_queue.get("tasks", [])
+    all_tasks = list(tasks) + list(reconciliation_tasks) + list(mapping_tasks)
 
     tasks_by_role: dict[str, list[dict[str, Any]]] = {}
-    for task in tasks:
+    for task in all_tasks:
         tasks_by_role.setdefault(str(task.get("worker_role")), []).append(task)
 
     source_a_status: dict[str, str] = {}
     source_b_status: dict[str, str] = {}
     task_status_counts: dict[str, Counter[str]] = {}
     model_refs: dict[str, set[str]] = {}
+    requested_model_refs: dict[str, set[str]] = {}
+    model_mismatch_tasks: dict[str, list[str]] = {}
+    model_unknown_tasks: dict[str, list[str]] = {}
     costs: dict[str, list[float]] = {}
+    unknown_cost_tasks: dict[str, list[str]] = {}
     usage: dict[str, list[dict[str, int]]] = {}
 
-    for task in tasks:
+    for task in all_tasks:
         role = task.get("worker_role")
         state = task_state(task)
         status = str(state.get("status", "not_started"))
@@ -145,9 +158,20 @@ def main(argv: list[str] | None = None) -> int:
                 source_a_status.update(coverage)
             elif role == "feature_audit":
                 source_b_status.update(coverage)
-        model_refs.setdefault(str(role), set()).update(state.get("observed_models") or [])
+        role_key = str(role)
+        requested_model = task.get("model_ref")
+        if requested_model:
+            requested_model_refs.setdefault(role_key, set()).add(str(requested_model))
+        observed_models = state.get("observed_models") or []
+        model_refs.setdefault(role_key, set()).update(observed_models)
+        if observed_models and requested_model and observed_models != [requested_model]:
+            model_mismatch_tasks.setdefault(role_key, []).append(str(task.get("task_id")))
+        elif not observed_models and status == "complete":
+            model_unknown_tasks.setdefault(role_key, []).append(str(task.get("task_id")))
         if isinstance(state.get("reported_cost"), (int, float)):
-            costs.setdefault(str(role), []).append(float(state["reported_cost"]))
+            costs.setdefault(role_key, []).append(float(state["reported_cost"]))
+        else:
+            unknown_cost_tasks.setdefault(role_key, []).append(str(task.get("task_id")))
         if isinstance(state.get("tokens"), dict):
             usage.setdefault(str(role), []).append(state["tokens"])
 
@@ -221,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         mapping_task_states.append(str(state.get("status", "not_started")))
 
     worker_usage: dict[str, Any] = {}
-    for role in sorted(set(task_status_counts) | set(model_refs)):
+    for role in sorted(set(task_status_counts) | set(model_refs) | set(requested_model_refs)):
         token_rows = usage.get(role, [])
         summed_tokens = {
             key: sum(int(row.get(key) or 0) for row in token_rows)
@@ -230,9 +254,14 @@ def main(argv: list[str] | None = None) -> int:
         cost_rows = costs.get(role, [])
         worker_usage[role] = {
             "task_status_counts": dict(task_status_counts.get(role, {})),
+            "requested_model_ids": sorted(requested_model_refs.get(role, set())),
             "observed_model_ids": sorted(model_refs.get(role, set())),
+            "model_mismatch_task_ids": sorted(model_mismatch_tasks.get(role, [])),
+            "model_not_exposed_task_ids": sorted(model_unknown_tasks.get(role, [])),
             "reported_cost_sum": sum(cost_rows) if cost_rows else None,
             "reported_cost_task_count": len(cost_rows),
+            "cost_not_exposed_task_ids": sorted(unknown_cost_tasks.get(role, [])),
+            "paid_cost_detected": any(value > 0 for value in cost_rows),
             "token_usage_sum": summed_tokens,
             "usage_task_count": len(token_rows),
         }
@@ -283,6 +312,12 @@ def main(argv: list[str] | None = None) -> int:
             ),
             "candidate_pair_count": len(review_rows),
             "pending_or_under_review_pair_count": len(pending_pairs),
+        },
+        "worker_task_totals": {
+            "initial_discovery_task_count": len(tasks),
+            "cross_paper_reconciliation_task_count": len(reconciliation_tasks),
+            "existing_schema_mapping_task_count": len(mapping_tasks),
+            "all_worker_task_count": len(all_tasks),
         },
         "existing_schema_mapping": {
             "mapping_task_count": len(mapping_queue.get("tasks", [])),
