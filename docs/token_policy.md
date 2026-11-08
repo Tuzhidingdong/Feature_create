@@ -2,7 +2,7 @@
 
 ## 1. Actual target
 
-Feature_create is designed to use two OpenCode Go models whose current published input/output/cache prices are all Free. Worker A and Worker B are separate model workers.
+Feature_create is designed to use two OpenCode Go models whose current published input, output, and cached-read prices are Free; cached-write is listed as a dash (no separate price). Worker A and Worker B are separate model workers.
 
 The target is:
 - OpenCode paid inference charge for Worker A: $0;
@@ -20,7 +20,7 @@ As verified against the official OpenCode Go model and pricing documentation on 
 
 | Worker | Model reference | Current published price | Offer status |
 |---|---|---|---|
-| A — source-centric | `opencode-go/crouton-alpha-free` | Input/output/cache Free | Limited-time offer |
+| A — source-centric | `opencode-go/crouton-alpha-free` | Input/output/cached-read Free; cached-write not listed | Limited-time offer |
 | B — feature-centric | `opencode-go/beam-free` | Input/output/cache Free | Limited-time offer |
 
 The published Go documentation currently lists unlimited request allowances for these free models, but availability and offers can change. The local runtime must not rely on this snapshot alone.
@@ -60,7 +60,7 @@ At run preflight:
 1. Refresh/read the models available to the current OpenCode installation.
 2. Confirm both exact model references are present and enabled.
 3. Check current provider/catalog pricing metadata or a freshly verified official pricing snapshot.
-4. Require input, output, cached-read, and cached-write prices to be zero/free.
+4. Require input, output, and cached-read prices to be zero/free; accept cached-write only when it is not listed/dash or explicitly zero/free.
 5. Confirm the selected pair contains two distinct model IDs.
 6. Record model IDs, verification source, and verification date in the run manifest.
 7. Dispatch only after both pass.
