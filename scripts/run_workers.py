@@ -477,8 +477,10 @@ def attempt_worker_task(
     role = str(task["worker_role"])
     run_meta: dict[str, Any] = {
         "task_id": task["task_id"],
-        "paper_id": task["paper_id"],
+        "paper_id": task.get("paper_id"),
+        "registry_id": task.get("registry_id"),
         "worker_role": role,
+        "task_type": task.get("task_type"),
         "requested_model": model_ref,
         "started_at": utc_now(),
         "attempts": [],
