@@ -205,6 +205,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "resolution_status": "pending",
             }) + "\n", encoding="utf-8")
 
+            self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
             report_path = root / "application_report.json"
             self.assertEqual(main([
                 "--queue", str(queue_path),
@@ -251,6 +252,12 @@ class ApplyContextReviewTests(unittest.TestCase):
             repeated = json.loads(records_path.read_text(encoding="utf-8").strip())
             self.assertEqual(1, len(repeated["sample_identity"]))
             self.assertEqual(1, len(repeated["context_review_history"]))
+            repeat_report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, repeat_report["tasks_applied"])
+            self.assertEqual(
+                "unresolved_item_changed_after_context_queue_build",
+                repeat_report["skipped_tasks"][0]["reason"],
+            )
 
     def test_rejects_response_modified_after_evidence_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -334,6 +341,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "resolution_status": "pending",
             }) + "\n", encoding="utf-8")
 
+            self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
             report_path = root / "report.json"
             self.assertEqual(main([
                 "--queue", str(queue_path),
@@ -548,6 +556,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "resolution_status": "pending",
             }) + "\n", encoding="utf-8")
 
+            self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
             report_path = root / "apply_report.json"
             self.assertEqual(main([
                 "--queue", str(queue_path),
@@ -635,6 +644,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "paper_id": "PAPER-1",
                 "resolution_status": "pending",
             }) + "\n", encoding="utf-8")
+            self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
