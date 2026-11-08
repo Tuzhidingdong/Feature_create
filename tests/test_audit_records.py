@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.audit_records import aggregate_chunk_coverage, main
+from scripts.audit_records import aggregate_chunk_coverage, coverage_for_task, main
 
 
 class AuditRecordsTests(unittest.TestCase):
@@ -180,6 +180,47 @@ class AuditRecordsTests(unittest.TestCase):
 
 
 class ChunkCoverageAggregationTests(unittest.TestCase):
+    def test_coverage_for_task_keeps_separate_scopes_of_same_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            (output / "response.json").write_text(json.dumps({
+                "coverage": [
+                    {"source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                    {"source_id": "SRC-1", "scope_id": "SCP-2", "status": "partially_reviewed"},
+                ]
+            }), encoding="utf-8")
+            task = {
+                "worker_role": "source_discovery",
+                "output_dir": str(output),
+                "source_scopes": [
+                    {"source_id": "SRC-1", "scope_id": "SCP-1"},
+                    {"source_id": "SRC-1", "scope_id": "SCP-2"},
+                ],
+            }
+            self.assertEqual(
+                {"SCP-1": "fully_reviewed", "SCP-2": "partially_reviewed"},
+                coverage_for_task(task),
+            )
+
+    def test_duplicate_scope_coverage_cannot_be_counted_as_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            (output / "response.json").write_text(json.dumps({
+                "coverage": [
+                    {"source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                    {"source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                ]
+            }), encoding="utf-8")
+            task = {
+                "worker_role": "source_discovery",
+                "output_dir": str(output),
+                "source_scopes": [{"source_id": "SRC-1", "scope_id": "SCP-1"}],
+            }
+            self.assertEqual(
+                {"SCP-1": "duplicate_coverage_entry"},
+                coverage_for_task(task),
+            )
+
     def test_source_is_complete_only_when_every_assigned_chunk_is_complete(self) -> None:
         result = aggregate_chunk_coverage(
             {
