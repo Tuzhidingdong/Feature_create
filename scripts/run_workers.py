@@ -288,16 +288,18 @@ def extract_json_object(text: str) -> dict[str, Any]:
     if value.startswith("```"):
         value = re.sub(r"^\`\`\`(?:json)?\s*", "", value, flags=re.IGNORECASE)
         value = re.sub(r"\s*\`\`\`$", "", value)
+    value = value.strip()
+    if not value.startswith("{"):
+        raise WorkerRunnerError("Worker response must contain only one JSON object; leading text is not allowed.")
     decoder = json.JSONDecoder()
-    start = value.find("{")
-    if start < 0:
-        raise WorkerRunnerError("No JSON object was found in the Worker response.")
     try:
-        parsed, _end = decoder.raw_decode(value[start:])
+        parsed, end = decoder.raw_decode(value)
     except json.JSONDecodeError as exc:
         raise WorkerRunnerError(f"Worker response contains invalid JSON: {exc}") from exc
     if not isinstance(parsed, dict):
         raise WorkerRunnerError("Worker response JSON root must be an object.")
+    if value[end:].strip():
+        raise WorkerRunnerError("Worker response contains trailing text after its JSON object.")
     return parsed
 
 
