@@ -58,7 +58,7 @@ class EvidenceChunkingTests(unittest.TestCase):
             },
         }
 
-        units = build_evidence_units([source], Path("."), max_unit_chars=260)
+        units = build_evidence_units([source], Path("."), max_unit_chars=400)
 
         self.assertGreater(len(units), 1)
         assigned = [
@@ -70,8 +70,62 @@ class EvidenceChunkingTests(unittest.TestCase):
         self.assertEqual(len(assigned), len(set(assigned)))
         for unit in units:
             self.assertEqual("MAIN_TAB_P2_01", unit["locator"]["table_id"])
-            self.assertIn("ORIGINAL_ROW_INDEX_1BASED", unit["content"])
-            self.assertIn("TABLE PREFIX ROWS FOR HEADER/STRUCTURE CONTEXT ONLY", unit["content"])
+            self.assertTrue("ORIGINAL_ROW_INDEX_1BASED" in unit["content"] or "ASSIGNED_CELL_FRAGMENT_JSON" in unit["content"])
+
+    def test_oversized_table_row_is_split_by_original_cell_and_character_offsets(self) -> None:
+        long_value = "electrochemical-result-" * 220
+        source = {
+            "source_id": "SRC-LARGE-CELL",
+            "source_role": "si",
+            "source_type": "si_table",
+            "component": "si_tables",
+            "table_id": "SI_TAB_S4_01",
+            "table_data": {
+                "table_id": "SI_TAB_S4_01",
+                "doc_type": "SI",
+                "page_number": 4,
+                "caption": "Large supporting dataset",
+                "rows": [
+                    ["Sample", "Raw observations"],
+                    ["S-01", long_value],
+                ],
+            },
+        }
+
+        units = build_evidence_units([source], Path("."), max_unit_chars=1200)
+
+        fragments = []
+        for unit in units:
+            for line in unit["content"].splitlines():
+                if line.startswith("ASSIGNED_CELL_FRAGMENT_JSON: "):
+                    import json
+                    fragments.append(json.loads(line.split(": ", 1)[1]))
+        result_fragments = [
+            item for item in fragments
+            if item["original_row_index_1based"] == 2
+            and item["original_column_index_1based"] == 2
+        ]
+        self.assertGreater(len(result_fragments), 1)
+        self.assertTrue(all(unit["unit_kind"] == "table" for unit in units))
+        self.assertEqual(
+            long_value,
+            "".join(
+                item["cell_text_fragment"]
+                for item in sorted(result_fragments, key=lambda x: x["cell_text_offset_start"])
+            ),
+        )
+        self.assertEqual(
+            list(range(len(long_value))),
+            [
+                position
+                for item in sorted(result_fragments, key=lambda x: x["cell_text_offset_start"])
+                for position in range(item["cell_text_offset_start"], item["cell_text_offset_end"])
+            ],
+        )
+        self.assertTrue(all(
+            item["cell_text_segment_count"] == len(result_fragments)
+            for item in result_fragments
+        ))
 
     def test_visual_asset_is_attached_once_to_its_parent_table_unit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
