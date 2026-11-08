@@ -190,7 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         paper_sources.sort(key=lambda s: (s["source_role"] != "main", s["relative_path"].casefold()))
         bundle, attachments, extracted_chars = build_bundle(paper, paper_sources, manifest_root)
         paper_hash = hashlib.sha256(
-            "|".join(sorted(s["sha256"] for s in paper_sources)).encode("utf-8")
+            "|".join(sorted(
+                str(source.get("sha256") or source.get("parse_status") or "unknown")
+                for source in paper_sources
+            )).encode("utf-8")
         ).hexdigest()
         paper_dir = output_root / "tasks" / hashlib.sha1(paper["paper_id"].encode("utf-8")).hexdigest()[:10]
         paper_dir.mkdir(parents=True, exist_ok=True)
