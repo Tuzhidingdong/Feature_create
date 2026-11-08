@@ -120,9 +120,9 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 
 ### Phase 2 — Independent discovery and extraction
 
-For each paper, the task builder creates one or more bounded chunks from the upstream-preprocessed paper/SI bundle. Text is split at explicit upstream page boundaries, with a further text-boundary split only when one page is too large. Structured tables are split by original row ranges, repeating the original header row as context where needed. Extracted figures remain independent source scopes and are attached as upstream assets.
+For each paper, the task builder creates one or more bounded chunks from the upstream-preprocessed paper/SI bundle. Text is split at explicit upstream page boundaries, with a further text-boundary split only when one page is too large. Structured tables are split by original row ranges, repeating the first up to three original rows as context where needed. Extracted figures remain independent source scopes and are attached as upstream assets.
 
-Each chunk carries stable `scope_id` values and the original `source_id` for every assigned page/text segment/table-row range/asset. Workers must return one coverage entry per assigned scope. Evidence citations must retain the upstream page number and original table row/column indexes; chunk-local row numbering is forbidden.
+Each chunk carries stable `scope_id` values and the original `source_id` for every assigned page/text segment/table-row range/asset. When a page is split, up to 600 characters immediately before/after the assigned segment may be included as local context only; it must not be counted as separately reviewed coverage. Workers must return one coverage entry per assigned scope. Evidence citations must retain the upstream page number and original table row/column indexes; chunk-local row numbering is forbidden.
 
 For each paper/SI chunk:
 
