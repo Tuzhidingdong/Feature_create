@@ -363,7 +363,16 @@ def render_bundle(
             path = Path(attachment).resolve()
             if path.is_file():
                 attachments.append(str(path))
+    # Attach the complete authoritative upstream index and QC report to every
+    # chunk. These are shared evidence context, not reparsed source material.
+    for key in ("evidence_index_copy", "qc_report_path"):
+        value = paper.get(key)
+        if value:
+            path = Path(value).resolve()
+            if path.is_file():
+                attachments.append(str(path))
 
+    attachments = sorted(set(attachments))
     lines.extend([
         "",
         "## Review requirements",
