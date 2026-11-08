@@ -21,7 +21,7 @@ Use **Antigravity Supervisor + two OpenCode Worker models + deterministic local 
 - Antigravity is the thin Supervisor/control plane. It plans, dispatches, monitors, and coordinates; it must not perform bulk paper reading or result extraction.
 - Worker A runs through OpenCode using a verified free OpenCode Go model and performs source-centric discovery/extraction.
 - Worker B runs through OpenCode using a second, distinct verified free OpenCode Go model and independently performs feature-centric discovery/coverage audit.
-- Python performs parsing, provenance, task management, evidence validation, stable IDs, Registry operations, auditing, and export.
+- chem-literature performs all PDF/SI preprocessing. Feature_create Python validates and indexes its preprocessed text, tables, figure assets, evidence index, QC status, and raw-source hashes; it does not parse PDFs or SI.
 
 The intended current model pair is:
 - Worker A: `opencode-go/crouton-alpha-free`
@@ -72,7 +72,7 @@ The two workers must run on different verified free models. The task contracts i
 ### Local deterministic Python layer
 
 Python owns:
-- source inventory, hashes, parsing, chunking, and task queue construction;
+- source inventory and hashes; validation/indexing of upstream-preprocessed content; chunking of parsed text and task queue construction;
 - model-pair and free-price preflight checks;
 - stable ID allocation;
 - Registry persistence and decision logs;
@@ -89,31 +89,34 @@ Python must never silently change the provider/model to continue a failed task.
 
 ### Phase 0 — Preflight and cost gate
 
-1. Require the final `research_corpus_paired.csv` produced by [chem-literature](https://github.com/Tuzhidingdong/chem-literature).
-2. Resolve `local_pdf_path` and `local_si_info` relative to the upstream CSV directory (or an explicitly supplied corpus root).
-3. Treat the CSV rows as the complete and authoritative paper list. Do not recursively scan the workspace, discover additional PDFs/SI, repeat article-type screening, or substitute unlisted files.
-4. Verify that every CSV-listed main PDF and SI file physically exists; preserve missing/invalid entries as blocked source records.
-5. Read the supplied Feature Schema as a mapping reference only.
-6. Record the upstream CSV path/hash, row count, source hashes, file availability, and parsing status.
-7. Refresh/check the available OpenCode model catalog.
-8. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
-9. Verify both models are currently Free for input, output, and cached reads using the refreshed verbose model catalog. The published cached-write field may be a dash/not listed; reject any positive cached-write price.
-10. Check that deterministic task titles are supplied and no helper-model default can select a paid model.
-11. If any cost/availability check is inconclusive, stop before dispatching semantic work.
+1. Require `research_corpus_paired.csv` from the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage), not a harvesting-only CSV.
+2. Require `preprocessing_path` and `preprocessing_status` on every selected CSV row.
+3. Resolve `preprocessing_path`, `local_pdf_path`, and `local_si_info` against the upstream workflow working directory (CSV directory by default, or an explicit corpus root).
+4. Treat CSV rows as the complete and authoritative paper list. Do not scan for extra papers, repeat article screening, or substitute unlisted files.
+5. Validate the per-paper `01_preprocessing/` package, package version 1.1.0, `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, parsed text, table metadata, and referenced image assets.
+6. Hash-check the CSV-listed raw MAIN/SI files against upstream inventory records. This is integrity verification only; raw files must not be parsed, unpacked, rendered, or attached to workers.
+7. Require CSV `preprocessing_status` to match `evidence_index.processing_summary.status`. Block missing/corrupt packages and hash conflicts. Preserve scanned-page and unsupported-SI states as explicit warnings.
+8. Record upstream CSV and evidence-index paths/hashes, row count, source IDs, package statuses, QC warnings, raw-source hashes, and asset hashes.
+9. Read the supplied Feature Schema as a mapping reference only.
+10. Refresh/check the available OpenCode model catalog.
+11. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
+12. Verify both models are currently Free for input, output, and cached reads using the refreshed verbose model catalog. The published cached-write field may be a dash/not listed; reject any positive cached-write price.
+13. Check deterministic task titles and ensure no helper-model default can select a paid model.
+14. If cost/availability checks are inconclusive, stop before dispatching semantic work.
 
-### Phase 1 — Source preparation from the upstream pair list
+### Phase 1 — Index upstream preprocessing packages
 
-1. Read only the paper rows present in `research_corpus_paired.csv`.
-2. Follow each row's `local_pdf_path` and `local_si_info`; do not infer alternative filenames or search for replacements.
-3. Keep the upstream DOI/title/year/journal/article type and original CSV row as paper-level provenance.
-4. Expand listed SI ZIP archives safely into the downstream run directory; retain the original archive as provenance and never modify upstream files.
-5. Parse the listed PDFs, DOCX, XLSX, CSV/TSV, XML/TEI, HTML, and text files using deterministic local tools.
-6. Preserve source/page/section/table/row/column/figure locators.
-7. Index all figures, captions, tables, and SI materials.
-8. Keep source text and table data traceable to the exact upstream-listed file.
-9. Record missing, corrupt, inaccessible, scanned, or partially parsed sources. A paper with a missing listed pair must be blocked rather than silently substituted.
+1. Read only the rows in `research_corpus_paired.csv`.
+2. Follow each row's `preprocessing_path` to its `01_preprocessing/` package. Keep `local_pdf_path` and `local_si_info` only as raw-source provenance and hash-integrity inputs.
+3. Keep upstream DOI/title/year/journal/article type and all original CSV row metadata.
+4. Read `main_analysis.md` and `si_analysis.md` exactly as created upstream.
+5. Index structured tables from `evidence_index.json`, preserving table ID, document type, page number, bounding box, caption, and every row/cell.
+6. Index figure captions and all upstream `media_assets`, preserving asset IDs, figure/table IDs, page number, bounding boxes, captions, extraction methods, dimensions, and hashes.
+7. Preserve the complete page/block index, scan flags, SI references, supplementary-file inventory, processing summary, and QC warnings. Copy the complete upstream evidence index unchanged into the Feature_create run and supply it to both workers.
+8. Do not run PyMuPDF, OCR, GROBID, archive extraction, DOCX/XLSX parsing, page rendering, or any other document-preprocessing step in Feature_create.
+9. Record missing, corrupt, inaccessible, scanned, or partially parsed upstream components. Do not infer successful review from file presence. Pair/hash failures block the paper; valid partial packages proceed only with explicit coverage warnings.
 
-The internal `source_manifest.json` is derived from the upstream CSV; it is not a second corpus-discovery source. Figures are first-class evidence. Provide relevant figure images to the relevant OpenCode worker when visual interpretation is required.
+The internal `source_manifest.json` is a logical-source index derived from the CSV and upstream packages, not a new document parser. Workers receive parsed text, structured tables, extracted images, the original evidence index, and QC report. Raw PDF/SI files remain outside the worker attachments.
 
 ### Phase 2 — Independent discovery and extraction
 
