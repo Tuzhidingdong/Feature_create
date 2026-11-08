@@ -184,6 +184,80 @@ def verify_table_cell(
     return True, f"exact upstream table cell verified at row {row_index}, column {column_index}"
 
 
+def load_assigned_chunk_units(task: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Load the exact unit locator slice assigned to a chunked task."""
+    path_value = task.get("chunk_evidence_index_path")
+    if not task.get("chunk_id"):
+        return {}
+    if not path_value:
+        raise EvidenceValidationError("Chunked task is missing chunk_evidence_index_path.")
+    path = Path(str(path_value)).resolve()
+    if not path.is_file():
+        raise EvidenceValidationError(f"Chunk evidence index is missing: {path}")
+    index = read_json(path)
+    if index.get("chunk_id") != task.get("chunk_id"):
+        raise EvidenceValidationError("Chunk evidence index ID does not match task.json.")
+    assigned = index.get("assigned_units")
+    if not isinstance(assigned, list):
+        raise EvidenceValidationError("Chunk evidence index has no assigned_units array.")
+    result = {}
+    for item in assigned:
+        if isinstance(item, dict) and item.get("unit_id"):
+            result[str(item["unit_id"])] = item
+    expected = set(task.get("unit_ids") or [])
+    if expected and expected != set(result):
+        raise EvidenceValidationError("Chunk task unit_ids do not match chunk_evidence_index assigned_units.")
+    return result
+
+
+def verify_quote_in_assigned_text_unit(
+    source: dict[str, Any],
+    quote: str,
+    unit: dict[str, Any],
+    output_root: Path,
+) -> tuple[bool, str]:
+    text = read_source_text(source, output_root)
+    locator = unit.get("locator") or {}
+    start = locator.get("source_text_offset_start")
+    end = locator.get("source_text_offset_end")
+    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start or end > len(text):
+        return False, "Assigned text unit has invalid source offsets."
+    normalized_quote = normalize_for_search(quote)
+    normalized_assigned_text = normalize_for_search(text[start:end])
+    if normalized_quote and normalized_quote in normalized_assigned_text:
+        return True, "quote found within the exact assigned text-unit range"
+    return False, "Quoted text is not present within the assigned text-unit range."
+
+
+def verify_table_cell_is_assigned(
+    unit: dict[str, Any],
+    row_index: int,
+    column_index: int,
+    locator: dict[str, Any],
+) -> tuple[bool, str]:
+    unit_locator = unit.get("locator") or {}
+    cell_fragments = unit_locator.get("cell_fragments") or []
+    if cell_fragments:
+        matches = [
+            cell for cell in cell_fragments
+            if cell.get("row_index_1based") == row_index
+            and cell.get("column_index_1based") == column_index
+        ]
+        if not matches:
+            return False, "The cited table cell is not part of this assigned cell-fragment unit."
+        start = locator.get("cell_text_offset_start")
+        end = locator.get("cell_text_offset_end")
+        if start is not None or end is not None:
+            if not any(cell.get("cell_text_offset_start") == start and cell.get("cell_text_offset_end") == end for cell in matches):
+                return False, "The cited cell text range does not match the assigned cell fragment."
+        return True, "table cell belongs to the assigned original row/column fragment"
+
+    allowed_rows = unit_locator.get("row_indices_1based") or []
+    if row_index not in allowed_rows:
+        return False, "The cited original table row is not assigned to this chunk."
+    return True, "table row belongs to this assigned table unit"
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -197,6 +271,12 @@ def validate_payload(
     verified_refs = 0
     unverified_refs = 0
     reference_count = 0
+    try:
+        assigned_units = load_assigned_chunk_units(task)
+    except EvidenceValidationError as exc:
+        assigned_units = {}
+        errors.append(str(exc))
+    is_chunked_task = bool(task.get("chunk_id"))
 
     if payload.get("task_id") != task.get("task_id"):
         errors.append("Payload task_id does not match task.json.")
@@ -225,6 +305,24 @@ def validate_payload(
             errors.append(f"{location}: evidence locator is empty.")
             continue
 
+        assigned_unit = None
+        if is_chunked_task:
+            unit_id = locator.get("unit_id")
+            cited_chunk_id = locator.get("chunk_id")
+            if cited_chunk_id != task.get("chunk_id"):
+                errors.append(
+                    f"{location}: locator chunk_id must equal assigned chunk {task.get('chunk_id')!r}."
+                )
+            assigned_unit = assigned_units.get(str(unit_id)) if unit_id else None
+            if not unit_id or assigned_unit is None:
+                errors.append(
+                    f"{location}: locator unit_id must identify one evidence unit assigned to this task."
+                )
+            elif source_id not in set(assigned_unit.get("source_ids") or []):
+                errors.append(
+                    f"{location}: source_id {source_id!r} is not linked to cited assigned unit {unit_id!r}."
+                )
+
         status = ref.get("evidence_status", "unverified")
         quote = ref.get("quote_or_cell_value")
         if status in {"verified_text", "verified_table_cell"}:
@@ -232,15 +330,42 @@ def validate_payload(
                 errors.append(f"{location}: verified evidence must include quote_or_cell_value.")
                 continue
             if status == "verified_table_cell" and source.get("source_type") in {"main_table", "si_table"}:
-                cell_ok, cell_note = verify_table_cell(source, ref.get("locator") or {}, quote)
+                cell_locator = ref.get("locator") or {}
+                cell_ok, cell_note = verify_table_cell(source, cell_locator, quote)
+                if cell_ok is True and assigned_unit is not None:
+                    row_value = cell_locator.get("row_index_1based") or cell_locator.get("row_number") or cell_locator.get("row")
+                    column_value = cell_locator.get("column_index_1based") or cell_locator.get("column_number") or cell_locator.get("column")
+                    row_index = int(row_value) if str(row_value).isdigit() else None
+                    column_index = int(column_value) if str(column_value).isdigit() else None
+                    if row_index is None or column_index is None:
+                        cell_ok, cell_note = False, "Chunked table-cell evidence requires numeric original row and column indexes."
+                    else:
+                        assigned_ok, assigned_note = verify_table_cell_is_assigned(
+                            assigned_unit, row_index, column_index, cell_locator
+                        )
+                        if not assigned_ok:
+                            cell_ok, cell_note = False, assigned_note
+                        elif cell_locator.get("cell_text_offset_start") is not None:
+                            table_rows = (source.get("table_data") or {}).get("rows") or []
+                            actual_cell = table_rows[row_index - 1][column_index - 1]
+                            actual_text = "" if actual_cell is None else str(actual_cell)
+                            start = int(cell_locator["cell_text_offset_start"])
+                            end = int(cell_locator.get("cell_text_offset_end", len(actual_text)))
+                            if start < 0 or end > len(actual_text) or end < start:
+                                cell_ok, cell_note = False, "Cell fragment offsets are outside the original cell value."
+                            elif normalize_for_search(actual_text[start:end]) != normalize_for_search(quote):
+                                cell_ok, cell_note = False, "Quoted table-cell fragment does not match the original cell text range."
+                elif cell_ok is True and is_chunked_task:
+                    cell_ok, cell_note = False, "Chunked table-cell evidence has no resolvable assigned unit."
                 if cell_ok is True:
                     verified_refs += 1
-                elif cell_ok is False:
-                    errors.append(f"{location}: claimed {status} but {cell_note}")
                 else:
                     errors.append(f"{location}: claimed {status} but {cell_note}")
             else:
-                ok, note = verify_quote(source, quote, output_root)
+                if is_chunked_task and assigned_unit and assigned_unit.get("unit_kind") == "text":
+                    ok, note = verify_quote_in_assigned_text_unit(source, quote, assigned_unit, output_root)
+                else:
+                    ok, note = verify_quote(source, quote, output_root)
                 if ok:
                     verified_refs += 1
                 else:
