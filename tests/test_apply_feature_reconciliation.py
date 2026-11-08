@@ -178,6 +178,12 @@ class ApplyFeatureReconciliationTests(unittest.TestCase):
         self.assertEqual(self.feature_b["redirect_to"], survivor_id)
         self.assertEqual(self.obs_b["linked_registry_feature_id"], survivor_id)
 
+    def test_unverified_feature_without_open_pairs_does_not_become_confirmed(self) -> None:
+        self.obs_a["discovery_status"] = "candidate"
+        review = []
+        refresh_feature_statuses(self.registry, review)
+        self.assertEqual(self.feature_a["feature_status"], "under_review")
+
     def test_pending_pairs_keep_features_under_review(self) -> None:
         review = [{
             "candidate_pair_id": "PAIR-1",
