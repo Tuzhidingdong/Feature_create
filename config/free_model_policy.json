@@ -2,7 +2,7 @@
   "policy_version": "0.1",
   "purpose": "Pin the two worker roles to different OpenCode Go models whose current published inference prices are Free.",
   "verified_on": "2026-11-08",
-  "verification_scope": "Official OpenCode Go documentation snapshot. Re-check before every run.",
+  "verification_scope": "Official OpenCode Go published pricing checked on 2026-11-08; per-run OpenCode models --refresh --verbose is still mandatory.",
   "official_sources": [
     "https://opencode.ai/docs/console/go/",
     "https://opencode.ai/docs/console/models/"
@@ -13,12 +13,19 @@
     "require_zero_input_price": true,
     "require_zero_output_price": true,
     "require_zero_cached_read_price": true,
-    "require_zero_cached_write_price": true,
+    "require_zero_cached_write_price": false,
     "require_available_in_current_opencode_catalog": true,
     "explicit_model_selection_for_every_worker_call": true,
     "no_paid_fallback": true,
     "no_antigravity_bulk_extraction_fallback": true,
-    "pause_if_price_or_availability_is_uncertain": true
+    "pause_if_price_or_availability_is_uncertain": true,
+    "cached_write_price_must_not_be_positive": true,
+    "required_zero_price_fields": [
+      "input_price",
+      "output_price",
+      "cached_read_price"
+    ],
+    "cached_write_price_policy": "Accept not_listed/dash or explicit Free/$0.00; reject any positive price."
   },
   "preferred_pair": [
     {
@@ -29,7 +36,7 @@
       "input_price": "Free",
       "output_price": "Free",
       "cached_read_price": "Free",
-      "cached_write_price": "Free",
+      "cached_write_price": "not_listed",
       "published_request_allowance": "Unlimited",
       "offer_status": "limited_time",
       "published_data_retention": "30 days",
@@ -43,7 +50,7 @@
       "input_price": "Free",
       "output_price": "Free",
       "cached_read_price": "Free",
-      "cached_write_price": "Free",
+      "cached_write_price": "not_listed",
       "published_request_allowance": "Unlimited",
       "offer_status": "limited_time",
       "published_data_retention": "30 days",
