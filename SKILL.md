@@ -123,10 +123,10 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 - Text is split at upstream page headings and paragraph/newline boundaries. Every source character is assigned once; page number and original source-text offsets remain attached to each unit.
 - Tables are split by original 1-based source rows. A single oversized row is split into cell fragments while preserving original table ID, row, column, and character offsets. Multi-row headers remain available as context.
 - An upstream image asset is assigned once to its related figure/table evidence unit when the evidence index identifies that relationship. Orphaned assets remain explicit units.
-- Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Worker evidence locators must cite both, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
+- Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Every `(source_id, unit_id)` assignment also receives a stable `scope_id`, and the task bundle includes a coverage checklist. Worker evidence locators must cite `unit_id` and `chunk_id`, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
 - `paper_chunk_index.json` exposes the other chunks' IDs, page/table/figure locators, and candidate MAIN-to-SI links. Candidate links are navigation aids, not confirmed semantic associations.
 - If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
-- A source is counted fully reviewed only when every chunk assigned to that worker has successful chunk-scoped coverage. A single completed chunk cannot mark the whole source complete.
+- Worker A and Worker B must each return exactly one coverage entry for every assigned `scope_id`, preserving the corresponding `source_id`. Repeated `source_id` values with different units require separate entries. A source is counted fully reviewed only when every one of its scopes across every chunk has the worker's successful status. A completed task/chunk cannot mark other scopes of that source complete.
 
 ### Phase 2 — Independent discovery and extraction
 
