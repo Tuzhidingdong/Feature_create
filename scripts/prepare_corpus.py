@@ -149,6 +149,57 @@ def read_pdf(path: Path) -> tuple[str, str, int]:
         return "", f"parse_error:{type(exc).__name__}:{exc}", 0
 
 
+def render_pdf_visual_pages(
+    path: Path,
+    assets_dir: Path,
+    source_id: str,
+    dpi_scale: float = 1.25,
+) -> list[dict[str, Any]]:
+    """Render PDF pages containing figure/table captions as visual evidence.
+
+    This supplements (never replaces) the original PDF and extracted text.
+    Rendered pages are attached to workers so axes, legends, panels, and table
+    layouts remain inspectable even when text extraction loses visual structure.
+    """
+    try:
+        import fitz  # type: ignore
+    except ImportError:
+        return []
+
+    hints = re.compile(
+        r"\b(?:fig(?:ure)?\.?\s*[s]?\s*\d+|table\s*[s]?\s*\d+|scheme\s*\d+)\b",
+        re.IGNORECASE,
+    )
+    rendered: list[dict[str, Any]] = []
+    try:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        with fitz.open(path) as document:
+            for page_index, page in enumerate(document):
+                page_text = page.get_text("text", sort=True) or ""
+                matches = hints.findall(page_text)
+                if not matches:
+                    continue
+                pixmap = page.get_pixmap(
+                    matrix=fitz.Matrix(dpi_scale, dpi_scale),
+                    alpha=False,
+                )
+                output_path = assets_dir / f"{source_id}_page_{page_index + 1:04d}.jpg"
+                pixmap.save(output_path, jpg_quality=82)
+                rendered.append({
+                    "relative_path": output_path.name,
+                    "page_number": page_index + 1,
+                    "trigger_labels": sorted(set(matches), key=str.casefold),
+                    "size_bytes": output_path.stat().st_size,
+                    "render_scale": dpi_scale,
+                })
+    except Exception as exc:  # noqa: BLE001
+        return [{
+            "render_status": f"render_error:{type(exc).__name__}:{exc}",
+            "page_number": None,
+        }]
+    return rendered
+
+
 def read_xlsx(path: Path) -> tuple[str, str]:
     try:
         import openpyxl  # type: ignore
@@ -245,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     output.mkdir(parents=True, exist_ok=True)
     extracted_dir = output / "extracted_text"
     extracted_dir.mkdir(parents=True, exist_ok=True)
+    visual_assets_dir = output / "visual_assets"
+    visual_assets_dir.mkdir(parents=True, exist_ok=True)
 
     files: list[Path] = []
     for path in root.rglob("*"):
@@ -269,6 +322,11 @@ def main(argv: list[str] | None = None) -> int:
         stem_key = clean_stem(path.stem)
         paper_key = f"doi:{doi}" if doi else f"stem:{stem_key}""
         source_id = stable_id("SRC", relative.as_posix() + "|" + digest)
+        visual_pages = (
+            render_pdf_visual_pages(path, visual_assets_dir, source_id)
+            if path.suffix.casefold() in PDF_EXTENSIONS and parse_status == "parsed"
+            else []
+        )
         text_path: str | None = None
         if text:
             text_file = extracted_dir / f"{source_id}.txt"
@@ -295,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
             "extracted_text_path": text_path,
             "extracted_text_chars": len(text),
             "is_visual_asset": path.suffix.casefold() in IMAGE_EXTENSIONS,
+            "visual_pages": visual_pages,
         })
 
     # Attach DOI-less SI/material files to a DOI-bearing paper only when
