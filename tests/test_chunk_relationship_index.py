@@ -94,23 +94,23 @@ class CrossChunkRelationshipIndexTests(unittest.TestCase):
             for locator in chunk["table_locators"]
         ]
         self.assertGreater(len(chunks), 1)
-        linked = [
-            relation
-            for locator in table_locators
-            for relation in locator["same_row_related_units"]
+        row_groups = paper_index["same_original_table_row_groups"]
+        self.assertTrue(row_groups)
+        matching_groups = [
+            group for group in row_groups
+            if group["table_id"] == "MAIN_TAB_P3_01"
+            and group["original_row_index_1based"] == 2
         ]
-        self.assertTrue(linked)
-        self.assertTrue(all(relation["chunk_id"] for relation in linked))
-        self.assertTrue(any(
-            relation["chunk_id"] != locator["chunk_id"]
-            for locator in table_locators
-            for relation in locator["same_row_related_units"]
-        ))
-        self.assertTrue(all(
-            relation["unit_id"] != locator["unit_id"]
-            for locator in table_locators
-            for relation in locator["same_row_related_units"]
-        ))
+        self.assertEqual(1, len(matching_groups))
+        group = matching_groups[0]
+        self.assertGreater(group["unit_count"], 1)
+        self.assertGreater(len(group["chunk_ids"]), 1)
+        self.assertTrue(all(unit["chunk_id"] for unit in group["units"]))
+        self.assertTrue(all(unit["unit_id"] for unit in group["units"]))
+        referenced_group_ids = {
+            group_id for locator in table_locators for group_id in locator["row_group_ids"]
+        }
+        self.assertIn(group["row_group_id"], referenced_group_ids)
 
 
 if __name__ == "__main__":
