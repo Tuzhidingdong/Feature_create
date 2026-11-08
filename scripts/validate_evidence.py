@@ -242,6 +242,65 @@ def validate_locator_scope(
     return None
 
 
+def verify_quote_in_assigned_scope(
+    source_id: str,
+    locator: dict[str, Any],
+    quote: str,
+    task: dict[str, Any],
+) -> tuple[bool | None, str]:
+    """For chunk-aware tasks, require a text quote to occur inside an assigned scope."""
+    assigned = [
+        scope for scope in task.get("source_scopes", [])
+        if str(scope.get("source_id")) == source_id and scope.get("scope_text_path")
+    ]
+    if not assigned:
+        return None, "No scope-text staging path is available (legacy task)."
+
+    page_value = locator.get("page_number", locator.get("page"))
+    try:
+        page_number = int(page_value) if page_value is not None else None
+    except (TypeError, ValueError):
+        page_number = None
+
+    row_value = (
+        locator.get("row_index_1based")
+        or locator.get("row_number")
+        or locator.get("row")
+    )
+    try:
+        row_number = int(row_value) if row_value is not None else None
+    except (TypeError, ValueError):
+        row_number = None
+
+    matching: list[dict[str, Any]] = []
+    for scope in assigned:
+        scope_type = str(scope.get("scope_type") or "")
+        if scope.get("page_number") is not None and page_number is not None:
+            if int(scope["page_number"]) != page_number:
+                continue
+        if scope_type == "table_rows" and row_number is not None:
+            start = int(scope.get("row_start") or 1)
+            end = int(scope.get("row_end") or start)
+            context_rows = {int(value) for value in scope.get("context_rows", [])}
+            if not (start <= row_number <= end or row_number in context_rows):
+                continue
+        matching.append(scope)
+
+    if not matching:
+        return False, "No assigned source scope matches the evidence page/table row locator."
+
+    normalized_quote = normalize_for_search(quote)
+    for scope in matching:
+        path = Path(str(scope["scope_text_path"])).resolve()
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if normalized_quote and normalized_quote in normalize_for_search(text):
+            return True, "quoted evidence occurs inside the exact assigned scope text"
+    return False, "Quoted evidence exists outside this chunk or is absent from the assigned scope text."
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -308,7 +367,13 @@ def validate_payload(
             else:
                 ok, note = verify_quote(source, quote, output_root)
                 if ok:
-                    verified_refs += 1
+                    scope_ok, scope_note = verify_quote_in_assigned_scope(
+                        str(source_id), locator, quote, task
+                    )
+                    if scope_ok is False:
+                        errors.append(f"{location}: claimed {status} but {scope_note}")
+                    else:
+                        verified_refs += 1
                 else:
                     errors.append(f"{location}: claimed {status} but {note}")
         elif status == "verified_digitization":
