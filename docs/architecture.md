@@ -124,7 +124,7 @@ Long-range result context is handled as a selective second pass after first-pass
 
 Only value-specific unresolved items with a linked result record and a verifiable remote target are eligible. Feature-level ambiguity without a result record, unindexed targets, inaccessible sources, and non-context unresolved issues remain in the ordinary unresolved queue. The navigation index is not evidence; only the target unit's assigned content can support a context fact.
 
-## 8. Model pair and run isolation
+## 7. Model pair and run isolation
 
 The two workers must use different exact model references. The current preferred pair is:
 - `opencode-go/crouton-alpha-free`;
@@ -190,7 +190,7 @@ Each source and task has a deterministic identity derived from source hash, task
 
 The Registry uses append-only decision events and atomic writes/locks. A crash must not leave half-written canonical state or duplicate IDs.
 
-## 13. Deliverable boundary
+## 14. Deliverable boundary
 
 Internal run files may include JSON/JSONL, evidence maps, checkpoints, metrics, and review queues. Formal output remains exactly:
 - `result_feature_records.txt`
