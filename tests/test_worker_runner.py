@@ -89,6 +89,29 @@ class WorkerRunnerTests(unittest.TestCase):
         }
         self.assertEqual(validate_worker_payload(payload, task), [])
 
+    def test_legacy_queue_accepts_source_level_coverage_without_scope_id(self) -> None:
+        task = {
+            "task_id": "TASK-LEGACY",
+            "paper_id": "PAPER-1",
+            "worker_role": "source_discovery",
+            "source_ids": ["SRC-1"],
+        }
+        payload = {
+            "contract_version": "0.1",
+            "task_id": "TASK-LEGACY",
+            "worker_role": "source_discovery",
+            "paper_id": "PAPER-1",
+            "coverage": [{
+                "component": "main_text",
+                "source_id": "SRC-1",
+                "status": "fully_reviewed",
+            }],
+            "feature_observations": [],
+            "result_records": [],
+            "unresolved_items": [],
+        }
+        self.assertEqual(validate_worker_payload(payload, task), [])
+
     def test_worker_must_report_each_assigned_scope_exactly_once(self) -> None:
         task = {
             "task_id": "TASK-SCOPE",
