@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         # with SI suffixes removed by normalize_doi().
         doi = find_doi(text[:200000], str(relative))
         stem_key = clean_stem(path.stem)
-        paper_key = f"doi:{doi}" if doi else f"stem:{stem_key}""
+        paper_key = f"doi:{doi}" if doi else f"stem:{stem_key}"
         source_id = stable_id("SRC", relative.as_posix() + "|" + digest)
         visual_pages = (
             render_pdf_visual_pages(path, visual_assets_dir, source_id)
