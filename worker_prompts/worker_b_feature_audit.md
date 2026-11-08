@@ -72,7 +72,7 @@ Look for:
 
 Every omission candidate must include a source locator and a clear explanation of what appears to be missing. Do not write generic claims such as "check the SI more carefully" without identifying a specific source region.
 
-For structured-table evidence, cite the table source ID and include `table_id`, `page_number`, `row_index_1based`, and `column_index_1based`; include row/column headers when available. Indices refer to the exact row and column positions in the upstream evidence_index table `rows` array, including its header row. For figure evidence, preserve the upstream `figure_id`, `page_number`, panel label, and bounding box where supplied. For text evidence, cite the page number and an exact quote.
+For every evidence reference, include the assigned `unit_id` and current `chunk_id` in the locator. For structured-table evidence, cite the table source ID and include `table_id`, `page_number`, `row_index_1based`, and `column_index_1based`; when a large cell was split, also include the exact `cell_text_offset_start` and `cell_text_offset_end` from the assigned cell-fragment unit; include row/column headers when available. Indices refer to the exact row and column positions in the upstream evidence_index table `rows` array, including its header row. For figure evidence, preserve the upstream `figure_id`, `page_number`, panel label, and bounding box where supplied. For text evidence, cite the page number and an exact quote.
 
 Where you can identify a likely missed result series, name its raw feature and source location. You may recommend a targeted extraction task, but do not duplicate all routine values.
 
