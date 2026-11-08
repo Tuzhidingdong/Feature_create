@@ -20,7 +20,7 @@ The intended architecture is:
 
 The target is **zero paid inference cost for the OpenCode Worker calls**, not zero model tokens processed in the literal accounting sense and not zero model calls.
 
-Workers must use two distinct models whose current OpenCode Go catalog pricing is verified as Free for input, output, and cached usage. The current preferred pair is:
+Workers must use two distinct models whose current OpenCode Go catalog pricing is verified as Free for input, output, and cached reads; cached-write must be unpriced/dash or explicitly zero. The current preferred pair is:
 
 - `opencode-go/crouton-alpha-free`
 - `opencode-go/beam-free`
