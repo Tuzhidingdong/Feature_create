@@ -16,10 +16,12 @@ The main semantic workload is routed to the two free OpenCode models. The system
 chem-literature paired research_corpus_paired.csv
       |
       v
-CSV-listed PDF/SI path verification and local extraction
+Upstream chem-literature preprocessing package
+(evidence_index + parsed text + tables + media assets + QC)
       |
       v
-Derived source manifest and provenance indexing
+Package/hash validation and logical-source indexing
+(no PDF/SI parsing in Feature_create)
       |
       v
 Antigravity Supervisor (thin coordination only)
@@ -67,7 +69,7 @@ It must not read the entire corpus and perform the same scientific extraction it
 
 ### Worker A — source-centric discovery
 
-Worker A reviews the assigned paper/SI bundle and extracts:
+Worker A reviews the assigned upstream-preprocessed paper/SI bundle (parsed text, structured tables, and extracted visual assets) and extracts:
 - all raw result-feature observations;
 - individual reported result values;
 - sample identities and dynamically associated context;
@@ -76,7 +78,7 @@ Worker A reviews the assigned paper/SI bundle and extracts:
 
 ### Worker B — feature-centric discovery and audit
 
-Worker B independently reviews the same paper/SI bundle and discovers the result-feature inventory. It focuses on:
+Worker B independently reviews the same upstream-preprocessed paper/SI bundle and discovers the result-feature inventory. It focuses on:
 - variables that appear only in SI, tables, figures, or secondary analysis;
 - omissions and additional result series;
 - same-name/different-definition cases;
@@ -108,14 +110,17 @@ The orchestrator must also implement bounded retries, backoff, and a global rate
 
 ## 7. Deterministic processing
 
-Python owns:
-- ingestion of the upstream chem-literature paired CSV (not independent corpus discovery);
-- verification/hashing/parsing of only the PDF/SI paths listed in that CSV;
-- safe SI archive expansion, provenance indexing, chunking, and task queue construction;
+chem-literature owns all scientific-document preprocessing: PDF/SI text extraction, page/layout indexing, table extraction, figure/table image extraction, SI parsing, evidence-index generation, and preprocessing QC.
+
+Feature_create Python owns:
+- ingestion of the upstream chem-literature preprocessed paired CSV (not independent corpus discovery);
+- verification and hashing of the CSV-listed raw MAIN/SI files without parsing them;
+- validation/indexing of upstream evidence_index, parsed text, structured tables, media assets, and QC;
+- provenance indexing, chunking of upstream-parsed content, and task queue construction;
 - stable ID allocation;
 - Registry persistence and decision logs;
 - schema validation;
-- evidence-location and table-cell verification;
+- evidence-location and table-cell verification against the upstream page/table index;
 - duplicate detection and consistency checks;
 - checkpoints, locks, retries, and idempotent resume;
 - final TXT serialization and audit counts.
