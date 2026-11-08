@@ -185,6 +185,11 @@ def main(argv: list[str] | None = None) -> int:
             if validation_item.get("status") != "evidence_checked":
                 skipped.append({"task_id": task_id, "reason": "evidence_validation_not_passed"})
                 continue
+            expected_response_sha256 = validation_item.get("response_sha256")
+            actual_response_sha256 = hashlib.sha256(response_path.read_bytes()).hexdigest()
+            if not expected_response_sha256 or actual_response_sha256 != expected_response_sha256:
+                skipped.append({"task_id": task_id, "reason": "response_file_changed_after_evidence_validation"})
+                continue
             payload = read_json(response_path)
             if (
                 payload.get("task_id") != task_id
