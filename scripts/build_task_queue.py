@@ -560,6 +560,7 @@ def main(argv: list[str] | None = None) -> int:
                 ])
                 scope_text_path.write_text(scope_text, encoding="utf-8", newline="\n")
                 scope["scope_text_path"] = str(scope_text_path.resolve())
+                scope["scope_text_sha256"] = hashlib.sha256(scope_text.encode("utf-8")).hexdigest()
                 scope["content_sha256"] = unit["content_sha256"]
             bundle_path = chunk_dir / "task_input.md"
             bundle_path.write_text(bundle, encoding="utf-8", newline="\n")
