@@ -411,6 +411,18 @@ def main(argv: list[str] | None = None) -> int:
     record_rows, record_errors = build_record_rows(records, feature_by_id, canonical_names)
 
     errors = list(schema_errors) + feature_errors + record_errors
+    if existing_schema is None and any(
+        feature.get("existing_feature_id")
+        for feature in registry.get("canonical_features", [])
+        if feature.get("feature_status") != "retired_merged"
+    ):
+        errors.append(
+            "Registry contains existing FEATURE_ID mappings but --existing-schema was not supplied."
+        )
+    exported_feature_ids = [row[0] for row in feature_rows]
+    if len(set(exported_feature_ids)) != len(exported_feature_ids):
+        duplicates = sorted({value for value in exported_feature_ids if exported_feature_ids.count(value) > 1})
+        errors.append("Duplicate FEATURE_ID in active Feature dictionary: " + ", ".join(duplicates))
     if active_unresolved_pairs:
         errors.append(
             f"{len(active_unresolved_pairs)} candidate Feature pair(s) remain pending or under review."
