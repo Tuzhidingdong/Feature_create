@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/registry.schema.json",
+  "title": "Feature_create Global Incremental Feature Registry",
+  "description": "Persistent, evidence-linked registry. Raw observations are immutable; canonical identities and decision history are managed by deterministic code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "registry_id",
+    "next_observation_sequence",
+    "next_feature_sequence",
+    "observations",
+    "canonical_features",
+    "decision_log"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_observation_sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "next_feature_sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "canonical_features": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/canonicalFeature"
+      }
+    },
+    "decision_log": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decisionEvent"
+      }
+    }
+  },
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "source_type",
+        "locator"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_type": {
+          "enum": [
+            "main_text",
+            "main_table",
+            "main_figure",
+            "main_figure_caption",
+            "si_text",
+            "si_table",
+            "si_figure",
+            "si_figure_caption",
+            "supporting_dataset",
+            "other"
+          ]
+        },
+        "locator": {
+          "type": "object",
+          "description": "Source-specific locator, e.g. page/section/paragraph, table/row/column/cell, figure/panel, or dataset sheet/range.",
+          "additionalProperties": true
+        },
+        "quote_or_cell_value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_status": {
+          "enum": [
+            "unverified",
+            "verified_text",
+            "verified_table_cell",
+            "verified_digitization",
+            "visual_only",
+            "unreadable",
+            "not_applicable"
+          ]
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "paper_id",
+        "source_id",
+        "raw_feature_name",
+        "variable_role",
+        "result_type",
+        "evidence_refs",
+        "origin_task_id",
+        "discovery_status"
+      ],
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paper_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_feature_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reported_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reported_method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_type": {
+          "enum": [
+            "measured",
+            "calculated",
+            "derived",
+            "simulated",
+            "model_output",
+            "not_stated",
+            "uncertain"
+          ]
+        },
+        "variable_role": {
+          "enum": [
+            "result_feature",
+            "condition_only",
+            "sample_descriptor",
+            "uncertain"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        },
+        "origin_task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin_worker": {
+          "enum": [
+            "source_discovery",
+            "feature_audit",
+            "targeted_review",
+            "human"
+          ]
+        },
+        "discovery_status": {
+          "enum": [
+            "candidate",
+            "evidence_verified",
+            "under_review",
+            "excluded"
+          ]
+        },
+        "linked_registry_feature_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "semanticSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "physical_or_statistical_quantity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "measurand_or_operational_definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "numerator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "denominator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "normalization_basis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statistic_or_aggregation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "temporal_or_cycle_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unit_dimension": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "method_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "canonicalFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry_feature_id",
+        "canonical_name",
+        "definition",
+        "semantic_signature",
+        "aliases",
+        "observation_ids",
+        "feature_status"
+      ],
+      "properties": {
+        "registry_feature_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonical_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "semantic_signature": {
+          "$ref": "#/$defs/semanticSignature"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unit_dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "measurement_methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "calculation_methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "result_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "measured",
+              "calculated",
+              "derived",
+              "simulated",
+              "model_output",
+              "not_stated",
+              "uncertain"
+            ]
+          }
+        },
+        "observation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "existing_feature_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "feature_status": {
+          "enum": [
+            "provisional",
+            "confirmed",
+            "under_review",
+            "retired_merged",
+            "split_pending"
+          ]
+        },
+        "redirect_to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "decisionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "subject_ids",
+        "decision",
+        "rationale",
+        "evidence_observation_ids",
+        "actor",
+        "contract_version"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_type": {
+          "enum": [
+            "observation_created",
+            "feature_created",
+            "feature_confirmed",
+            "feature_merged",
+            "feature_split",
+            "feature_mapped",
+            "feature_unmapped",
+            "observation_reassigned",
+            "feature_excluded",
+            "status_changed"
+          ]
+        },
+        "subject_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_observation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actor": {
+          "enum": [
+            "python_rule",
+            "antigravity_model_recommendation",
+            "human"
+          ]
+        },
+        "contract_version": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
