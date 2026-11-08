@@ -144,6 +144,38 @@ def verify_context_artifact_hashes(
         if observed.get(label) != actual:
             return f"context_artifact_changed_after_evidence_validation:{label}"
 
+    expected_source_texts = task.get("source_text_sha256") or {}
+    observed_source_texts = observed.get("source_texts")
+    if not isinstance(observed_source_texts, dict):
+        return "validated_source_text_hashes_missing"
+    manifest = read_json(task_manifest_path)
+    source_map = {
+        str(item.get("source_id")): item
+        for item in manifest.get("sources", [])
+        if item.get("source_id")
+    }
+    checked_source_ids = set()
+    for source_id, expected_hash in expected_source_texts.items():
+        source = source_map.get(str(source_id))
+        relative_path = source.get("extracted_text_path") if source else None
+        if not relative_path:
+            return f"context_source_text_path_missing:{source_id}"
+        source_text_path = (task_manifest_path.parent / str(relative_path)).resolve()
+        try:
+            source_text_path.relative_to(task_manifest_path.parent.resolve())
+        except ValueError:
+            return f"context_source_text_path_outside_prepared_root:{source_id}"
+        if not source_text_path.is_file():
+            return f"context_source_text_missing:{source_id}"
+        actual_hash = sha256_file(source_text_path)
+        if actual_hash != expected_hash:
+            return f"context_source_text_changed_after_queue_build:{source_id}"
+        if observed_source_texts.get(str(source_id)) != actual_hash:
+            return f"context_source_text_changed_after_evidence_validation:{source_id}"
+        checked_source_ids.add(str(source_id))
+    if set(observed_source_texts) != checked_source_ids:
+        return "context_source_text_inventory_changed"
+
     expected_attachments = task.get("attachment_sha256") or {}
     observed_attachments = observed.get("attachments")
     if not isinstance(observed_attachments, dict):
