@@ -532,7 +532,7 @@ def main(argv: list[str] | None = None) -> int:
             for unit in chunk_units:
                 scope = unit["scope"]
                 scope_text_path = scope_text_dir / f"{scope['scope_id']}.txt"
-                scope_text_path.write_text(unit["text"], encoding="utf-8", newline="\\n")
+                scope_text_path.write_text(unit["text"], encoding="utf-8", newline="\n")
                 scope["scope_text_path"] = str(scope_text_path.resolve())
                 scope["content_sha256"] = unit["content_sha256"]
             bundle_path = chunk_dir / "task_input.md"
