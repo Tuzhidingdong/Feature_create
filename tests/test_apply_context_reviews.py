@@ -98,7 +98,13 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "measurement_or_calculation_method": "galvanostatic cycling",
                 "source_id": "SRC-CURRENT",
                 "evidence_refs": [{"source_id": "SRC-CURRENT", "locator": {"unit_id": "UNIT-A"}}],
-                "sample_identity": [],
+                "sample_identity": [{
+                    "raw_label": "S-01",
+                    "raw_value": "electrolyte containing 0.2 M additive X",
+                    "unit": None,
+                    "context_role": "sample_identity",
+                    "evidence_refs": [current_ref],
+                }],
                 "condition_facts": [],
                 "time_cycle_facts": [],
                 "protocol_facts": [],
@@ -136,12 +142,17 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(record["evidence_refs"], updated["evidence_refs"])
             self.assertEqual(1, len(updated["sample_identity"]))
             self.assertEqual("S-01", updated["sample_identity"][0]["raw_label"])
+            self.assertEqual(
+                {"SRC-CURRENT", "SRC-TARGET"},
+                {ref["source_id"] for ref in updated["sample_identity"][0]["evidence_refs"]},
+            )
             self.assertEqual("association_confirmed", updated["unresolved_issues"][0]["resolution_status"])
             unresolved = json.loads(unresolved_path.read_text(encoding="utf-8").strip())
             self.assertEqual("association_confirmed", unresolved["resolution_status"])
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(1, report["tasks_applied"])
-            self.assertEqual(1, report["context_facts_added"])
+            self.assertEqual(0, report["context_facts_added"])
+            self.assertEqual(1, report["context_facts_enriched"])
             self.assertEqual(1, len(updated["context_review_history"]))
 
             # Re-applying the same completed task must not duplicate either the
