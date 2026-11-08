@@ -13,10 +13,13 @@ The main semantic workload is routed to the two free OpenCode models. The system
 ## 2. Data flow
 
 ```text
-Corpus inventory
+chem-literature paired research_corpus_paired.csv
       |
       v
-Local source preparation and provenance indexing
+CSV-listed PDF/SI path verification and local extraction
+      |
+      v
+Derived source manifest and provenance indexing
       |
       v
 Antigravity Supervisor (thin coordination only)
@@ -49,7 +52,7 @@ source-centric extraction               feature-centric audit
 ## 3. Supervisor responsibilities
 
 The Antigravity Supervisor:
-- inspects the corpus inventory and compact task status;
+- inspects the chem-literature paired CSV-derived inventory and compact task status;
 - ensures the two free worker model references are distinct and verified;
 - dispatches tasks through OpenCode's non-interactive CLI or the established local worker-manager interface;
 - checks progress/status cards rather than repeatedly reading long worker transcripts;
@@ -106,7 +109,9 @@ The orchestrator must also implement bounded retries, backoff, and a global rate
 ## 7. Deterministic processing
 
 Python owns:
-- source inventory, hashes, parsing, chunking, and task queue construction;
+- ingestion of the upstream chem-literature paired CSV (not independent corpus discovery);
+- verification/hashing/parsing of only the PDF/SI paths listed in that CSV;
+- safe SI archive expansion, provenance indexing, chunking, and task queue construction;
 - stable ID allocation;
 - Registry persistence and decision logs;
 - schema validation;
