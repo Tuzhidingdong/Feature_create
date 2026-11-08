@@ -359,11 +359,12 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
     if payload.get("paper_id") != task["paper_id"]:
         problems.append("paper_id does not match the dispatched task.")
 
-    expected_scopes = {
-        str(scope.get("scope_id"))
+    expected_scope_sources = {
+        str(scope.get("scope_id")): str(scope.get("source_id"))
         for scope in task.get("source_scopes", [])
-        if scope.get("scope_id")
+        if scope.get("scope_id") and scope.get("source_id")
     }
+    expected_scopes = set(expected_scope_sources)
     expected_source_ids = set(task.get("source_ids", []))
 
     def validate_scope_coverage(rows: list[dict[str, Any]], label: str) -> None:
@@ -383,9 +384,17 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
             if duplicates:
                 problems.append(f"{label}: duplicate scope_ids: " + ", ".join(duplicates))
             for item in rows:
-                if item.get("source_id") not in expected_source_ids:
+                item_source = str(item.get("source_id") or "")
+                item_scope = str(item.get("scope_id") or "")
+                if item_source not in expected_source_ids:
                     problems.append(
-                        f"{label}: source_id {item.get('source_id')!r} was not assigned to this task."
+                        f"{label}: source_id {item_source!r} was not assigned to this task."
+                    )
+                expected_source = expected_scope_sources.get(item_scope)
+                if expected_source is not None and item_source != expected_source:
+                    problems.append(
+                        f"{label}: scope_id {item_scope!r} belongs to source_id "
+                        f"{expected_source!r}, not {item_source!r}."
                     )
         else:
             # Compatibility with older queue files that predate scope-aware chunking.
