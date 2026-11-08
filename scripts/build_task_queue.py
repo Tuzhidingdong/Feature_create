@@ -91,6 +91,7 @@ def _unit_summary(unit: dict[str, Any], chunk_id: str) -> dict[str, Any]:
     return {
         "unit_id": unit["unit_id"],
         "chunk_id": chunk_id,
+        "source_id": unit.get("source_id"),
         "source_ids": unit.get("source_ids", [unit.get("source_id")]),
         "source_type": unit.get("source_type"),
         "component": unit.get("component"),
