@@ -184,7 +184,7 @@ The builder retrieves only:
 - the specific remote target unit(s) nominated by Worker A and verified against the paper navigation index;
 - the existing result record's identifying fields and already-extracted context, for reference only.
 
-It does not attach the entire paper, read other workers' outputs, or parse raw PDFs/SI. The default cap is eight target units per review. The existing Worker B model from config/execution_policy.json is reused; no third model is introduced. Already reviewed/resolved unresolved items are skipped by default. A task ID fingerprints the exact question, current/target unit content and locators, visual-asset hashes, model ID, and dedicated prompt hash; changed inputs therefore create a new task instead of reusing a stale completed response.
+It does not attach the entire paper, read other workers' outputs, or parse raw PDFs/SI. The default cap is eight target units per review. The existing Worker B model from config/execution_policy.json is reused; no third model is introduced. Already reviewed/resolved unresolved items are skipped by default. For an inconclusive item that merits another pass, add --retry-inconclusive to the queue-builder command; association_confirmed and no_association items remain closed. A task ID fingerprints the exact question, current/target unit content and locators, visual-asset hashes, model ID, and dedicated prompt hash; changed inputs therefore create a new task instead of reusing a stale completed response. The task JSON also records the input, prompt, bundle, attachment, and evidence-manifest hashes.
 
 Run the free-model preflight without inference:
 
