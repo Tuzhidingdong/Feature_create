@@ -418,6 +418,18 @@
             "string",
             "null"
           ]
+        },
+        "related_candidate_record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "related_candidate_observation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }
