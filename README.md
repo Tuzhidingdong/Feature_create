@@ -2,29 +2,36 @@
 
 **Feature_create** is a research skill for discovering, extracting, reconciling, and documenting result features reported in scientific papers and their supplementary information.
 
-The final user-facing deliverables are exactly:
+The final formal deliverables are exactly:
 
-- `result_feature_records.txt` — one record per reported result value, with its source evidence and sample/condition context.
+- `result_feature_records.txt` — one record per reported result value, with source evidence and sample/condition context.
 - `result_feature_list.txt` — a deduplicated dictionary of result features, with definitions, aliases, units, methods, and comparability notes.
 
-## Non-negotiable execution constraint
+## Model execution architecture
 
-**OpenCode model-token consumption must remain exactly zero.**
+The intended architecture is:
 
-The workflow does not invoke OpenCode models, OpenCode workers, `opencode run`, OpenCode model providers, or OpenCode fallback routes. Semantic tasks are performed by the Antigravity host model available to the running Skill. Deterministic work is performed locally by Python.
+- **Antigravity Supervisor:** thin orchestration and monitoring layer. It prepares/dispatches tasks, inspects compact progress cards, handles exceptions, and coordinates reconciliation. It must not read every paper in full or perform the bulk extraction itself.
+- **OpenCode Worker A:** source-centric discovery and value extraction, pinned to a verified free OpenCode Go model.
+- **OpenCode Worker B:** independent feature-centric discovery and omission audit, pinned to a second, distinct verified free OpenCode Go model.
+- **Local Python:** deterministic parsing, chunking, scheduling, evidence validation, stable IDs, Registry persistence, checkpoints, audits, and TXT export.
 
-This means zero OpenCode tokens, not zero total model usage: Antigravity may consume its own model quota. If the Antigravity model or quota is unavailable, the workflow must pause safely and preserve its checkpoint. It must never silently switch to OpenCode.
+## Zero paid model-token consumption requirement
 
-## Current development baseline
+The target is **zero paid inference cost for the OpenCode Worker calls**, not zero model tokens processed in the literal accounting sense and not zero model calls.
 
-The repository begins with the architecture and data-contract foundation:
+Workers must use two distinct models whose current OpenCode Go catalog pricing is verified as Free for input, output, and cached usage. The current preferred pair is:
 
-- Global incremental Feature Registry.
-- Independent source-centric and feature-centric worker contracts.
-- Evidence-first reconciliation rules.
-- Explicit zero-OpenCode-token execution policy.
+- `opencode-go/crouton-alpha-free`
+- `opencode-go/beam-free`
 
-The presence of these contracts does not imply that the end-to-end extraction implementation or validation suite is complete.
+These are temporary/limited-time free offerings in the current published catalog. The pair must be checked at runtime. Do not assume a model remains free forever.
+
+Every worker invocation must explicitly select its model. Paid fallback is forbidden. If either model is unavailable, no longer free, or cannot be verified as free, pause the task instead of selecting a paid model. The project must also account for any implicit OpenCode model calls (for example, title generation via `small_model`): use deterministic titles and pin any configured helper model to a verified free model.
+
+The OpenCode Go subscription itself is a separate fixed subscription charge. A free model's zero per-token price does not make the subscription free.
+
+Antigravity may be used as the Supervisor control plane, but not as the paper-reading/extraction worker. Its role should stay thin to avoid consuming the more expensive host-model quota on bulk scientific interpretation.
 
 ## Design principles
 
@@ -36,14 +43,18 @@ The presence of these contracts does not imply that the end-to-end extraction im
 6. Treat figures as first-class sources; never convert visual estimates into exact values.
 7. Use Python for IDs, validation, state transitions, audit logs, and deterministic export.
 8. Preserve provenance and decisions so a run can be resumed and audited.
+9. Keep Worker A and Worker B first-pass outputs independent.
+10. Never silently switch a worker to a paid model.
 
 ## Repository map
 
 - `SKILL.md` — execution contract and agent instructions.
 - `contracts/` — machine-readable schemas for Registry and worker payloads.
 - `docs/architecture.md` — component boundaries and workflow.
-- `docs/reconciliation.md` — evidence and semantic reconciliation rules.
-- `docs/token_policy.md` — zero-OpenCode-token policy and failure behavior.
+- `docs/token_policy.md` — zero-paid-cost policy and provider/model guards.
+- `docs/opencode_free_model_execution.md` — OpenCode Go invocation, model pinning, and verification.
+- `worker_prompts/` — isolated Worker A, Worker B, and targeted-review prompts.
+- `config/` — model and extraction policies.
 
 ## Status
 
