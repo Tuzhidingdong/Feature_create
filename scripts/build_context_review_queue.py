@@ -308,11 +308,44 @@ def build_context_task(
         "protocol_facts_already_extracted": record.get("protocol_facts", []),
         "other_context_facts_already_extracted": record.get("other_context_facts", []),
     }
+    attachment_hashes = {
+        attachment: hashlib.sha256(Path(attachment).read_bytes()).hexdigest()
+        for attachment in attachment_paths if Path(attachment).is_file()
+    }
+    prompt_sha256 = hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()
+    task_fingerprint = hashlib.sha256(json.dumps({
+        "unresolved_id": unresolved_id,
+        "paper_id": unresolved.get("paper_id"),
+        "item_type": unresolved.get("item_type"),
+        "description": unresolved.get("description"),
+        "cross_chunk_target": unresolved.get("cross_chunk_target"),
+        "current_evidence_refs": current_refs,
+        "record_context": record_context,
+        "current_task_id": current_task.get("task_id"),
+        "current_chunk_id": current_chunk_id,
+        "target_descriptors": target_descriptors,
+        "assigned_units": [
+            {
+                "unit_id": unit["unit_id"],
+                "chunk_id": unit["chunk_id"],
+                "review_side": unit["review_side"],
+                "locator": unit.get("locator", {}),
+                "content_sha256": hashlib.sha256(
+                    unit_text.encode("utf-8")
+                ).hexdigest(),
+            }
+            for unit, unit_text in rendered
+        ],
+        "attachment_hashes": attachment_hashes,
+        "model_ref": model_ref,
+        "prompt_sha256": prompt_sha256,
+    }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    task_id = stable_id("FC-CX", unresolved_id, task_fingerprint, length=14)
 
     lines = [
         "# Targeted cross-chunk context review task",
         "",
-        f"- Task ID: {stable_id('FC-CX', unresolved_id, *sorted(unit_ids), length=14)}",
+        f"- Task ID: {task_id}",
         f"- Paper ID: {unresolved.get('paper_id')}",
         f"- Unresolved ID: {unresolved_id}",
         f"- Record ID: {record.get('record_id')}",
@@ -362,7 +395,6 @@ def build_context_task(
             f"Cross-chunk context task requires {len(attachment_paths)} visual attachments, over limit {max_attachments}."
         )
 
-    task_id = stable_id("FC-CX", unresolved_id, *sorted(unit_ids), length=14)
     task_dir = output_root / "tasks" / hashlib.sha1(str(unresolved.get("paper_id")).encode("utf-8")).hexdigest()[:10] / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = task_dir / "task_input.md"
@@ -497,6 +529,13 @@ def main(argv: list[str] | None = None) -> int:
 
     for unresolved in sorted(unresolved_items, key=lambda item: str(item.get("unresolved_id", ""))):
         if unresolved.get("item_type") != "missing_context":
+            continue
+        resolution_status = str(unresolved.get("resolution_status") or "pending")
+        if resolution_status != "pending":
+            skipped.append({
+                "unresolved_id": unresolved.get("unresolved_id"),
+                "reason": f"already_reviewed_status:{resolution_status}",
+            })
             continue
         target_spec = unresolved.get("cross_chunk_target") or {}
         if not target_spec:
