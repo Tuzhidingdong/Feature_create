@@ -91,6 +91,66 @@ def _paper_chunk_index(
     ]
     all_tables = upstream_index.get("tables", [])
     all_figures = upstream_index.get("figures", [])
+
+    # Build explicit navigation links for text segments that split across chunks
+    # and table cells/fragments that share one original row.
+    unit_chunk: dict[str, str] = {}
+    text_units_by_source: dict[str, list[dict[str, Any]]] = {}
+    table_units_by_row: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for chunk in chunks:
+        for unit in chunk["units"]:
+            unit_chunk[str(unit["unit_id"])] = str(chunk["chunk_id"])
+            locator = unit.get("locator") or {}
+            if unit.get("unit_kind") == "text":
+                text_units_by_source.setdefault(str(unit["source_id"]), []).append(unit)
+            table_id = unit.get("table_id") or locator.get("table_id")
+            if table_id:
+                row_indices = locator.get("row_indices_1based") or []
+                if locator.get("row_index_1based") is not None:
+                    row_indices = [*row_indices, locator["row_index_1based"]]
+                if locator.get("row_index_start_1based") is not None and locator.get("row_index_end_1based") is not None:
+                    row_indices = [
+                        *row_indices,
+                        *range(
+                            int(locator["row_index_start_1based"]),
+                            int(locator["row_index_end_1based"]) + 1,
+                        ),
+                    ]
+                for row_index in sorted({int(value) for value in row_indices}):
+                    table_units_by_row.setdefault((str(table_id), row_index), []).append(unit)
+
+    text_neighbors: dict[str, dict[str, Any]] = {}
+    for source_id, source_units in text_units_by_source.items():
+        ordered = sorted(
+            source_units,
+            key=lambda unit: int((unit.get("locator") or {}).get("source_text_offset_start") or 0),
+        )
+        for index, unit in enumerate(ordered):
+            text_neighbors[str(unit["unit_id"])] = {
+                "previous": ordered[index - 1] if index > 0 else None,
+                "next": ordered[index + 1] if index + 1 < len(ordered) else None,
+            }
+
+    table_row_neighbors: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for (table_id, row_index), row_units in table_units_by_row.items():
+        unique_units = {
+            str(unit["unit_id"]): unit for unit in row_units
+        }
+        for unit_id, unit in unique_units.items():
+            table_row_neighbors[(table_id, row_index, unit_id)] = [
+                {
+                    "unit_id": other_id,
+                    "chunk_id": unit_chunk.get(other_id),
+                    "source_id": other.get("source_id"),
+                    "column_indices_1based": sorted({
+                        int(value) for value in (
+                            (other.get("locator") or {}).get("column_indices_1based") or []
+                        )
+                    }),
+                }
+                for other_id, other in sorted(unique_units.items())
+                if other_id != unit_id
+            ]
     supplementary_targets = []
     for table in all_tables:
         if str(table.get("doc_type", "")).upper() == "SI":
@@ -161,6 +221,22 @@ def _paper_chunk_index(
                     "source_text_offset_end": (unit.get("locator") or {}).get("source_text_offset_end"),
                     "page_text_offset_start": (unit.get("locator") or {}).get("page_text_offset_start"),
                     "page_text_offset_end": (unit.get("locator") or {}).get("page_text_offset_end"),
+                    "previous_segment": (
+                        {
+                            "unit_id": text_neighbors[unit["unit_id"]]["previous"]["unit_id"],
+                            "chunk_id": unit_chunk.get(text_neighbors[unit["unit_id"]]["previous"]["unit_id"]),
+                            "source_text_offset_end": (text_neighbors[unit["unit_id"]]["previous"].get("locator") or {}).get("source_text_offset_end"),
+                        }
+                        if text_neighbors.get(unit["unit_id"], {}).get("previous") else None
+                    ),
+                    "next_segment": (
+                        {
+                            "unit_id": text_neighbors[unit["unit_id"]]["next"]["unit_id"],
+                            "chunk_id": unit_chunk.get(text_neighbors[unit["unit_id"]]["next"]["unit_id"]),
+                            "source_text_offset_start": (text_neighbors[unit["unit_id"]]["next"].get("locator") or {}).get("source_text_offset_start"),
+                        }
+                        if text_neighbors.get(unit["unit_id"], {}).get("next") else None
+                    ),
                 }
                 for unit in chunk["units"] if unit.get("unit_kind") == "text"
             ],
@@ -176,6 +252,19 @@ def _paper_chunk_index(
                     "row_index_1based": (unit.get("locator") or {}).get("row_index_1based"),
                     "column_indices_1based": (unit.get("locator") or {}).get("column_indices_1based", []),
                     "cell_fragments": (unit.get("locator") or {}).get("cell_fragments", []),
+                    "same_row_related_units": [
+                        relation
+                        for row_index in sorted({
+                            int(value) for value in (
+                                (unit.get("locator") or {}).get("row_indices_1based") or []
+                            )
+                        } | ({
+                            int((unit.get("locator") or {})["row_index_1based"])
+                        } if (unit.get("locator") or {}).get("row_index_1based") is not None else set()))
+                        for relation in table_row_neighbors.get(
+                            (str(unit.get("table_id")), row_index, str(unit["unit_id"])), []
+                        )
+                    ],
                 }
                 for unit in chunk["units"] if unit.get("table_id")
             ],
