@@ -21,7 +21,7 @@ Check the current CLI version and model command syntax:
 opencode --version
 opencode models --help
 opencode run --help
-opencode session export --help
+opencode export --help
 ```
 
 The exact flags are checked against the installed CLI version by the user before the first real dispatch. The workflow uses current documented `opencode run --model`, `--agent`, `--file`, `--format json`, `--title`, and `--dir` options.
@@ -108,9 +108,69 @@ python scripts/validate_evidence.py --manifest "E:\\Zinc_batters_datas\\runs\\Fe
 
 This validates schema shape, task/paper identity, source IDs, non-empty evidence locators, quoted text/table values against locally extracted text, digitization artifact references, and the prohibition on exact numeric values for `visual_only` data.
 
-This is a deterministic first-pass evidence validator. It does not prove that the scientific interpretation is correct, fully verify row/column semantics for all table layouts, or establish complete context association. Those checks are expanded in later reconciliation work.
+This is a deterministic first-pass evidence validator. It does not prove that the scientific interpretation is correct, fully verify row/column semantics for all table layouts, or establish complete context association.
 
-## 7. Inspect the run
+## 7. Ingest observations and result records
+
+After the evidence report exists, ingest Worker A/B candidates into the persistent Registry:
+
+```powershell
+python scripts/reconcile_features.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --run-report "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\registry_ingestion.json"
+```
+
+This step creates immutable raw Feature Observations and provisional canonical Feature candidates. Worker A result values are stored as per-value JSONL records. Worker B omissions and semantic distinctions are stored separately. Python does not automatically merge similar feature names.
+
+## 8. Build global cross-paper Feature review tasks
+
+```powershell
+python scripts/build_reconciliation_queue.py `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch"
+```
+
+Worker B reviews each candidate pair using source-backed definitions, units, methods, formulas, normalization bases, statistics, temporal scope, and evidence excerpts. It is the same Worker B model and is not a third model worker. Its first-pass per-paper audit remains independent from Worker A.
+
+Run a no-inference preflight:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs" `
+  --dry-run
+```
+
+Then dispatch after the free-model price gate passes:
+
+```powershell
+python scripts/run_workers.py `
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs"
+```
+
+## 9. Apply semantic decisions conservatively
+
+```powershell
+python scripts/apply_feature_reconciliation.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
+  --reconciliation-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs\\application_report.json"
+```
+
+Python applies a merge only when the Worker B recommendation is SAME_FEATURE and every explicit equivalence flag passes, both features have locally verified source evidence, definitions exist, units are conservatively compatible, existing IDs do not conflict, and the decision cites observations from both sides. Otherwise, the pair remains under review or is explicitly resolved as distinct.
+
+After a merge, pairs that still reference the retired Feature ID are invalidated and regenerated against the surviving Feature ID. Raw observations and decision history are retained.
+
+## 10. Inspect the run
 
 Key files:
 - `worker_runs/model_preflight.json`
@@ -121,14 +181,14 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 8. Important limitations in v0.1
+## 11. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - PDF page/paragraph/table locators are not yet enriched beyond page markers and model-provided locators.
 - Table quote verification is text-occurrence checking, not yet cell-coordinate verification against structured table data.
 - Figure digitization is not automated. Workers may flag visual-only series but must not fabricate precise values.
 - Oversized paper bundles are blocked rather than chunked automatically.
-- Cross-paper Registry reconciliation and final TXT export have not yet been implemented.
+- The cross-paper Registry review/merge mechanism is implemented but must be checked on a manually inspected pilot; existing-schema FEATURE_ID mapping and final TXT export are not yet implemented.
 - The worker runner and preparation pipeline still require a local Windows smoke test against the installed OpenCode CLI version before production use.
 
 Do not treat this version as production-ready until the local smoke test and a manually inspected pilot paper are successful.
