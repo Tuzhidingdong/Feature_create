@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -74,8 +75,13 @@ class ApplyContextReviewTests(unittest.TestCase):
                 }],
             }
             self._write_json(task_output / "response.json", response)
+            response_sha256 = hashlib.sha256((task_output / "response.json").read_bytes()).hexdigest()
             self._write_json(run_dir / "evidence_validation.json", {
-                "tasks": [{"task_id": task_id, "status": "evidence_checked"}],
+                "tasks": [{
+                    "task_id": task_id,
+                    "status": "evidence_checked",
+                    "response_sha256": response_sha256,
+                }],
             })
 
             record = {
@@ -193,8 +199,13 @@ class ApplyContextReviewTests(unittest.TestCase):
                 ],
                 "context_facts": [],
             })
+            response_sha256 = hashlib.sha256((task_output / "response.json").read_bytes()).hexdigest()
             self._write_json(run_dir / "evidence_validation.json", {
-                "tasks": [{"task_id": task_id, "status": "evidence_checked"}],
+                "tasks": [{
+                    "task_id": task_id,
+                    "status": "evidence_checked",
+                    "response_sha256": response_sha256,
+                }],
             })
             records_path = root / "result_records.jsonl"
             records_path.write_text(json.dumps({
