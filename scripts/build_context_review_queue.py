@@ -326,6 +326,27 @@ def build_context_task(
         attachment: sha256_file(Path(attachment))
         for attachment in attachment_paths if Path(attachment).is_file()
     }
+    source_text_hashes: dict[str, str] = {}
+    for source_id in source_ids:
+        source_item = sources.get(source_id, {})
+        relative_text_path = source_item.get("extracted_text_path")
+        if not relative_text_path:
+            raise ContextQueueError(
+                f"Assigned source {source_id} has no extracted_text_path; cannot bind review evidence to an immutable source snapshot."
+            )
+        source_text_path = (root / str(relative_text_path)).resolve()
+        try:
+            source_text_path.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ContextQueueError(
+                f"Assigned source text path escapes prepared root: {relative_text_path}"
+            ) from exc
+        if not source_text_path.is_file():
+            raise ContextQueueError(
+                f"Assigned source text snapshot is missing for {source_id}: {source_text_path}"
+            )
+        source_text_hashes[source_id] = sha256_file(source_text_path)
+
     prompt_sha256 = hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()
     task_fingerprint = hashlib.sha256(json.dumps({
         "unresolved_id": unresolved_id,
@@ -351,6 +372,7 @@ def build_context_task(
             for unit, unit_text in rendered
         ],
         "attachment_hashes": attachment_hashes,
+        "source_text_hashes": source_text_hashes,
         "model_ref": model_ref,
         "first_pass_worker_b_task_ids": sorted(first_pass_worker_b_task_ids or []),
         "prompt_sha256": prompt_sha256,
@@ -458,6 +480,7 @@ def build_context_task(
         "prompt_sha256": prompt_sha256,
         "bundle_sha256": hashlib.sha256(bundle.encode("utf-8")).hexdigest(),
         "attachment_sha256": attachment_hashes,
+        "source_text_sha256": source_text_hashes,
         "context_evidence_manifest_sha256": sha256_file(manifest_path),
         "source_manifest_path": str(source_manifest_path.resolve()) if source_manifest_path else None,
         "source_manifest_sha256": source_manifest_sha256,
