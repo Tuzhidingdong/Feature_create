@@ -135,21 +135,30 @@ Python validates:
 
 A model agreement is not evidence. Every accepted result value must have a traceable source. Values that cannot be reliably read from figures must not be represented as exact numbers.
 
-### Phase 4 — Global Registry reconciliation
+### Phase 4 — Global Registry ingestion
 
-1. Preserve raw observations.
-2. Compare them with existing Registry candidates.
-3. Use name and unit similarity only to retrieve candidates, never as sufficient evidence to merge.
-4. Evaluate physical meaning, definition, formula, normalization basis, statistic, temporal scope, dimension, and method.
-5. Merge only when semantic equivalence is supported.
-6. Keep uncertain candidates separate and mark them for review.
-7. Map confirmed canonical features to the existing Feature Schema only when definitions are compatible.
-8. Allocate new IDs through Python for confirmed new features.
-9. Record every create, merge, split, mapping, and status decision in an append-only decision log.
+1. Preserve raw observations from Worker A and Worker B.
+2. Ingest each source observation into the persistent Registry with a stable Python ID.
+3. Ingest Worker A's individual result-value records separately, including dynamic sample/context facts.
+4. Preserve Worker B's omission candidates and within-paper semantic distinctions as review items.
+5. Build candidate Feature pairs using permissive lexical, alias, acronym, unit, and definition signals. These signals only retrieve candidates; they never merge them.
+6. Keep all new Canonical Features provisional until the global review stage resolves the candidate pairs.
 
-Use the two OpenCode free workers for semantic comparisons that need model judgement. The Supervisor coordinates, while Python applies and audits state transitions.
+### Phase 5 — Global cross-paper reconciliation
 
-### Phase 5 — Final global audit and export
+1. Build bounded pair-review tasks with source-backed Observation excerpts and relevant visual evidence.
+2. Use Worker B's second free OpenCode Go model for cross-paper semantic comparison. This is the same Worker B role, not an additional model worker.
+3. Compare physical/statistical quantity, definition, formula, numerator/denominator, normalization basis, statistic, temporal/cycle scope, dimensions, methods, and source contradictions.
+4. Require an explicit equivalence assessment for each dimension. Missing information cannot be treated as affirmative equivalence.
+5. Python applies a merge only when the decision is SAME_FEATURE and all deterministic evidence/compatibility gates pass.
+6. Preserve separate features for RELATED_BUT_DISTINCT and SAME_FAMILY_DIFFERENT_STATISTIC decisions.
+7. Keep insufficient/conflicting evidence under review; do not force a merge.
+8. After a merge, invalidate and regenerate any other pair that references the retired ID.
+9. Preserve all merge/split/redirect decisions in the append-only Registry history.
+
+Worker B supplies semantic recommendations. Python validates source provenance, feature IDs, evidence coverage, and explicit merge gates, then performs the state transition. The Supervisor only coordinates this work.
+
+### Phase 6 — Final global audit and export
 
 Audit cross-paper consistency, feature coverage, evidence integrity, record completeness, unresolved cases, and paid-cost compliance.
 
@@ -161,7 +170,7 @@ The records file may contain paper identifiers, raw names, mapped feature IDs, r
 
 The Feature-list file contains one entry per canonical result feature, with ID, canonical name, aliases, definition, result type, units/dimension, measurement/calculation methods, and standardization/comparability notes. It must not contain concrete values, Record_IDs, samples, conditions, paper coverage, or conclusions.
 
-### Phase 6 — Report
+### Phase 7 — Report
 
 Report counts calculated from local audit data:
 - sources found, accessible, reviewed, partially reviewed, and inaccessible;
