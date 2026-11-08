@@ -498,21 +498,11 @@ def attempt_worker_task(
             export_return_code = None
             if session_id:
                 export_result = run_process(
-                    [opencode_bin, "session", "export", session_id],
+                    [opencode_bin, "export", session_id],
                     attempt_dir,
                     env,
                     timeout_seconds=min(timeout_seconds, 180),
                 )
-                # Compatibility with older CLI releases exposing the legacy export command.
-                if export_result.returncode != 0:
-                    legacy_export = run_process(
-                        [opencode_bin, "export", session_id],
-                        attempt_dir,
-                        env,
-                        timeout_seconds=min(timeout_seconds, 180),
-                    )
-                    if legacy_export.returncode == 0:
-                        export_result = legacy_export
                 export_return_code = export_result.returncode
                 export_path.write_text(export_result.stdout or "", encoding="utf-8", newline="\n")
                 if export_result.returncode == 0 and export_result.stdout.strip():
