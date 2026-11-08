@@ -155,6 +155,19 @@ class ChunkEvidenceValidationTests(unittest.TestCase):
             self.assertEqual("needs_review", bad_result["status"])
             self.assertTrue(any("not present within the assigned text-unit range" in item for item in bad_result["errors"]))
 
+            negative_decision = json.loads(json.dumps(payload))
+            negative_decision["decision"] = "no_association"
+            negative_decision["context_facts"] = []
+            negative_decision["review_evidence_refs"][0]["evidence_status"] = "unverified"
+            negative_result = validate_payload(
+                negative_decision, "cross_chunk_context", task, sources, root
+            )
+            self.assertEqual("needs_review", negative_result["status"])
+            self.assertTrue(any(
+                "requires verified text/table evidence from both current and target sides"
+                in item for item in negative_result["errors"]
+            ))
+
     def test_quote_must_be_inside_assigned_text_segment_not_elsewhere_in_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
