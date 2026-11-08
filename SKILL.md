@@ -61,11 +61,11 @@ Do not perform Worker A or Worker B's literature interpretation in the Superviso
 
 ### OpenCode Worker A — Source-centric Discovery
 
-Worker A reviews each assigned paper and all available SI. It discovers raw result features, extracts individual result values, dynamically associates sample/context facts, and cites precise source locations.
+Worker A reviews one assigned evidence chunk at a time. It discovers raw result features, extracts individual result values, dynamically associates sample/context facts, and cites precise chunk/unit and original source locations.
 
 ### OpenCode Worker B — Feature-centric Discovery and Audit
 
-Worker B independently reviews the same source bundle without seeing Worker A's first-pass output. It independently discovers the feature inventory, checks figures/tables/SI for omissions, detects semantic distinctions, and submits evidence-backed omission candidates.
+Worker B independently reviews the same assigned chunk without seeing Worker A's first-pass output. It independently discovers the feature inventory, checks assigned figures/tables/SI for omissions, detects semantic distinctions, and submits evidence-backed omission candidates.
 
 The two workers must run on different verified free models. The task contracts in `worker_prompts/` and `contracts/` are normative.
 
@@ -89,7 +89,7 @@ Python must never silently change the provider/model to continue a failed task.
 
 ### Phase 0 — Preflight and cost gate
 
-1. Require `research_corpus_paired.csv` from the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage), not a harvesting-only CSV.
+1. Require `research_corpus_paired.csv` from the merged [chem-literature main branch](https://github.com/Tuzhidingdong/chem-literature), not a harvesting-only CSV.
 2. Require `preprocessing_path` and `preprocessing_status` on every selected CSV row.
 3. Resolve `preprocessing_path`, `local_pdf_path`, and `local_si_info` against the upstream workflow working directory (CSV directory by default, or an explicit corpus root).
 4. Treat CSV rows as the complete and authoritative paper list. Do not scan for extra papers, repeat article screening, or substitute unlisted files.
@@ -112,15 +112,25 @@ Python must never silently change the provider/model to continue a failed task.
 4. Read `main_analysis.md` and `si_analysis.md` exactly as created upstream.
 5. Index structured tables from `evidence_index.json`, preserving table ID, document type, page number, bounding box, caption, and every row/cell.
 6. Index figure captions and all upstream `media_assets`, preserving asset IDs, figure/table IDs, page number, bounding boxes, captions, extraction methods, dimensions, and hashes.
-7. Preserve the complete page/block index, scan flags, SI references, supplementary-file inventory, processing summary, and QC warnings. Copy the complete upstream evidence index unchanged into the Feature_create run and supply it to both workers.
+7. Preserve the complete page/block index, scan flags, SI references, supplementary-file inventory, processing summary, and QC warnings. Copy the complete upstream evidence index unchanged into the Feature_create run as the provenance authority; derive per-chunk locator slices from it without modifying the original.
 8. Do not run PyMuPDF, OCR, GROBID, archive extraction, DOCX/XLSX parsing, page rendering, or any other document-preprocessing step in Feature_create.
 9. Record missing, corrupt, inaccessible, scanned, or partially parsed upstream components. Do not infer successful review from file presence. Pair/hash failures block the paper; valid partial packages proceed only with explicit coverage warnings.
 
-The internal `source_manifest.json` is a logical-source index derived from the CSV and upstream packages, not a new document parser. Workers receive parsed text, structured tables, extracted images, the original evidence index, and QC report. Raw PDF/SI files remain outside the worker attachments.
+The internal `source_manifest.json` is a logical-source index derived from the CSV and upstream packages, not a new document parser. Each worker task receives only its assigned parsed text/table evidence units, related pre-extracted images, the `chunk_evidence_index.json` locator slice, a compact paper-wide `paper_chunk_index.json`, and the relevant QC report. The complete original upstream index remains in the prepared run and is not redundantly attached to every chunk. Raw PDF/SI files remain outside worker attachments.
+
+#### Deterministic chunking and cross-chunk provenance
+
+- Text is split at upstream page headings and paragraph/newline boundaries. Every source character is assigned once; page number and original source-text offsets remain attached to each unit.
+- Tables are split by original 1-based source rows. A single oversized row is split into cell fragments while preserving original table ID, row, column, and character offsets. Multi-row headers remain available as context.
+- An upstream image asset is assigned once to its related figure/table evidence unit when the evidence index identifies that relationship. Orphaned assets remain explicit units.
+- Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Worker evidence locators must cite both, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
+- `paper_chunk_index.json` exposes the other chunks' IDs, page/table/figure locators, and candidate MAIN-to-SI links. Candidate links are navigation aids, not confirmed semantic associations.
+- If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
+- A source is counted fully reviewed only when every chunk assigned to that worker has successful chunk-scoped coverage. A single completed chunk cannot mark the whole source complete.
 
 ### Phase 2 — Independent discovery and extraction
 
-For each paper/SI bundle:
+For each bounded evidence chunk (Worker A and Worker B receive independent copies of the same chunk):
 
 - Worker A returns raw feature observations, individual result-value candidates, context facts, evidence references, coverage, and unresolved items.
 - Worker B independently returns feature observations, coverage audits, omission candidates, semantic distinctions, and unresolved items.
@@ -134,9 +144,9 @@ Do not collapse multiple samples, conditions, time points, cycles, or series int
 
 Python validates:
 - payload structure and required fields;
-- source and locator existence;
-- quoted text against the source;
-- table values against exact row/column/cell;
+- source, chunk, and assigned unit identity;
+- quoted text within the exact assigned text range, not merely elsewhere in the same source;
+- table values against exact original row/column/cell or oversized-cell character fragment, and confirmation that the cited row/cell belongs to the assigned unit;
 - numeric parseability without changing the original reported string;
 - units and context association;
 - duplicate candidate records;
