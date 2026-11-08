@@ -395,9 +395,10 @@ def build_command(
         "Read every attached source item relevant to this task and return exactly one JSON object."
     )
     command_chars = len(subprocess.list2cmdline(args)) if os.name == "nt" else sum(len(x) + 1 for x in args)
-    if os.name == "nt" and command_chars > 28000:
+    if os.name == "nt" and command_chars > 7600:
         raise WorkerRunnerError(
-            f"Windows command line would be too long ({command_chars} chars); split the task bundle."
+            f"Windows command line would exceed the conservative 7,600-character limit "
+            f"({command_chars} chars). Reduce attachment count/path length or split the task bundle."
         )
     return args
 
@@ -413,6 +414,7 @@ def run_process(
             list(command),
             cwd=str(cwd),
             env=env,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -456,6 +458,10 @@ def attempt_worker_task(
             env = os.environ.copy()
             env["OPENCODE_CONFIG_CONTENT"] = build_runtime_config(model_ref, role)
             env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] = "1"
+            env["OPENCODE_DISABLE_PROJECT_CONFIG"] = "1"
+            env["OPENCODE_DISABLE_CLAUDE_CODE"] = "1"
+            env["OPENCODE_DISABLE_EXTERNAL_SKILLS"] = "1"
+            env["OPENCODE_DISABLE_TERMINAL_TITLE"] = "1"
             result = run_process(command, attempt_dir, env, timeout_seconds)
 
             stdout_path = attempt_dir / "stdout.jsonl"
@@ -477,11 +483,21 @@ def attempt_worker_task(
             export_return_code = None
             if session_id:
                 export_result = run_process(
-                    [opencode_bin, "export", session_id, "--sanitize"],
+                    [opencode_bin, "session", "export", session_id, "--sanitize"],
                     attempt_dir,
                     env,
                     timeout_seconds=min(timeout_seconds, 180),
                 )
+                # Compatibility with older CLI releases exposing the legacy export command.
+                if export_result.returncode != 0:
+                    legacy_export = run_process(
+                        [opencode_bin, "export", session_id, "--sanitize"],
+                        attempt_dir,
+                        env,
+                        timeout_seconds=min(timeout_seconds, 180),
+                    )
+                    if legacy_export.returncode == 0:
+                        export_result = legacy_export
                 export_return_code = export_result.returncode
                 export_path.write_text(export_result.stdout or "", encoding="utf-8", newline="\n")
                 if export_result.returncode == 0 and export_result.stdout.strip():
@@ -768,11 +784,28 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     outcomes: dict[str, Any] = {}
     worker_count = min(args.max_workers, 4)
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [executor.submit(run_one, task) for task in pending]
-        for future in as_completed(futures):
-            task_id, task_state = future.result()
-            outcomes[task_id] = task_state
+    remaining = list(pending)
+    max_workers_used = worker_count
+    while remaining:
+        batch = remaining[:worker_count]
+        remaining = remaining[worker_count:]
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(run_one, task) for task in batch]
+            batch_results = []
+            for future in as_completed(futures):
+                task_id, task_state = future.result()
+                outcomes[task_id] = task_state
+                batch_results.append(task_state)
+        # Provider throttling lowers concurrency for later batches. Retries
+        # always retain the original pinned model.
+        rate_limited = any(
+            any(marker in str(result.get("error", "")).casefold()
+                for marker in ("429", "rate limit", "too many requests", "resource exhausted"))
+            for result in batch_results
+        )
+        if rate_limited and remaining and worker_count > 1:
+            worker_count = max(1, worker_count - 1)
+        max_workers_used = max(max_workers_used, worker_count)
 
     statuses = [value.get("status", "unknown") for value in state["tasks"].values()]
     summary = {
@@ -783,7 +816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "already_complete_tasks": sum(1 for t in eligible if t["task_id"] not in outcomes and state["tasks"].get(t["task_id"], {}).get("status") == "complete"),
         "blocked_tasks": len(blocked),
         "task_status_counts": {status: statuses.count(status) for status in sorted(set(statuses))},
-        "max_workers_used": worker_count,
+        "max_workers_used": max_workers_used,
         "models": preflight["models"],
         "paid_fallback_allowed": False,
         "run_state_path": str(state_path),
