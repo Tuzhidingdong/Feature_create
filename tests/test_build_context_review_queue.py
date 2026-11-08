@@ -237,6 +237,41 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 item["unit_id"] for item in evidence["assigned_units"]
             })
 
+            unresolved_rows = [json.loads(line) for line in unresolved.read_text(encoding="utf-8").splitlines() if line.strip()]
+            unresolved_rows[0]["description"] += " The follow-up specifically asks for the electrolyte definition."
+            unresolved.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in unresolved_rows) + "\n",
+                encoding="utf-8",
+            )
+            revised_output = root / "context_dispatch_revised"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(source_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(revised_output),
+            ]), 0)
+            revised_queue = json.loads((revised_output / "context_review_task_queue.json").read_text(encoding="utf-8"))
+            self.assertNotEqual(task["task_id"], revised_queue["tasks"][0]["task_id"])
+
+            unresolved_rows[0]["resolution_status"] = "association_confirmed"
+            unresolved.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in unresolved_rows) + "\n",
+                encoding="utf-8",
+            )
+            resolved_output = root / "context_dispatch_resolved"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(source_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(resolved_output),
+            ]), 0)
+            resolved_queue = json.loads((resolved_output / "context_review_task_queue.json").read_text(encoding="utf-8"))
+            self.assertEqual(0, resolved_queue["task_count"])
+            self.assertEqual(1, resolved_queue["skipped_unresolved_count"])
+            self.assertIn("already_reviewed_status", resolved_queue["skipped_unresolved"][0]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
