@@ -89,24 +89,31 @@ Python must never silently change the provider/model to continue a failed task.
 
 ### Phase 0 — Preflight and cost gate
 
-1. Identify the corpus root and all supplied papers and SI files.
-2. Read the supplied Feature Schema as a mapping reference only.
-3. Record source inventory, hashes, availability, and parsing status.
-4. Refresh/check the available OpenCode model catalog.
-5. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
-6. Verify both models are currently Free for input, output, and cached reads using the refreshed verbose model catalog. The published cached-write field may be a dash/not listed; reject any positive cached-write price.
-7. Check that deterministic task titles are supplied and no helper-model default can select a paid model.
-8. If any cost/availability check is inconclusive, stop before dispatching semantic work.
+1. Require the final `research_corpus_paired.csv` produced by [chem-literature](https://github.com/Tuzhidingdong/chem-literature).
+2. Resolve `local_pdf_path` and `local_si_info` relative to the upstream CSV directory (or an explicitly supplied corpus root).
+3. Treat the CSV rows as the complete and authoritative paper list. Do not recursively scan the workspace, discover additional PDFs/SI, repeat article-type screening, or substitute unlisted files.
+4. Verify that every CSV-listed main PDF and SI file physically exists; preserve missing/invalid entries as blocked source records.
+5. Read the supplied Feature Schema as a mapping reference only.
+6. Record the upstream CSV path/hash, row count, source hashes, file availability, and parsing status.
+7. Refresh/check the available OpenCode model catalog.
+8. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
+9. Verify both models are currently Free for input, output, and cached reads using the refreshed verbose model catalog. The published cached-write field may be a dash/not listed; reject any positive cached-write price.
+10. Check that deterministic task titles are supplied and no helper-model default can select a paid model.
+11. If any cost/availability check is inconclusive, stop before dispatching semantic work.
 
-### Phase 1 — Source preparation
+### Phase 1 — Source preparation from the upstream pair list
 
-1. Parse available PDF, XML/TEI, Markdown, HTML, CSV, XLSX, and SI sources using deterministic local tools where possible.
-2. Preserve source/page/section/table/row/column/figure locators.
-3. Index all figures, captions, tables, and SI materials.
-4. Keep source text and table data traceable to original files.
-5. Record inaccessible, corrupt, or only partially parsed sources; do not count them as fully reviewed.
+1. Read only the paper rows present in `research_corpus_paired.csv`.
+2. Follow each row's `local_pdf_path` and `local_si_info`; do not infer alternative filenames or search for replacements.
+3. Keep the upstream DOI/title/year/journal/article type and original CSV row as paper-level provenance.
+4. Expand listed SI ZIP archives safely into the downstream run directory; retain the original archive as provenance and never modify upstream files.
+5. Parse the listed PDFs, DOCX, XLSX, CSV/TSV, XML/TEI, HTML, and text files using deterministic local tools.
+6. Preserve source/page/section/table/row/column/figure locators.
+7. Index all figures, captions, tables, and SI materials.
+8. Keep source text and table data traceable to the exact upstream-listed file.
+9. Record missing, corrupt, inaccessible, scanned, or partially parsed sources. A paper with a missing listed pair must be blocked rather than silently substituted.
 
-Figures are first-class evidence. Provide relevant figure images to the relevant OpenCode worker when visual interpretation is required.
+The internal `source_manifest.json` is derived from the upstream CSV; it is not a second corpus-discovery source. Figures are first-class evidence. Provide relevant figure images to the relevant OpenCode worker when visual interpretation is required.
 
 ### Phase 2 — Independent discovery and extraction
 
