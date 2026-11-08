@@ -8,6 +8,7 @@ presence, quoted text/cell existence, and unsafe figure-value claims.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -632,10 +633,12 @@ def main(argv: list[str] | None = None) -> int:
                 "error_count": 1,
             })
             continue
-        payload = read_json(response_path)
+        response_bytes = response_path.read_bytes()
+        payload = json.loads(response_bytes.decode("utf-8"))
         role = task["worker_role"]
         result = validate_payload(payload, role, task, sources, output_root)
         result["response_path"] = str(response_path)
+        result["response_sha256"] = hashlib.sha256(response_bytes).hexdigest()
         results.append(result)
 
     summary = {
