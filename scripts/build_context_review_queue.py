@@ -274,6 +274,7 @@ def build_context_task(
     max_chars: int,
     max_attachments: int,
     max_command_chars: int,
+    review_attempt: int = 0,
 ) -> dict[str, Any]:
     unresolved_id = str(unresolved["unresolved_id"])
     current_chunk_id = str(current_task.get("chunk_id") or "")
@@ -347,6 +348,7 @@ def build_context_task(
         "attachment_hashes": attachment_hashes,
         "model_ref": model_ref,
         "prompt_sha256": prompt_sha256,
+        "review_attempt": review_attempt,
     }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     task_id = stable_id("FC-CX", unresolved_id, task_fingerprint, length=14)
 
@@ -362,6 +364,7 @@ def build_context_task(
         f"- Target chunk(s): {', '.join(target_chunk_ids)}",
         f"- Context role requested: {(unresolved.get('cross_chunk_target') or {}).get('context_role')}",
         f"- Relation basis nominated by Worker A: {(unresolved.get('cross_chunk_target') or {}).get('relation_basis')}",
+        f"- Review attempt: {review_attempt}",
         "",
         "## Unresolved question",
         "",
@@ -445,6 +448,7 @@ def build_context_task(
         "worker_role": "cross_chunk_context",
         "model_ref": model_ref,
         "input_fingerprint": task_fingerprint,
+        "review_attempt": review_attempt,
         "prompt_sha256": prompt_sha256,
         "bundle_sha256": hashlib.sha256(bundle.encode("utf-8")).hexdigest(),
         "attachment_sha256": attachment_hashes,
@@ -720,6 +724,13 @@ def main(argv: list[str] | None = None) -> int:
             })
             continue
 
+        review_history = unresolved.get("resolution_history") or []
+        review_attempt = len(review_history)
+        if args.retry_inconclusive and resolution_status in inconclusive_statuses:
+            review_attempt += 1
+            if review_attempt < 1:
+                review_attempt = 1
+
         try:
             task = build_context_task(
                 unresolved=unresolved,
@@ -736,6 +747,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_chars=args.max_context_chars,
                 max_attachments=args.max_attachments,
                 max_command_chars=args.max_command_chars,
+                review_attempt=review_attempt,
             )
             tasks.append(task)
         except ContextQueueError as exc:
