@@ -450,7 +450,12 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if errors:
-        audit_path = args.audit_report.resolve() if args.audit_report else args.output_dir.resolve() / "export_audit.json"
+        output_dir = args.output_dir.expanduser().resolve()
+        audit_path = (
+            args.audit_report.resolve()
+            if args.audit_report
+            else output_dir.parent / f"{output_dir.name}_export_audit.json"
+        )
         audit_path.parent.mkdir(parents=True, exist_ok=True)
         audit_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -472,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.audit_report:
         audit_path = args.audit_report.resolve()
     else:
-        audit_path = output_dir / "export_audit.json"
+        audit_path = output_dir.parent / f"{output_dir.name}_export_audit.json"
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     audit_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))
