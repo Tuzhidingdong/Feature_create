@@ -157,8 +157,29 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 "chunk_id": "CHUNK-B",
                 "chunk_evidence_index_path": str(target_index),
             }
+            policy = json.loads(
+                (Path(__file__).resolve().parents[1] / "config" / "execution_policy.json").read_text(encoding="utf-8")
+            )
+            first_pass_worker_b_model = policy["workers"]["worker_b"]["model_ref"]
+            worker_b_current = {
+                "task_id": "TASK-B-CURRENT",
+                "paper_id": "PAPER-1",
+                "worker_role": "feature_audit",
+                "chunk_id": "CHUNK-A",
+                "model_ref": first_pass_worker_b_model,
+            }
+            worker_b_target = {
+                "task_id": "TASK-B-TARGET",
+                "paper_id": "PAPER-1",
+                "worker_role": "feature_audit",
+                "chunk_id": "CHUNK-B",
+                "model_ref": first_pass_worker_b_model,
+            }
             source_queue = prepared / "task_queue.json"
-            source_queue.write_text(json.dumps({"tasks": [current_task, target_task]}), encoding="utf-8")
+            source_queue.write_text(
+                json.dumps({"tasks": [current_task, target_task, worker_b_current, worker_b_target]}),
+                encoding="utf-8",
+            )
 
             unresolved = root / "unresolved_extraction_items.jsonl"
             unresolved.write_text(json.dumps({
