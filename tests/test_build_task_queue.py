@@ -12,6 +12,55 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildTaskQueueTests(unittest.TestCase):
+    def test_worker_task_ids_change_when_upstream_paper_metadata_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            prepared = base / "prepared"
+            extracted = prepared / "extracted_text"
+            extracted.mkdir(parents=True)
+            (extracted / "source.txt").write_text("Stable source text.", encoding="utf-8")
+            source = {
+                "source_id": "SRC-1",
+                "paper_id": "10.1234/stable",
+                "source_role": "main",
+                "source_type": "main_text",
+                "relative_path": "papers_pdf/paper.pdf",
+                "absolute_path": str(base / "paper.pdf"),
+                "parse_status": "parsed",
+                "sha256": "fixed-source-hash",
+                "extracted_text_path": "extracted_text/source.txt",
+            }
+
+            def build(title: str, run_name: str) -> list[str]:
+                manifest = {
+                    "manifest_version": "0.2",
+                    "source_kind": "chem-literature-research_corpus_paired.csv",
+                    "corpus_fingerprint": "same-file-fingerprint",
+                    "upstream_artifact_sha256": "csv-hash-" + title,
+                    "sources": [source],
+                    "papers": [{
+                        "paper_id": "10.1234/stable",
+                        "doi": "10.1234/stable",
+                        "title": title,
+                        "year": "2025",
+                        "journal": "Example Journal",
+                        "article_type": "Original Research",
+                        "abstract": "An abstract.",
+                        "pair_status": "paired_files_verified",
+                        "source_ids": ["SRC-1"],
+                    }],
+                }
+                manifest_path = prepared / f"{run_name}_manifest.json"
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                output = base / run_name
+                self.assertEqual(main(["--manifest", str(manifest_path), "--output", str(output)]), 0)
+                queue = json.loads((output / "task_queue.json").read_text(encoding="utf-8"))
+                return sorted(task["task_id"] for task in queue["tasks"])
+
+            original_ids = build("Original title", "dispatch_original")
+            revised_ids = build("Updated title", "dispatch_revised")
+            self.assertNotEqual(original_ids, revised_ids)
+
     def test_blocks_papers_that_failed_upstream_pair_integrity(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
