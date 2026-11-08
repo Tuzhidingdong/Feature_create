@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -131,7 +132,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path, required=True, help="source_manifest.json from prepare_corpus.py")
     parser.add_argument("--output", type=Path, required=True, help="Run directory for worker tasks.")
     parser.add_argument("--max-bundle-chars", type=int, default=2_000_000)
+    parser.add_argument("--max-command-chars", type=int, default=7600)
     args = parser.parse_args(argv)
+    if args.max_bundle_chars < 1 or args.max_command_chars < 1000:
+        parser.error("max-bundle-chars must be positive and max-command-chars must be at least 1000.")
 
     manifest = load_json(args.manifest.resolve())
     output_root = args.output.expanduser().resolve()
@@ -172,24 +176,47 @@ def main(argv: list[str] | None = None) -> int:
             task_id = stable_task_id(paper["paper_id"], role, paper_hash)
             task_dir = paper_dir / ("worker_a" if role == "source_discovery" else "worker_b")
             task_dir.mkdir(parents=True, exist_ok=True)
+            model_ref = model_refs[role]
+            agent_name = "feature_create_worker_a" if role == "source_discovery" else "feature_create_worker_b"
+            command_preview = [
+                "opencode", "--pure", "run",
+                "--model", model_ref,
+                "--agent", agent_name,
+                "--title", task_id,
+                "--format", "json",
+                "--dir", str(task_dir.resolve()),
+            ]
+            for attachment_path in [str(prompt_path.resolve()), str(bundle_path.resolve()), *attachments]:
+                command_preview.extend(["--file", attachment_path])
+            command_preview.append(f"Execute Feature_create task {task_id}. Return the contract JSON.")
+            command_chars = len(subprocess.list2cmdline(command_preview))
+            if extracted_chars > args.max_bundle_chars:
+                task_status = "blocked_oversize"
+            elif command_chars > args.max_command_chars:
+                task_status = "blocked_command_line"
+            else:
+                task_status = "pending"
             worker_task = {
                 "task_id": task_id,
                 "contract_version": "0.1",
                 "paper_id": paper["paper_id"],
                 "doi": paper.get("doi"),
                 "worker_role": role,
-                "model_ref": model_refs[role],
+                "model_ref": model_ref,
                 "prompt_path": str(prompt_path.resolve()),
                 "bundle_path": str(bundle_path.resolve()),
                 "attachment_paths": attachments,
                 "output_dir": str(task_dir.resolve()),
-                "task_status": "pending" if extracted_chars <= args.max_bundle_chars else "blocked_oversize",
+                "task_status": task_status,
                 "extracted_text_chars": extracted_chars,
                 "source_ids": [source["source_id"] for source in paper_sources],
                 "source_count": len(paper_sources),
+                "attachment_count": len(attachments),
+                "command_length_estimate": command_chars,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "input_fingerprint": paper_hash,
                 "oversize_limit_chars": args.max_bundle_chars,
+                "command_length_limit": args.max_command_chars,
             }
             task_path = task_dir / "task.json"
             task_path.write_text(
