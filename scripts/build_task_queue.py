@@ -66,7 +66,7 @@ def build_bundle(
         f"- Paper ID: {paper['paper_id']}",
         f"- DOI: {paper.get('doi') or 'not found in local source metadata'}",
         f"- Source count: {len(source_records)}",
-        "- Discovery boundary: all variables actually reported by the attached sources; existing schemas are not a discovery boundary.",
+        "- Discovery boundary: all result variables actually reported in the upstream-preprocessed sources; existing schemas are not a discovery boundary.",
         "",
         f"- Title: {paper.get('title') or 'not supplied'}",
         f"- Year: {paper.get('year') or 'not supplied'}",
@@ -109,29 +109,28 @@ def build_bundle(
     all_chars = 0
 
     for source in source_records:
-        rel = source["relative_path"].replace("|", "\\|")
+        rel = str(source.get("relative_path") or "").replace("|", "\\|")
+        locator = []
+        for key in ("page_number", "table_id", "figure_id", "bbox", "caption", "asset_type"):
+            if source.get(key) is not None:
+                locator.append(f"{key}={source.get(key)}")
         lines.append(
-            locator = []
-            for key in ("page_number", "table_id", "figure_id", "bbox", "caption", "asset_type"):
-                if source.get(key) is not None:
-                    locator.append(f"{key}={source.get(key)}")
-            lines.append(
-                f"| {source['source_id']} | {source.get('component', 'other')} | "
-                f"{source['source_type']} | {'; '.join(locator) or rel} | {source['parse_status']} |"
-            )
-        # Only pre-extracted visual assets and the upstream evidence index are
-        # attached. MAIN/SI PDFs, archives and office originals are never passed
-        # to Feature_create workers for a second parsing pass.
-        for source in source_records:
-            attachment = source.get("attachment_path")
-            if attachment:
-                attachment_path = Path(attachment).resolve()
-                if attachment_path.is_file():
-                    attachments.append(str(attachment_path))
-        for key in ("evidence_index_copy", "qc_report_path"):
-            value = paper.get(key)
-            if value and Path(value).is_file():
-                attachments.append(str(Path(value).resolve()))
+            f"| {source['source_id']} | {source.get('component', 'other')} | "
+            f"{source['source_type']} | {'; '.join(locator) or rel} | {source['parse_status']} |"
+        )
+
+    # Only pre-extracted visual assets plus the exact upstream evidence index/QC
+    # report are attached. Raw source documents remain provenance only.
+    for source in source_records:
+        attachment = source.get("attachment_path")
+        if attachment:
+            attachment_path = Path(attachment).resolve()
+            if attachment_path.is_file():
+                attachments.append(str(attachment_path))
+    for key in ("evidence_index_copy", "qc_report_path"):
+        value = paper.get(key)
+        if value and Path(value).is_file():
+            attachments.append(str(Path(value).resolve()))
 
     lines.extend([
         "",
@@ -140,21 +139,15 @@ def build_bundle(
         "- Review every listed upstream-preprocessed text, structured table, figure caption, and image asset.",
         "- Use the attached upstream evidence_index.json as the authoritative page/table/figure/SI coordinate and relationship index.",
         "- Use the upstream PREPROCESSING_QC_REPORT.md and processing_summary to identify scanned pages, unsupported SI, and other incomplete coverage.",
-        "- The original MAIN/SI PDFs and archives are inventory/provenance only. Do not request or perform a second PDF/SI parsing pass.",
+        "- Original MAIN/SI PDFs and archives are inventory/provenance only. Do not request or perform a second PDF/SI parsing pass.",
         "- Preserve source IDs exactly; they are required for provenance.",
         "- Do not claim a source was reviewed if it was only listed.",
         "- Each accepted result value must remain linked to the exact source and locator.",
         "- Keep sample identity, conditions, time/cycle facts, protocols, and result values separate.",
-        "- Figure and table image assets extracted upstream are attached individually when available.",
-        "- Original PDFs and SI archives are not attached; do not treat their physical presence as evidence that they were reviewed.",
+        "- Figure/table images are the exact pre-extracted upstream assets and are attached individually when available.",
         "- If an upstream asset is missing, unreadable, scanned, or marked PRESERVED_NOT_PARSED, report it in coverage and unresolved items.",
         "",
-        "## Upstream image/table attachments",
-        "",
-        "- Images are the exact pre-extracted assets referenced by evidence_index.json and retain their upstream asset IDs, page numbers, captions, and hashes.",
-        "- The evidence index is authoritative for coordinates, table rows, SI references, and source relationships.",
-        "",
-        "## Extracted source text",
+        "## Extracted source text and table contents",
         "",
     ])
 
@@ -162,17 +155,17 @@ def build_bundle(
         text = source_text(source_output_root, source)
         if not text.strip():
             lines.extend([
-                f"### SOURCE {source['source_id']} — {source['relative_path']}",
+                f"### SOURCE {source['source_id']} — {source.get('relative_path', '')}",
                 "",
-                f"[No extracted text available; parse_status={source['parse_status']}. Inspect the original attachment if present.]",
+                f"[No indexed text is available; parse_status={source['parse_status']}. Do not claim the raw document was reviewed.]",
                 "",
             ])
             continue
         all_chars += len(text)
         lines.extend([
-            f"### SOURCE {source['source_id']} — {source['relative_path']}",
+            f"### SOURCE {source['source_id']} — {source.get('relative_path', '')}",
             "",
-            f"Source role: {source['source_role']}; source type: {source['source_type']}.",
+            f"Source role: {source['source_role']}; source type: {source['source_type']}; component: {source.get('component', 'other')}.",
             "",
             text,
             "",
