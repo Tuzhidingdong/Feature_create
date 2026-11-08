@@ -50,9 +50,15 @@ class ApplyContextReviewTests(unittest.TestCase):
             },
         }
 
+    def _write_registry_lock_target(self, root: Path) -> Path:
+        path = root / "global_feature_registry.json"
+        self._write_json(path, {"contract_version": "0.1"})
+        return path
+
     def test_confirmed_context_adds_only_context_facts_and_resolves_issue(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            registry_path = self._write_registry_lock_target(root)
             run_dir = root / "context_runs"
             task_output = root / "task_output"
             task_id = "FC-CX-TEST-1"
@@ -169,6 +175,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
                 "--records", str(records_path),
                 "--unresolved", str(unresolved_path),
                 "--report", str(report_path),
@@ -202,6 +209,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
                 "--records", str(records_path),
                 "--unresolved", str(unresolved_path),
                 "--report", str(report_path),
@@ -213,6 +221,7 @@ class ApplyContextReviewTests(unittest.TestCase):
     def test_rejects_response_modified_after_evidence_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            registry_path = self._write_registry_lock_target(root)
             run_dir = root / "context_runs"
             task_output = root / "task_output"
             task_id = "FC-CX-TAMPER"
@@ -295,6 +304,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
                 "--records", str(records_path),
                 "--unresolved", str(unresolved_path),
                 "--report", str(report_path),
@@ -313,6 +323,7 @@ class ApplyContextReviewTests(unittest.TestCase):
     def test_rejects_bundle_modified_after_evidence_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            registry_path = self._write_registry_lock_target(root)
             run_dir = root / "context_runs"
             task_output = root / "task_output"
             task_id = "FC-CX-BUNDLE-TAMPER"
@@ -398,6 +409,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
                 "--records", str(records_path),
                 "--unresolved", str(unresolved_path),
                 "--report", str(report_path),
@@ -416,6 +428,7 @@ class ApplyContextReviewTests(unittest.TestCase):
     def test_insufficient_evidence_keeps_unresolved_issue_open_and_adds_no_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            registry_path = self._write_registry_lock_target(root)
             run_dir = root / "context_runs"
             task_output = root / "task_output"
             task_id = "FC-CX-TEST-2"
@@ -486,6 +499,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(main([
                 "--queue", str(queue_path),
                 "--run-dir", str(run_dir),
+                "--registry", str(registry_path),
                 "--records", str(records_path),
                 "--unresolved", str(unresolved_path),
                 "--report", str(root / "report.json"),
