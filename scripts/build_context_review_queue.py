@@ -261,6 +261,35 @@ def _load_unit_from_chunk_index(
     )
 
 
+def canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def record_snapshot(record: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "record_id", "paper_id", "doi", "registry_feature_id", "observation_id",
+        "raw_feature_name", "raw_value", "numeric_value", "reported_unit",
+        "result_type", "value_extraction_status", "extraction_status",
+        "statistic_label", "replicate_count", "sample_identity", "condition_facts",
+        "time_cycle_facts", "protocol_facts", "other_context_facts",
+        "measurement_or_calculation_method", "source_id", "source_type",
+        "source_location", "evidence_refs", "evidence_status", "context_notes",
+        "worker_task_id", "worker_model",
+    )
+    return {key: record.get(key) for key in fields}
+
+
+def unresolved_snapshot(unresolved: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "unresolved_id", "paper_id", "worker_task_id", "item_type", "description",
+        "related_candidate_record_id", "related_candidate_observation_id",
+        "evidence_refs", "cross_chunk_target", "resolution_status", "resolution_history",
+    )
+    return {key: unresolved.get(key) for key in fields}
+
+
 def build_context_task(
     unresolved: dict[str, Any],
     record: dict[str, Any],
@@ -322,6 +351,8 @@ def build_context_task(
         "protocol_facts_already_extracted": record.get("protocol_facts", []),
         "other_context_facts_already_extracted": record.get("other_context_facts", []),
     }
+    record_snapshot_hash = canonical_sha256(record_snapshot(record))
+    unresolved_snapshot_hash = canonical_sha256(unresolved_snapshot(unresolved))
     attachment_hashes = {
         attachment: sha256_file(Path(attachment))
         for attachment in attachment_paths if Path(attachment).is_file()
@@ -356,6 +387,8 @@ def build_context_task(
         "cross_chunk_target": unresolved.get("cross_chunk_target"),
         "current_evidence_refs": current_refs,
         "record_context": record_context,
+        "record_snapshot_sha256": record_snapshot_hash,
+        "unresolved_snapshot_sha256": unresolved_snapshot_hash,
         "current_task_id": current_task.get("task_id"),
         "current_chunk_id": current_chunk_id,
         "target_descriptors": target_descriptors,
@@ -476,6 +509,8 @@ def build_context_task(
         "worker_role": "cross_chunk_context",
         "model_ref": model_ref,
         "input_fingerprint": task_fingerprint,
+        "record_snapshot_sha256": record_snapshot_hash,
+        "unresolved_snapshot_sha256": unresolved_snapshot_hash,
         "review_attempt": review_attempt,
         "prompt_sha256": prompt_sha256,
         "bundle_sha256": hashlib.sha256(bundle.encode("utf-8")).hexdigest(),
