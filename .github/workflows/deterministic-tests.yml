@@ -1,0 +1,41 @@
+name: deterministic-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install local processing dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python files
+        run: python -m compileall -q feature_create scripts tests
+      - name: Run deterministic unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate JSON contracts and configuration
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in sorted(Path(".").rglob("*.json")):
+              if any(part.startswith(".") for part in path.parts):
+                  continue
+              json.loads(path.read_text(encoding="utf-8"))
+              print("OK", path)
+          PY
