@@ -241,7 +241,7 @@ The exporter creates exactly two formal TXT files:
 - `result_feature_records.txt`
 - `result_feature_list.txt`
 
-Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal `export_audit.json` for diagnostics; that audit file is not a formal deliverable.
+Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal audit JSON beside (not inside) the formal output directory. The formal output directory contains only the two TXT files.
 
 ## 13. Generate the final deterministic audit report
 
