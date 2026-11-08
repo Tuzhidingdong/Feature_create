@@ -351,7 +351,6 @@ def build_context_task(
             for unit, unit_text in rendered
         ],
         "attachment_hashes": attachment_hashes,
-        "source_manifest_sha256": source_manifest_sha256,
         "model_ref": model_ref,
         "first_pass_worker_b_task_ids": sorted(first_pass_worker_b_task_ids or []),
         "prompt_sha256": prompt_sha256,
