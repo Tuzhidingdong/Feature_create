@@ -432,15 +432,25 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
                 problems.append(f"evidence_refs/{index}: source_id is not linked to the assigned unit.")
             if side not in {"current", "target"}:
                 problems.append(f"evidence_refs/{index}: evidence_side must be current or target.")
+            expected_side_units = set(
+                task.get("current_unit_ids", []) if side == "current"
+                else task.get("target_unit_ids", []) if side == "target"
+                else []
+            )
+            if expected_side_units and unit_id not in expected_side_units:
+                problems.append(f"evidence_refs/{index}: unit_id is not assigned to the declared evidence_side.")
+        if not {"current", "target"}.issubset(sides):
+            problems.append("Every context decision requires review evidence from both current and target sides.")
         if payload.get("decision") == "association_confirmed":
             if not payload.get("context_facts"):
                 problems.append("association_confirmed requires at least one context_fact.")
-            if not {"current", "target"}.issubset(sides):
-                problems.append("association_confirmed requires both current-side and target-side evidence.")
             for index, fact in enumerate(payload.get("context_facts", [])):
-                fact_sides = {ref.get("evidence_side") for ref in fact.get("evidence_refs", [])}
+                fact_refs = fact.get("evidence_refs", [])
+                fact_sides = {ref.get("evidence_side") for ref in fact_refs}
                 if not {"current", "target"}.issubset(fact_sides):
                     problems.append(f"context_facts/{index}: each fact must cite both current and target evidence.")
+                if any(ref.get("evidence_status") not in {"verified_text", "verified_table_cell"} for ref in fact_refs):
+                    problems.append(f"context_facts/{index}: confirmed facts require verified text or table-cell evidence.")
         elif payload.get("context_facts"):
             problems.append("Only association_confirmed may return context_facts.")
         return problems
