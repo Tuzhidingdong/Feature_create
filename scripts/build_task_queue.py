@@ -260,11 +260,16 @@ def _chunk_evidence_index(
             "caption": table.get("caption"),
             "row_count_original": len(rows),
             "col_count_original": table.get("col_count"),
-            "assigned_rows": [
-                {"row_index_1based": index, "cells": rows[index - 1]}
-                for index in sorted(selected_rows) if 1 <= index <= len(rows)
+            "assigned_row_indices_1based": sorted(
+                index for index in selected_rows if 1 <= index <= len(rows)
+            ),
+            "assigned_cell_fragments": [
+                {
+                    key: value for key, value in fragment.items()
+                    if key != "cell_text_fragment"
+                }
+                for fragment in selected_cell_fragments
             ],
-            "assigned_cell_fragments": selected_cell_fragments,
             "header_context_rows": [
                 {"row_index_1based": index, "cells": rows[index - 1]}
                 for index in range(1, min(3, len(rows)) + 1)
