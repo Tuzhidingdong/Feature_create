@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.audit_records import main
+from scripts.audit_records import aggregate_chunk_coverage, main
 
 
 class AuditRecordsTests(unittest.TestCase):
@@ -177,6 +177,32 @@ class AuditRecordsTests(unittest.TestCase):
             self.assertEqual(report["result_extraction"]["result_record_count"], 1)
             self.assertEqual(report["result_extraction"]["records_with_context_notes"], 1)
             self.assertTrue(report["interpretation"]["missing_usage_or_cost_metadata_is_unknown_not_zero"])
+
+
+class ChunkCoverageAggregationTests(unittest.TestCase):
+    def test_source_is_complete_only_when_every_assigned_chunk_is_complete(self) -> None:
+        result = aggregate_chunk_coverage(
+            {
+                "SRC-MAIN": ["fully_reviewed", "fully_reviewed"],
+                "SRC-SI": ["fully_reviewed", "missing_chunk_coverage"],
+                "SRC-BLOCKED": ["missing_chunk_coverage", "missing_chunk_coverage"],
+            },
+            "fully_reviewed",
+        )
+        self.assertEqual("fully_reviewed", result["SRC-MAIN"])
+        self.assertEqual("partially_reviewed", result["SRC-SI"])
+        self.assertEqual("not_reviewed", result["SRC-BLOCKED"])
+
+    def test_worker_b_uses_its_own_success_status(self) -> None:
+        result = aggregate_chunk_coverage(
+            {
+                "SRC-SI": ["reviewed", "reviewed"],
+                "SRC-PARTIAL": ["reviewed", "partially_reviewed"],
+            },
+            "reviewed",
+        )
+        self.assertEqual("reviewed", result["SRC-SI"])
+        self.assertEqual("partially_reviewed", result["SRC-PARTIAL"])
 
 
 if __name__ == "__main__":
