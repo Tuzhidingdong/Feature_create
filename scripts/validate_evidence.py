@@ -8,6 +8,7 @@ presence, quoted text/cell existence, and unsafe figure-value claims.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -200,7 +201,6 @@ def validate_locator_scope(
         except (TypeError, ValueError):
             return "locator page_number is not an integer."
 
-    scope_types = {str(item.get("scope_type") or "") for item in assigned_scopes}
     page_scopes = [
         item for item in assigned_scopes
         if item.get("page_number") is not None
@@ -290,14 +290,24 @@ def verify_quote_in_assigned_scope(
         return False, "No assigned source scope matches the evidence page/table row locator."
 
     normalized_quote = normalize_for_search(quote)
+    bundle_path = Path(str(task.get("bundle_path") or "")).resolve()
+    scope_root = (bundle_path.parent / "scope_texts").resolve()
     for scope in matching:
         path = Path(str(scope["scope_text_path"])).resolve()
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            path.relative_to(scope_root)
+        except ValueError:
+            continue
+        try:
+            text_bytes = path.read_bytes()
+            expected_hash = str(scope.get("scope_text_sha256") or "")
+            if expected_hash and hashlib.sha256(text_bytes).hexdigest() != expected_hash:
+                continue
+            text = text_bytes.decode("utf-8", errors="replace")
         except OSError:
             continue
         if normalized_quote and normalized_quote in normalize_for_search(text):
-            return True, "quoted evidence occurs inside the exact assigned scope text"
+            return True, "quoted evidence occurs inside the hash-verified assigned scope text"
     return False, "Quoted evidence exists outside this chunk or is absent from the assigned scope text."
 
 
