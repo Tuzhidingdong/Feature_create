@@ -260,20 +260,11 @@ def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]
 
     def emit_cell_fragments(row_index: int, row: list[Any]) -> None:
         nonlocal units
-        row_header = str(row[0]) if row else ""
-        column_headers: list[str] = []
-        for column_index in range(len(row)):
-            header_parts = [
-                str(context_row[column_index])
-                for context_row in context_rows
-                if column_index < len(context_row) and context_row[column_index] not in (None, "")
-            ]
-            column_headers.append(" / ".join(header_parts))
-
         prefix = (
             base + context_text
             + f"\nASSIGNED ORIGINAL TABLE ROW: {row_index}\n"
-            + f"ROW LABEL (column 1, when present): {row_header}\n"
+            + "Other cells in this row are linked by the same original row index; "
+              "see assigned cell fragments and header rows in chunk_evidence_index.json.\n"
         )
         fragments: list[tuple[int, int, int, int, str, int]] = []
         cell_budget = max(128, max_chars - len(prefix) - 240)
@@ -299,13 +290,12 @@ def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]
             rendered_cells = []
             cell_locators = []
             for column_index, start, end, segment_index, value, segment_count in group:
-                header = column_headers[column_index - 1] if column_index <= len(column_headers) else ""
                 rendered_cells.append(
                     "ASSIGNED_CELL_FRAGMENT_JSON: "
                     + json.dumps({
                         "original_row_index_1based": row_index,
                         "original_column_index_1based": column_index,
-                        "column_header_context": header,
+                        "header_context_row_indices_1based": list(range(1, context_count + 1)),
                         "cell_text_offset_start": start,
                         "cell_text_offset_end": end,
                         "cell_text_segment_index_1based": segment_index,
@@ -328,7 +318,6 @@ def _table_units(source: dict[str, Any], max_chars: int) -> list[dict[str, Any]]
                 "row_indices_1based": [row_index],
                 "column_indices_1based": sorted({cell["column_index_1based"] for cell in cell_locators}),
                 "cell_fragments": cell_locators,
-                "row_header": row_header,
                 "header_context_row_indices_1based": list(range(1, context_count + 1)),
                 "cell_level_chunk_index_1based": len(units) + 1,
             }
