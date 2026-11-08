@@ -13,6 +13,7 @@ from scripts.build_task_queue import (
     text_page_segments,
 )
 from scripts.audit_records import aggregate_source_scope_status, coverage_for_task
+from scripts.validate_evidence import validate_locator_scope, verify_quote_in_assigned_scope
 
 
 class SemanticChunkingTests(unittest.TestCase):
@@ -174,6 +175,53 @@ class SemanticChunkingTests(unittest.TestCase):
                 {"SCP-1": "fully_reviewed", "SCP-2": "partially_reviewed"},
                 coverage_for_task(task),
             )
+
+
+    def test_evidence_locator_must_be_inside_assigned_original_row_range(self) -> None:
+        source = {"table_data": {"rows": [[str(i)] for i in range(1, 51)]}}
+        scopes = [{
+            "scope_id": "SCP-TABLE",
+            "scope_type": "table_rows",
+            "row_start": 20,
+            "row_end": 30,
+            "context_rows": [1, 2, 3],
+        }]
+        self.assertIsNone(validate_locator_scope(
+            source, {"row_index_1based": 25, "column_index_1based": 1}, scopes
+        ))
+        self.assertIsNone(validate_locator_scope(
+            source, {"row_index_1based": 2, "column_index_1based": 1}, scopes
+        ))
+        self.assertIn("outside this chunk", validate_locator_scope(
+            source, {"row_index_1based": 15, "column_index_1based": 1}, scopes
+        ))
+
+    def test_text_quote_must_occur_in_exact_assigned_segment_or_its_local_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            scope_path = Path(temp) / "scope.txt"
+            scope_path.write_text(
+                "[CONTEXT BEFORE]\nPrevious sample identity.\n"
+                "[PRIMARY SCOPE]\nCapacity retention reached 94.2%.\n",
+                encoding="utf-8",
+            )
+            task = {
+                "source_scopes": [{
+                    "source_id": "SRC-TEXT",
+                    "scope_id": "SCP-TEXT",
+                    "scope_type": "page_text_segment",
+                    "page_number": 7,
+                    "scope_text_path": str(scope_path),
+                }]
+            }
+            ok, _ = verify_quote_in_assigned_scope(
+                "SRC-TEXT", {"page_number": 7}, "Previous sample identity.", task
+            )
+            self.assertTrue(ok)
+            ok, note = verify_quote_in_assigned_scope(
+                "SRC-TEXT", {"page_number": 8}, "Capacity retention reached 94.2%.", task
+            )
+            self.assertFalse(ok)
+            self.assertIn("No assigned source scope matches", note)
 
 
 if __name__ == "__main__":
