@@ -197,6 +197,7 @@ def build_feature_rows(
     ]
     rows: list[list[Any]] = []
     errors: list[str] = []
+    canonical_names: dict[str, str] = {}
 
     for feature in sorted(active_features, key=lambda item: (
         item.get("canonical_name", "").casefold(),
@@ -262,6 +263,7 @@ def build_feature_rows(
         canonical_name = (
             legacy.get("CANONICAL_NAME") if legacy else feature.get("canonical_name")
         )
+        canonical_names[feature["registry_feature_id"]] = canonical_name
         result_types_list = sorted(result_types)
         standardization_notes = (
             legacy.get("STANDARDIZATION_NOTES") if legacy and legacy.get("STANDARDIZATION_NOTES")
@@ -294,12 +296,13 @@ def build_feature_rows(
             comparability_notes.strip(),
         ])
 
-    return rows, feature_by_id, errors
+    return rows, feature_by_id, canonical_names, errors
 
 
 def build_record_rows(
     records: list[dict[str, Any]],
     feature_by_id: dict[str, dict[str, Any]],
+    canonical_names: dict[str, str] | None = None,
 ) -> tuple[list[list[Any]], list[str]]:
     rows: list[list[Any]] = []
     errors: list[str] = []
@@ -352,7 +355,7 @@ def build_record_rows(
             record.get("doi"),
             feature_id,
             record.get("raw_feature_name"),
-            feature.get("canonical_name"),
+            (canonical_names or {}).get(canonical_id, feature.get("canonical_name")),
             record.get("raw_value"),
             "" if record.get("numeric_value") is None else str(record.get("numeric_value")),
             record.get("reported_unit"),
@@ -404,8 +407,8 @@ def main(argv: list[str] | None = None) -> int:
             "pending_semantic_review", "under_review", "blocked",
         }
     ]
-    feature_rows, feature_by_id, feature_errors = build_feature_rows(registry, existing_schema)
-    record_rows, record_errors = build_record_rows(records, feature_by_id)
+    feature_rows, feature_by_id, canonical_names, feature_errors = build_feature_rows(registry, existing_schema)
+    record_rows, record_errors = build_record_rows(records, feature_by_id, canonical_names)
 
     errors = list(schema_errors) + feature_errors + record_errors
     if active_unresolved_pairs:
