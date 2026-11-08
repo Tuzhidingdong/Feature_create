@@ -326,11 +326,26 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
             item.get("candidate_observation_id")
             for item in payload.get("feature_observations", [])
         }
+        coverage_source_ids = {
+            item.get("source_id") for item in payload.get("coverage", [])
+        }
+        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
+            problems.append(
+                f"coverage: source_id {missing_source_id!r} is missing from the coverage manifest."
+            )
         for index, record in enumerate(payload.get("result_records", [])):
             if record.get("candidate_observation_id") not in observations:
                 problems.append(
                     f"result_records/{index}: candidate_observation_id is not in feature_observations."
                 )
+    elif task["worker_role"] == "feature_audit":
+        coverage_source_ids = {
+            item.get("source_id") for item in payload.get("coverage_audit", [])
+        }
+        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
+            problems.append(
+                f"coverage_audit: source_id {missing_source_id!r} is missing from the independent coverage review."
+            )
     return problems
 
 
