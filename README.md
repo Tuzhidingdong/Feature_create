@@ -109,7 +109,7 @@ The task builder does not create one unbounded whole-paper prompt. It creates as
 - structured tables are divided by original 1-based row numbers; a single oversized row is split into original row/column cell fragments with exact character offsets;
 - a pre-extracted figure/table image is assigned once to its related evidence unit when the upstream index provides that relationship;
 - adjacent snippets and repeated table-prefix rows are marked context-only and do not count as assigned coverage;
-- `paper_chunk_index.json` provides paper-wide chunk navigation, including previous/next text-segment links (same source offsets) and same-original-table-row links across chunks; each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
+- `paper_chunk_index.json` exposes a compact `unit_navigation` inventory, `cross_chunk_text_boundaries` for adjacent text ranges split across chunks, and `same_original_table_row_groups` for original table rows/cells split across chunks; each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
 - oversized atomic bundles that still exceed the configured hard limit are blocked explicitly, never truncated silently.
 
 The queue produces one independent Worker A and Worker B task per chunk. Each task contains a coverage checklist with one stable `scope_id` for every `(source_id, unit_id)` assignment, including linked visual assets. Each worker must return one coverage item per scope; when a source spans several units/chunks, coverage is aggregated across every scope before that source can be counted as fully reviewed.
@@ -140,5 +140,15 @@ python scripts/validate_evidence.py `
 ```
 
 The first run should be performed on a small paper subset to validate the local OpenCode CLI version, model availability, task bundle size, and JSON event/export format. Do not start a large corpus run until the local smoke test succeeds.
+
+## Targeted cross-chunk context review
+
+After first-pass Worker A/B results are ingested into the Registry, unresolved value-specific context links can be reviewed selectively with the existing Worker B model:
+
+~~~powershell
+python scripts/build_context_review_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch"
+~~~
+
+The queue includes only unresolved items with an explicit remote target unit and a linked result record. It supplies the current result evidence and nominated target evidence, not the full paper. Dispatch it through the normal free-model gate, then run validate_evidence.py on the context queue before applying decisions with apply_context_reviews.py. A confirmed association may add context facts only; original result values and Feature identity are protected. No-association closes only that investigated question; insufficient/conflicting evidence remains unresolved.
 
 More detail: [docs/runbook.md](docs/runbook.md).
