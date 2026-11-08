@@ -81,9 +81,15 @@ def coverage_for_task(task: dict[str, Any]) -> dict[str, str]:
             continue
         scope_id = row.get("scope_id")
         if expected:
-            if not scope_id or expected.get(str(scope_id)) != str(source_id):
+            if not scope_id:
                 continue
             key = str(scope_id)
+            if key not in expected:
+                continue
+            if expected[key] != str(source_id):
+                counts[key] += 1
+                result[key] = "invalid_scope_mapping"
+                continue
         else:
             # Legacy queue: one coverage state per source in the chunk.
             key = str(source_id)
@@ -101,7 +107,7 @@ def aggregate_chunk_coverage(
 ) -> dict[str, str]:
     """A source is complete only when every assigned chunk for that worker is complete."""
     result: dict[str, str] = {}
-    partial_statuses = {"partially_reviewed", "uncertain", "needs_targeted_review", "duplicate_coverage_entry"}
+    partial_statuses = {"partially_reviewed", "uncertain", "needs_targeted_review", "duplicate_coverage_entry", "invalid_scope_mapping"}
     for source_id, statuses in assignments.items():
         if statuses and all(status == success_status for status in statuses):
             result[source_id] = success_status
