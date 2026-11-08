@@ -150,7 +150,10 @@ def main(argv: list[str] | None = None) -> int:
     for task in all_tasks:
         role = task.get("worker_role")
         state = task_state(task)
-        status = str(state.get("status", "not_started"))
+        status = str(
+            state.get("status")
+            or (task.get("task_status") if task.get("task_status") != "pending" else "not_started")
+        )
         task_status_counts.setdefault(str(role), Counter())[status] += 1
         if status == "complete":
             coverage = coverage_for_task(task)
@@ -271,6 +274,10 @@ def main(argv: list[str] | None = None) -> int:
         "audited_at": datetime.now(timezone.utc).isoformat(),
         "corpus_fingerprint": manifest.get("corpus_fingerprint"),
         "source_inventory": {
+            "upstream_source_kind": manifest.get("source_kind"),
+            "upstream_artifact": manifest.get("upstream_artifact"),
+            "upstream_artifact_sha256": manifest.get("upstream_artifact_sha256"),
+            "upstream_csv_row_count": manifest.get("upstream_row_count"),
             "source_count": len(sources),
             "paper_count": len(papers),
             "main_source_count": sum(1 for source in sources if source.get("source_role") == "main"),
