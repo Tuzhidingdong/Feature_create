@@ -57,6 +57,7 @@ class PrepareCorpusTests(unittest.TestCase):
                     "Supporting Information/raw_data.csv",
                     "Cycle,Capacity\n1,220\n2,215\n",
                 )
+                archive.writestr("../../escaped_outside_run.txt", "should never be extracted")
             # An unrelated file in the same folder must not be discovered.
             rogue_pdf = root / "papers_pdf" / "not_in_paired_csv.pdf"
             self.create_pdf(rogue_pdf, "Unlisted paper")
@@ -101,6 +102,8 @@ class PrepareCorpusTests(unittest.TestCase):
                 output / si_text_sources[0]["extracted_text_path"]
             ).read_text(encoding="utf-8")
             self.assertIn("2.5 mAh g-1", extracted)
+            escaped_path = root.parent / "escaped_outside_run.txt"
+            self.assertFalse(escaped_path.exists())
 
             main_source = next(
                 source for source in manifest["sources"]
@@ -110,6 +113,37 @@ class PrepareCorpusTests(unittest.TestCase):
             self.assertTrue(main_source["visual_pages"])
             visual = output / "visual_assets" / main_source["visual_pages"][0]["relative_path"]
             self.assertTrue(visual.is_file())
+
+    def test_source_ids_are_stable_across_run_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "chem-literature-output"
+            (root / "papers_pdf").mkdir(parents=True)
+            (root / "papers_si").mkdir(parents=True)
+            main_pdf = root / "papers_pdf" / "paper.pdf"
+            self.create_pdf(main_pdf, "Figure 1. Stable source identity")
+            si_file = root / "papers_si" / "paper_SI.md"
+            si_file.write_text("Supplementary method and results.", encoding="utf-8")
+            paired_csv = root / "research_corpus_paired.csv"
+            self.write_paired_csv(paired_csv, [{
+                "doi": "10.9999/stable-source",
+                "title": "Stable source identity",
+                "year": "2026",
+                "journal": "Example",
+                "article_type": "Original Research",
+                "local_pdf_path": "papers_pdf/paper.pdf",
+                "local_si_info": "papers_si/paper_SI.md",
+            }])
+
+            output_a = Path(temp) / "run_a"
+            output_b = Path(temp) / "run_b"
+            self.assertEqual(main(["--paired-csv", str(paired_csv), "--output", str(output_a)]), 0)
+            self.assertEqual(main(["--paired-csv", str(paired_csv), "--output", str(output_b)]), 0)
+            manifest_a = json.loads((output_a / "source_manifest.json").read_text(encoding="utf-8"))
+            manifest_b = json.loads((output_b / "source_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                sorted(source["source_id"] for source in manifest_a["sources"]),
+                sorted(source["source_id"] for source in manifest_b["sources"]),
+            )
 
     def test_missing_si_path_blocks_pair_without_replacing_from_directory_scan(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
