@@ -95,6 +95,40 @@ def validate_context_task_artifacts(
         if not expected_hash or actual_hash != expected_hash:
             errors.append(f"Context task {label} SHA-256 differs from the queued task fingerprint.")
 
+    # The source manifest only stores the source inventory. Bind the exact
+    # staged parsed-text files used for assigned offsets as separate immutable
+    # artifacts; otherwise the source could change after bundle construction.
+    source_manifest = read_json(source_manifest_path)
+    source_map = {
+        str(item.get("source_id")): item
+        for item in source_manifest.get("sources", [])
+        if item.get("source_id")
+    }
+    expected_source_texts = task.get("source_text_sha256") or {}
+    source_text_hashes: dict[str, str] = {}
+    for source_id, expected_hash in expected_source_texts.items():
+        source = source_map.get(str(source_id))
+        relative_path = source.get("extracted_text_path") if source else None
+        if not relative_path:
+            errors.append(f"Assigned source text snapshot has no manifest path: {source_id}")
+            continue
+        source_text_path = (source_manifest_path.resolve().parent / str(relative_path)).resolve()
+        try:
+            source_text_path.relative_to(source_manifest_path.resolve().parent)
+        except ValueError:
+            errors.append(f"Assigned source text path escapes prepared root: {source_id}")
+            continue
+        if not source_text_path.is_file():
+            errors.append(f"Assigned source text snapshot is missing: {source_id}")
+            continue
+        actual_hash = sha256_file(source_text_path)
+        source_text_hashes[str(source_id)] = actual_hash
+        if actual_hash != expected_hash:
+            errors.append(f"Assigned source text changed after context queue construction: {source_id}")
+    if set(source_text_hashes) != {str(key) for key in expected_source_texts}:
+        errors.append("One or more assigned source text snapshots could not be hashed.")
+    hashes["source_texts"] = source_text_hashes
+
     expected_attachments = task.get("attachment_sha256") or {}
     context_manifest_path = str(Path(str(task.get("context_evidence_manifest_path") or "")).resolve())
     declared_attachments = {
