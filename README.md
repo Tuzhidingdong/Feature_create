@@ -74,12 +74,12 @@ python -m pip install -r requirements.txt
 
 ### Required upstream input
 
-Run the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. Its final `research_corpus_paired.csv` must contain:
+Run the [chem-literature `main` branch](https://github.com/Tuzhidingdong/chem-literature/tree/main) first. Its final `research_corpus_paired.csv` must contain:
 - the curated paper rows and original `local_pdf_path` / `local_si_info` provenance;
 - `preprocessing_path`, `preprocessing_status`, and `preprocessing_qc_report`;
 - one `01_preprocessing/` package per paper, including `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, `main_analysis.md`, `si_analysis.md`, extracted tables, and image assets.
 
-Feature_create consumes this CSV and the already-generated preprocessing packages. It does not parse PDFs, unpack SI archives, re-extract tables, or render PDF pages. It hashes the CSV-listed raw files only to confirm that they still match the upstream package; raw PDFs/SI are provenance and are never attached to Worker A/B. The CSV remains the complete paper-selection boundary.
+Feature_create consumes this CSV and the already-generated preprocessing packages. It does not parse PDFs, unpack SI archives, re-extract tables, or render PDF pages. It hashes the CSV-listed raw files only to confirm that they still match the upstream package; raw PDFs/SI are provenance and are never attached to Worker A/B. The CSV remains the complete paper-selection boundary. The preprocessing columns and package paths are now part of the merged chem-literature `main` workflow; a separate feature branch is no longer required.
 
 Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
 
@@ -92,7 +92,7 @@ python scripts/prepare_corpus.py `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
 ```
 
-This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
+This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create. The downstream task builder then splits long parsed sources at upstream page boundaries and large tables at original row boundaries. Every segment receives a stable `scope_id`, while evidence continues to cite the original `source_id`, page, table ID, and 1-based row/column. Worker coverage is reported per scope and aggregated only after every chunk is complete.
 
 Build the isolated Worker A/B queue:
 
