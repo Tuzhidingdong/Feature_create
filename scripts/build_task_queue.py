@@ -397,7 +397,30 @@ def _chunk_evidence_index(
                 for fragment in selected_cell_fragments
             ],
             "header_context_rows": [
-                {"row_index_1based": index, "cells": rows[index - 1]}
+                (
+                    {
+                        "row_index_1based": index,
+                        "cells": rows[index - 1],
+                        "context_payload_kind": "inline",
+                    }
+                    if len(json.dumps(rows[index - 1], ensure_ascii=False)) <= 2048
+                    else {
+                        "row_index_1based": index,
+                        "cell_count": len(rows[index - 1]),
+                        "cell_metadata": [
+                            {
+                                "column_index_1based": column_index,
+                                "char_count": len("" if value is None else str(value)),
+                                "sha256": hashlib.sha256(
+                                    ("" if value is None else str(value)).encode("utf-8")
+                                ).hexdigest(),
+                            }
+                            for column_index, value in enumerate(rows[index - 1], start=1)
+                        ],
+                        "context_payload_kind": "locator_only_large_row",
+                        "navigation": "Use same_original_table_row_groups in paper_chunk_index.json to locate the assigned row/cell units.",
+                    }
+                )
                 for index in range(1, min(3, len(rows)) + 1)
             ],
         })
