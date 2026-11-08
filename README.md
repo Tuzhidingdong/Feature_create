@@ -74,7 +74,7 @@ python -m pip install -r requirements.txt
 
 ### Required upstream input
 
-Run the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. Its final `research_corpus_paired.csv` must contain:
+Run the merged [chem-literature main branch](https://github.com/Tuzhidingdong/chem-literature) first. Its final `research_corpus_paired.csv` must contain:
 - the curated paper rows and original `local_pdf_path` / `local_si_info` provenance;
 - `preprocessing_path`, `preprocessing_status`, and `preprocessing_qc_report`;
 - one `01_preprocessing/` package per paper, including `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, `main_analysis.md`, `si_analysis.md`, extracted tables, and image assets.
@@ -94,14 +94,25 @@ python scripts/prepare_corpus.py `
 
 This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
 
-Build the isolated Worker A/B queue:
+Build the bounded Worker A/B chunk queue:
 
 ```powershell
 python scripts/build_task_queue.py `
   --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch" `
+  --max-bundle-chars 120000 `
+  --max-attachments-per-chunk 8
 ```
 
+The task builder does not create one unbounded whole-paper prompt. It creates as many deterministic chunks as needed:
+- parsed text is divided on upstream page headings and paragraph/newline boundaries; exact character offsets and page numbers are retained;
+- structured tables are divided by original 1-based row numbers; a single oversized row is split into original row/column cell fragments with exact character offsets;
+- a pre-extracted figure/table image is assigned once to its related evidence unit when the upstream index provides that relationship;
+- adjacent snippets and repeated table-prefix rows are marked context-only and do not count as assigned coverage;
+- `paper_chunk_index.json` provides paper-wide chunk navigation, while each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
+- oversized atomic bundles that still exceed the configured hard limit are blocked explicitly, never truncated silently.
+
+The queue produces one independent Worker A and Worker B task per chunk. The audit counts a source as fully reviewed only after every chunk assigned to each worker has a successful chunk-scoped coverage result.
 First perform model-price preflight and command planning without inference:
 
 ```powershell
