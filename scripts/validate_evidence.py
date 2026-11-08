@@ -184,6 +184,64 @@ def verify_table_cell(
     return True, f"exact upstream table cell verified at row {row_index}, column {column_index}"
 
 
+def validate_locator_scope(
+    source: dict[str, Any],
+    locator: dict[str, Any],
+    assigned_scopes: list[dict[str, Any]],
+) -> str | None:
+    """Ensure a citation points into the page or original table-row segment assigned to this chunk."""
+    if not assigned_scopes:
+        return None
+    page_value = locator.get("page_number", locator.get("page"))
+    page_number = None
+    if page_value is not None:
+        try:
+            page_number = int(page_value)
+        except (TypeError, ValueError):
+            return "locator page_number is not an integer."
+
+    scope_types = {str(item.get("scope_type") or "") for item in assigned_scopes}
+    page_scopes = [
+        item for item in assigned_scopes
+        if item.get("page_number") is not None
+        and str(item.get("scope_type") or "").startswith(("page_text", "source_item"))
+    ]
+    if page_scopes:
+        allowed_pages = {int(item["page_number"]) for item in page_scopes}
+        if page_number is None:
+            return "page-scoped evidence must include the original page_number."
+        if page_number not in allowed_pages:
+            return (
+                f"locator page_number {page_number} is outside this chunk's assigned pages "
+                f"{sorted(allowed_pages)}."
+            )
+
+    table_scopes = [item for item in assigned_scopes if item.get("scope_type") == "table_rows"]
+    if table_scopes:
+        row_value = (
+            locator.get("row_index_1based")
+            or locator.get("row_number")
+            or locator.get("row")
+        )
+        try:
+            row_number = int(row_value)
+        except (TypeError, ValueError):
+            return "table-row-scoped evidence must include the original row_index_1based."
+        for scope in table_scopes:
+            start = int(scope.get("row_start") or 1)
+            end = int(scope.get("row_end") or start)
+            context_rows = {int(value) for value in scope.get("context_rows", [])}
+            if start <= row_number <= end or row_number in context_rows:
+                return None
+        allowed = [
+            f"{item.get('row_start')}-{item.get('row_end')}"
+            for item in table_scopes
+        ]
+        return f"table row {row_number} is outside this chunk's assigned primary row ranges {allowed}."
+
+    return None
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -224,6 +282,14 @@ def validate_payload(
         if not isinstance(locator, dict) or not locator:
             errors.append(f"{location}: evidence locator is empty.")
             continue
+
+        scopes_by_source: dict[str, list[dict[str, Any]]] = {}
+        for scope in task.get("source_scopes", []):
+            if scope.get("source_id"):
+                scopes_by_source.setdefault(str(scope["source_id"]), []).append(scope)
+        scope_problem = validate_locator_scope(source, locator, scopes_by_source.get(str(source_id), []))
+        if scope_problem:
+            errors.append(f"{location}: {scope_problem}")
 
         status = ref.get("evidence_status", "unverified")
         quote = ref.get("quote_or_cell_value")
