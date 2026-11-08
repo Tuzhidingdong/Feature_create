@@ -39,6 +39,11 @@ class BuildTaskQueueTests(unittest.TestCase):
                 "papers": [{
                     "paper_id": "PAPER-1",
                     "doi": None,
+                    "title": "Test paper from paired corpus",
+                    "year": "2025",
+                    "journal": "Example Journal",
+                    "article_type": "Original Research",
+                    "pair_status": "paired_files_verified",
                     "source_ids": ["SRC-1"],
                 }],
             }
