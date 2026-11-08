@@ -51,6 +51,7 @@ Antigravity may be used as the Supervisor control plane, but not as the paper-re
 - `SKILL.md` — execution contract and agent instructions.
 - `contracts/` — machine-readable schemas for Registry and worker payloads.
 - `docs/architecture.md` — component boundaries and workflow.
+- `docs/upstream_input_contract.md` — the formal chem-literature CSV/file-path boundary.
 - `docs/token_policy.md` — zero-paid-cost policy and provider/model guards.
 - `docs/opencode_free_model_execution.md` — OpenCode Go invocation, model pinning, and verification.
 - `worker_prompts/` — isolated Worker A, Worker B, and targeted-review prompts.
