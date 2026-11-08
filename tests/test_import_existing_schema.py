@@ -25,6 +25,15 @@ class ImportExistingSchemaTests(unittest.TestCase):
         self.assertIn("CE", features[0]["ALIASES"])
         self.assertEqual(features[0]["UNITS_AND_DIMENSION"]["reported_units"], ["%"])
 
+    def test_keeps_separate_unit_and_dimension_columns_separate(self) -> None:
+        text = (
+            "FEATURE_ID\tCANONICAL_NAME\tALIASES\tDEFINITION\tUNITS\tDIMENSION\n"
+            "F010\tAreal capacity\tareal storage capacity\tCapacity per area\tmAh cm-2\tcharge/area\n"
+        )
+        features = parse_tsv(text)
+        self.assertEqual(features[0]["UNITS_AND_DIMENSION"]["reported_units"], ["mAh cm-2"])
+        self.assertEqual(features[0]["UNITS_AND_DIMENSION"]["dimensions"], ["charge/area"])
+
     def test_parses_json_feature_list(self) -> None:
         text = json.dumps({
             "features": [{
