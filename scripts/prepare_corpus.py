@@ -94,6 +94,12 @@ def normalize_doi(value: str | None) -> str | None:
 def clean_stem(stem: str) -> str:
     value = stem.casefold()
     value = re.sub(r"\.(pdf|md|txt|xml|csv|xlsx|html?|docx)$", "", value)
+    value = re.sub(
+        r"([_-](si|supp|supplement|supplementary|supporting|supporting_information|supplementary_information)([_-].*)?)$",
+        "",
+        value,
+    )
+    value = re.sub(r"^(si|supp|supplement|supplementary|supporting)[_-]+", "", value)
     value = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
     return value or "unnamed"
 
