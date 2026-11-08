@@ -1,31 +1,63 @@
 {
   "config_version": "0.1",
-  "semantic_provider": "antigravity_host",
-  "opencode": {
-    "allowed": false,
-    "model_calls_target": 0,
-    "token_usage_target": 0,
-    "fallback_allowed": false,
-    "worker_dispatch_allowed": false,
-    "session_creation_allowed": false,
-    "cli_inference_allowed": false
+  "supervisor": {
+    "provider": "antigravity_host",
+    "role": "thin_control_plane",
+    "bulk_paper_reading": false,
+    "bulk_result_extraction": false,
+    "allowed_work": [
+      "plan",
+      "dispatch",
+      "monitor_compact_status",
+      "handle_exceptions",
+      "coordinate_reconciliation",
+      "report"
+    ]
   },
-  "antigravity": {
-    "use_current_host_model": true,
-    "model_identifier": "host_reported_or_unknown",
-    "native_task_delegation": "capability_detected_only",
-    "allow_sequential_execution": true,
-    "pause_if_unavailable": true
+  "workers": {
+    "require_two_distinct_models": true,
+    "provider": "opencode-go",
+    "worker_a": {
+      "role": "source_discovery",
+      "model_ref": "opencode-go/crouton-alpha-free",
+      "require_current_free_price": true,
+      "explicit_model_flag_required": true
+    },
+    "worker_b": {
+      "role": "feature_audit",
+      "model_ref": "opencode-go/beam-free",
+      "require_current_free_price": true,
+      "explicit_model_flag_required": true
+    },
+    "paid_fallback_allowed": false,
+    "cross_provider_fallback_allowed": false,
+    "pause_when_free_pair_unavailable": true
   },
-  "execution": {
-    "local_deterministic_processing": true,
-    "persist_after_each_completed_task": true,
-    "resume_from_checkpoint": true,
-    "never_silently_change_provider": true
+  "helper_calls": {
+    "deterministic_session_titles": true,
+    "implicit_title_generation_allowed": false,
+    "small_model_must_be_verified_free": true,
+    "hidden_model_calls_must_be_accounted_for": true
+  },
+  "concurrency": {
+    "max_active_papers": 2,
+    "max_active_worker_calls": 4,
+    "adjustable": true,
+    "retry_with_same_model_only": true,
+    "exponential_backoff": true,
+    "reduce_concurrency_after_rate_limit": true
   },
   "accounting": {
-    "opencode_calls_must_equal": 0,
-    "opencode_tokens_must_equal": 0,
-    "antigravity_usage": "record_if_exposed_otherwise_unknown"
+    "paid_inference_cost_target": 0,
+    "track_input_output_cached_tokens_when_exposed": true,
+    "track_actual_model_id": true,
+    "track_cost_or_allowance_when_exposed": true,
+    "opencode_go_subscription_fee_reported_separately": true,
+    "antigravity_usage_reported_separately": true
+  },
+  "execution": {
+    "persist_after_each_completed_task": true,
+    "resume_from_checkpoint": true,
+    "never_silently_change_model": true
   }
 }
