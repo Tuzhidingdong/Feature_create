@@ -29,7 +29,7 @@ The workflow uses `opencode run --model`, `--agent`, `--file`, `--format json`, 
 
 ## 2. Prepare the upstream-preprocessed corpus
 
-Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. The final `research_corpus_paired.csv` must include:
+Run [chem-literature's preprocessing stage](https://github.com/Tuzhidingdong/chem-literature/tree/main) first. The final `research_corpus_paired.csv` must include:
 - `local_pdf_path` and `local_si_info` for raw-source provenance and hash verification;
 - `preprocessing_path` pointing to that paper's `01_preprocessing/`;
 - `preprocessing_status` matching `evidence_index.json`;
@@ -162,7 +162,70 @@ python scripts/reconcile_features.py `
 
 This step creates immutable raw Feature Observations and provisional canonical Feature candidates. Worker A result values are stored as per-value JSONL records. Worker B omissions and semantic distinctions are stored separately. Python does not automatically merge similar feature names.
 
-## 8. Build global cross-paper Feature review tasks
+## 9. Targeted cross-chunk context review
+
+Run this stage after Registry ingestion. It is selective: only Worker A missing_context issues with an explicit cross_chunk_target and a linked result record can create a second-pass task. Items without a deterministic remote unit, or whose target is not connected by the declared navigation relation, remain unresolved and are reported as skipped/blocked.
+
+Build the context-review queue:
+
+~~~powershell
+python scripts/build_context_review_queue.py \`
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" \`
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" \`
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" \`
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" \`
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch" \`
+  --max-context-chars 60000 \`
+  --max-attachments 8
+~~~
+
+The builder retrieves only:
+- the exact current evidence unit(s) referenced by the result's unresolved item;
+- the specific remote target unit(s) nominated by Worker A and verified against the paper navigation index;
+- the existing result record's identifying fields and already-extracted context, for reference only.
+
+It does not attach the entire paper, read other workers' outputs, or parse raw PDFs/SI. The default cap is eight target units per review. The existing Worker B model from config/execution_policy.json is reused; no third model is introduced.
+
+Run the free-model preflight without inference:
+
+~~~powershell
+python scripts/run_workers.py \`
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" \`
+  --dry-run
+~~~
+
+Dispatch only after the regular current free-model price gate passes:
+
+~~~powershell
+python scripts/run_workers.py \`
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
+~~~
+
+Validate both CURRENT and TARGET citations against their assigned unit, original source offsets/table cells, and exact quotes:
+
+~~~powershell
+python scripts/validate_evidence.py \`
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" \`
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
+~~~
+
+Apply only the context decision after evidence validation passes:
+
+~~~powershell
+python scripts/apply_context_reviews.py \`
+  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" \`
+  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" \`
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" \`
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" \`
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs\\application_report.json"
+~~~
+
+A confirmed fact is appended only to its matching context category (sample_identity, condition_facts, time_cycle_facts, protocol_facts, or other_context_facts). The applier protects the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, and first-pass evidence references. no_association closes that specific question without adding a fact. insufficient_evidence and conflicting_evidence remain open for human review. Every decision and its two-sided citations are retained in the unresolved item and the linked result record's context-review history.
+
+## 10. Build global cross-paper Feature review tasks
 
 ```powershell
 python scripts/build_reconciliation_queue.py `
@@ -191,7 +254,7 @@ python scripts/run_workers.py `
   --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs"
 ```
 
-## 9. Apply semantic decisions conservatively
+## 10. Apply semantic decisions conservatively
 
 ```powershell
 python scripts/apply_feature_reconciliation.py `
@@ -206,7 +269,7 @@ Python applies a merge only when the Worker B recommendation is SAME_FEATURE and
 
 After a merge, pairs that still reference the retired Feature ID are invalidated and regenerated against the surviving Feature ID. Raw observations and decision history are retained.
 
-## 10. Import the existing Feature Schema
+## 11. Import the existing Feature Schema
 
 Use the existing authoritative feature dictionary as a mapping reference. For the current local corpus, the known source path is:
 
@@ -218,7 +281,7 @@ python scripts/import_existing_schema.py `
 
 The importer supports TSV, JSON, and common key/value text blocks. It preserves existing FEATURE_ID values and records the source file hash. If the local legacy file uses an unsupported layout, the importer stops and reports the parse issue; do not manually fabricate a schema.
 
-## 11. Build Worker B existing-ID mapping tasks
+## 12. Build Worker B existing-ID mapping tasks
 
 ```powershell
 python scripts/build_schema_mapping_queue.py `
@@ -260,7 +323,7 @@ python scripts/apply_existing_feature_mapping.py `
 
 A mapping is applied only when Worker B selects one exact old FEATURE_ID, all seven compatibility checks are affirmative, definitions and source evidence exist, unit strings are conservatively compatible, and that old ID is not already assigned to another active Registry Feature. Otherwise the Registry Feature keeps its new Registry ID.
 
-## 12. Export the two formal TXT files
+## 13. Export the two formal TXT files
 
 Only after all active Features are confirmed and all candidate pairs are resolved:
 
@@ -279,7 +342,7 @@ The exporter creates exactly two formal TXT files:
 
 Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal audit JSON beside (not inside) the formal output directory. The formal output directory contains only the two TXT files.
 
-## 13. Generate the final deterministic audit report
+## 14. Generate the final deterministic audit report
 
 After mapping and reconciliation, calculate the corpus/source/extraction totals directly from local manifests and task outputs:
 
@@ -298,7 +361,7 @@ python scripts/audit_records.py `
 
 The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
 
-## 14. Inspect the run
+## 15. Inspect the run
 
 Key files:
 - `worker_runs/model_preflight.json`
@@ -309,7 +372,7 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 15. Important limitations in v0.1
+## 16. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
