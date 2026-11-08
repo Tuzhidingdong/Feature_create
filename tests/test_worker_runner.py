@@ -90,5 +90,54 @@ class WorkerRunnerTests(unittest.TestCase):
         self.assertEqual(validate_worker_payload(payload, task), [])
 
 
+    def test_requires_exact_chunk_scope_coverage(self) -> None:
+        task = {
+            "task_id": "TASK-CHUNK",
+            "paper_id": "PAPER-1",
+            "worker_role": "source_discovery",
+            "source_ids": ["SRC-1"],
+            "source_scopes": [
+                {"source_id": "SRC-1", "scope_id": "SCP-1"},
+                {"source_id": "SRC-1", "scope_id": "SCP-2"},
+            ],
+        }
+        base = {
+            "contract_version": "0.1",
+            "task_id": "TASK-CHUNK",
+            "worker_role": "source_discovery",
+            "paper_id": "PAPER-1",
+            "feature_observations": [],
+            "result_records": [],
+            "unresolved_items": [],
+        }
+        valid = {
+            **base,
+            "coverage": [
+                {"component": "main_text", "source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                {"component": "main_text", "source_id": "SRC-1", "scope_id": "SCP-2", "status": "fully_reviewed"},
+            ],
+        }
+        self.assertEqual(validate_worker_payload(valid, task), [])
+
+        incomplete = {
+            **base,
+            "coverage": [
+                {"component": "main_text", "source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+            ],
+        }
+        problems = validate_worker_payload(incomplete, task)
+        self.assertTrue(any("missing assigned scope_ids: SCP-2" in problem for problem in problems))
+
+        wrong_scope = {
+            **base,
+            "coverage": [
+                {"component": "main_text", "source_id": "SRC-1", "scope_id": "SCP-1", "status": "fully_reviewed"},
+                {"component": "main_text", "source_id": "SRC-1", "scope_id": "SCP-X", "status": "fully_reviewed"},
+            ],
+        }
+        problems = validate_worker_payload(wrong_scope, task)
+        self.assertTrue(any("unexpected scope_ids: SCP-X" in problem for problem in problems))
+
+
 if __name__ == "__main__":
     unittest.main()
