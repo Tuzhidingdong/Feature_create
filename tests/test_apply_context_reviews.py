@@ -157,6 +157,102 @@ class ApplyContextReviewTests(unittest.TestCase):
             self.assertEqual(1, len(repeated["sample_identity"]))
             self.assertEqual(1, len(repeated["context_review_history"]))
 
+    def test_rejects_response_modified_after_evidence_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run_dir = root / "context_runs"
+            task_output = root / "task_output"
+            task_id = "FC-CX-TAMPER"
+            record_id = "REC-TAMPER"
+            unresolved_id = "UNRES-TAMPER"
+            model = "opencode-go/beam-free"
+            task = {
+                "task_id": task_id,
+                "worker_role": "cross_chunk_context",
+                "task_status": "pending",
+                "paper_id": "PAPER-1",
+                "model_ref": model,
+                "output_dir": str(task_output),
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "origin_worker_task_id": "TASK-A",
+            }
+            queue_path = root / "context_review_task_queue.json"
+            self._write_json(queue_path, {"tasks": [task]})
+            self._write_json(task_output / "task_state.json", {
+                "status": "complete",
+                "requested_model": model,
+                "observed_models": [model],
+            })
+            response_path = task_output / "response.json"
+            self._write_json(response_path, {
+                "contract_version": "0.1",
+                "task_type": "cross_chunk_context",
+                "task_id": task_id,
+                "paper_id": "PAPER-1",
+                "unresolved_id": unresolved_id,
+                "record_id": record_id,
+                "decision": "insufficient_evidence",
+                "rationale": "Insufficient evidence.",
+                "review_evidence_refs": [],
+                "context_facts": [],
+            })
+            validated_hash = hashlib.sha256(response_path.read_bytes()).hexdigest()
+            self._write_json(run_dir / "evidence_validation.json", {
+                "tasks": [{
+                    "task_id": task_id,
+                    "status": "evidence_checked",
+                    "response_sha256": validated_hash,
+                }],
+            })
+            # Simulate a response being edited/replaced after validation.
+            tampered = json.loads(response_path.read_text(encoding="utf-8"))
+            tampered["decision"] = "association_confirmed"
+            tampered["rationale"] = "This post-validation response must not be applied."
+            tampered["context_facts"] = [{
+                "context_role": "sample_identity",
+                "raw_label": "S-01",
+                "raw_value": "guessed sample",
+                "evidence_refs": [],
+            }]
+            self._write_json(response_path, tampered)
+
+            records_path = root / "result_records.jsonl"
+            records_path.write_text(json.dumps({
+                "record_id": record_id,
+                "paper_id": "PAPER-1",
+                "worker_task_id": "TASK-A",
+                "raw_value": "77",
+                "numeric_value": 77,
+                "sample_identity": [],
+                "unresolved_issues": [{"unresolved_id": unresolved_id, "resolution_status": "pending"}],
+            }) + "\n", encoding="utf-8")
+            unresolved_path = root / "unresolved_extraction_items.jsonl"
+            unresolved_path.write_text(json.dumps({
+                "unresolved_id": unresolved_id,
+                "paper_id": "PAPER-1",
+                "resolution_status": "pending",
+            }) + "\n", encoding="utf-8")
+
+            report_path = root / "report.json"
+            self.assertEqual(main([
+                "--queue", str(queue_path),
+                "--run-dir", str(run_dir),
+                "--records", str(records_path),
+                "--unresolved", str(unresolved_path),
+                "--report", str(report_path),
+            ]), 0)
+            updated = json.loads(records_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(77, updated["numeric_value"])
+            self.assertEqual([], updated["sample_identity"])
+            self.assertEqual("pending", updated["unresolved_issues"][0]["resolution_status"])
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, report["tasks_applied"])
+            self.assertEqual(
+                "response_file_changed_after_evidence_validation",
+                report["skipped_tasks"][0]["reason"],
+            )
+
     def test_insufficient_evidence_keeps_unresolved_issue_open_and_adds_no_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
