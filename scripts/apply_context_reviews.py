@@ -283,6 +283,15 @@ def main(argv: list[str] | None = None) -> int:
                 skipped.append({"task_id": task_id, "reason": f"unsupported_decision_{decision}"})
                 continue
 
+            for issue in record.get("unresolved_issues", []):
+                if isinstance(issue, dict) and issue.get("unresolved_id") == task.get("unresolved_id"):
+                    issue["resolution_status"] = unresolved.get("resolution_status")
+                    issue["resolution_task_id"] = task_id
+                    issue["resolution_rationale"] = payload.get("rationale")
+                    issue["resolution_evidence_refs"] = payload.get("review_evidence_refs", [])
+                    issue["resolved_at"] = unresolved.get("resolved_at")
+                    issue["last_reviewed_at"] = unresolved.get("last_reviewed_at")
+
             applied.append({
                 "task_id": task_id,
                 "record_id": record.get("record_id"),
