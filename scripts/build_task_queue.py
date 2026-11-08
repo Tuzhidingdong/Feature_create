@@ -68,6 +68,12 @@ def build_bundle(
         f"- Source count: {len(source_records)}",
         "- Discovery boundary: all variables actually reported by the attached sources; existing schemas are not a discovery boundary.",
         "",
+        f"- Title: {paper.get('title') or 'not supplied'}",
+        f"- Year: {paper.get('year') or 'not supplied'}",
+        f"- Journal: {paper.get('journal') or 'not supplied'}",
+        f"- Article type from chem-literature: {paper.get('article_type') or 'not supplied'}",
+        f"- Upstream paired status: {paper.get('pair_status', 'not recorded')}",
+        "",
         "## Source manifest",
         "",
         "| Source ID | Role | Type | Relative path | Parse status |",
@@ -84,7 +90,8 @@ def build_bundle(
         )
         source_path = Path(source["absolute_path"])
         if source_path.is_file() and source_path.suffix.casefold() in {
-            ".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp"
+            ".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp",
+            ".zip", ".docx", ".xlsx"
         }:
             attachments.append(str(source_path.resolve()))
 
@@ -149,8 +156,8 @@ def build_bundle(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build independent OpenCode Worker A/B task queue.")
-    parser.add_argument("--manifest", type=Path, required=True, help="source_manifest.json from prepare_corpus.py")
+    parser = argparse.ArgumentParser(description="Build independent OpenCode Worker A/B tasks from the chem-literature paired corpus.")
+    parser.add_argument("--manifest", type=Path, required=True, help="Internal source_manifest.json derived exclusively from research_corpus_paired.csv.")
     parser.add_argument("--output", type=Path, required=True, help="Run directory for worker tasks.")
     parser.add_argument("--max-bundle-chars", type=int, default=2_000_000)
     parser.add_argument("--max-command-chars", type=int, default=7600)
@@ -211,7 +218,9 @@ def main(argv: list[str] | None = None) -> int:
                 command_preview.extend(["--file", attachment_path])
             command_preview.append(f"Execute Feature_create task {task_id}. Return the contract JSON.")
             command_chars = len(subprocess.list2cmdline(command_preview))
-            if extracted_chars > args.max_bundle_chars:
+            if paper.get("pair_status") != "paired_files_verified":
+                task_status = "blocked_pair_integrity"
+            elif extracted_chars > args.max_bundle_chars:
                 task_status = "blocked_oversize"
             elif command_chars > args.max_command_chars:
                 task_status = "blocked_command_line"
@@ -253,6 +262,9 @@ def main(argv: list[str] | None = None) -> int:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "manifest_path": str(args.manifest.resolve()),
         "corpus_fingerprint": manifest.get("corpus_fingerprint"),
+        "source_kind": manifest.get("source_kind"),
+        "upstream_artifact": manifest.get("upstream_artifact"),
+        "upstream_artifact_sha256": manifest.get("upstream_artifact_sha256"),
         "task_count": len(tasks),
         "pending_count": sum(t["task_status"] == "pending" for t in tasks),
         "blocked_count": sum(t["task_status"] != "pending" for t in tasks),
