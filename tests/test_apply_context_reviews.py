@@ -147,8 +147,10 @@ class ApplyContextReviewTests(unittest.TestCase):
                 {ref["source_id"] for ref in updated["sample_identity"][0]["evidence_refs"]},
             )
             self.assertEqual("association_confirmed", updated["unresolved_issues"][0]["resolution_status"])
+            self.assertEqual(1, len(updated["context_review_history"]))
             unresolved = json.loads(unresolved_path.read_text(encoding="utf-8").strip())
             self.assertEqual("association_confirmed", unresolved["resolution_status"])
+            self.assertEqual(1, len(unresolved["resolution_history"]))
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(1, report["tasks_applied"])
             self.assertEqual(0, report["context_facts_added"])
@@ -340,6 +342,9 @@ class ApplyContextReviewTests(unittest.TestCase):
             updated = json.loads(records_path.read_text(encoding="utf-8").strip())
             self.assertEqual([], updated["sample_identity"])
             self.assertEqual("insufficient_evidence", updated["unresolved_issues"][0]["resolution_status"])
+            unresolved = json.loads(unresolved_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(1, len(unresolved["resolution_history"]))
+            self.assertEqual("insufficient_evidence", unresolved["resolution_history"][0]["decision"])
 
 
 if __name__ == "__main__":
