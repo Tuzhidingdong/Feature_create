@@ -212,6 +212,7 @@ def _paper_chunk_index(
             "text_segment_locators": [
                 {
                     "unit_id": unit["unit_id"],
+                    "chunk_id": chunk["chunk_id"],
                     "source_id": unit["source_id"],
                     "doc_type": unit.get("doc_type"),
                     "page_number": unit.get("page_number"),
@@ -243,6 +244,7 @@ def _paper_chunk_index(
             "table_locators": [
                 {
                     "unit_id": unit["unit_id"],
+                    "chunk_id": chunk["chunk_id"],
                     "source_id": unit["source_id"],
                     "table_id": unit.get("table_id"),
                     "page_number": unit.get("page_number"),
