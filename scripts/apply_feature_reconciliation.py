@@ -24,9 +24,9 @@ except ImportError:
     Draft202012Validator = None  # type: ignore[assignment]
 
 try:
-    from .reconcile_features import build_feature_pair_queue
+    from .reconcile_features import build_feature_pair_queue, exclusive_lock
 except ImportError:
-    from reconcile_features import build_feature_pair_queue
+    from reconcile_features import build_feature_pair_queue, exclusive_lock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -447,7 +447,7 @@ def refresh_feature_statuses(
         feature["updated_at"] = utc_now()
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main_unlocked(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply Worker B semantic recommendations to the Global Feature Registry.")
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--review-queue", type=Path, required=True)
@@ -664,6 +664,20 @@ def main(argv: list[str] | None = None) -> int:
     atomic_write_json(report_path, report)
     print(json.dumps({key: value for key, value in report.items() if key != "decisions"}, ensure_ascii=False, indent=2))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    import sys
+
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if "-h" in arguments or "--help" in arguments:
+        return _main_unlocked(arguments)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--registry", type=Path, required=True)
+    args, _unknown = parser.parse_known_args(arguments)
+    registry_path = args.registry.expanduser().resolve()
+    with exclusive_lock(registry_path):
+        return _main_unlocked(arguments)
 
 
 if __name__ == "__main__":
