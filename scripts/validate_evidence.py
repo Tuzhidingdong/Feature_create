@@ -120,6 +120,70 @@ def verify_quote(
     return False, "Quoted text/cell value was not found verbatim after whitespace/Unicode normalization."
 
 
+def verify_table_cell(
+    source: dict[str, Any],
+    locator: dict[str, Any],
+    quote: str,
+) -> tuple[bool | None, str]:
+    """Verify a cited 1-based row/column against upstream evidence_index rows.
+
+    None means the worker omitted machine-checkable cell coordinates.
+    """
+    table = source.get("table_data")
+    if not isinstance(table, dict) or not isinstance(table.get("rows"), list):
+        return None, "This source has no structured table rows in the upstream evidence index."
+
+    row_value = (
+        locator.get("row_index_1based")
+        or locator.get("row_number")
+        or locator.get("row")
+    )
+    column_value = (
+        locator.get("column_index_1based")
+        or locator.get("column_number")
+        or locator.get("column")
+    )
+
+    def to_positive_index(value: Any) -> int | None:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value if value > 0 else None
+        if isinstance(value, str):
+            match = re.search(r"\d+", value)
+            if match:
+                index = int(match.group(0))
+                return index if index > 0 else None
+        return None
+
+    row_index = to_positive_index(row_value)
+    column_index = to_positive_index(column_value)
+    if row_index is None or column_index is None:
+        cell_address = str(locator.get("cell_address") or locator.get("cell") or "").strip()
+        match = re.fullmatch(r"([A-Za-z]+)([1-9]\d*)", cell_address)
+        if match:
+            letters, digits = match.groups()
+            column_index = 0
+            for char in letters.upper():
+                column_index = column_index * 26 + (ord(char) - ord("A") + 1)
+            row_index = int(digits)
+
+    if row_index is None or column_index is None:
+        return None, "Table-cell locator must include row_index_1based and column_index_1based (or an A1-style cell address)."
+
+    rows = table["rows"]
+    if row_index > len(rows) or column_index > len(rows[row_index - 1]):
+        return False, (
+            f"Table cell is out of range: row {row_index}, column {column_index}; "
+            f"table has {len(rows)} rows."
+        )
+    actual = rows[row_index - 1][column_index - 1]
+    if normalize_for_search(str(actual if actual is not None else "")) != normalize_for_search(quote):
+        return False, (
+            f"Claimed table cell does not match upstream rows at "
+            f"row {row_index}, column {column_index}."
+        )
+    return True, f"exact upstream table cell verified at row {row_index}, column {column_index}"
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -167,11 +231,20 @@ def validate_payload(
             if not isinstance(quote, str) or not quote.strip():
                 errors.append(f"{location}: verified evidence must include quote_or_cell_value.")
                 continue
-            ok, note = verify_quote(source, quote, output_root)
-            if ok:
-                verified_refs += 1
+            if status == "verified_table_cell" and source.get("source_type") in {"main_table", "si_table"}:
+                cell_ok, cell_note = verify_table_cell(source, ref.get("locator") or {}, quote)
+                if cell_ok is True:
+                    verified_refs += 1
+                elif cell_ok is False:
+                    errors.append(f"{location}: claimed {status} but {cell_note}")
+                else:
+                    errors.append(f"{location}: claimed {status} but {cell_note}")
             else:
-                errors.append(f"{location}: claimed {status} but {note}")
+                ok, note = verify_quote(source, quote, output_root)
+                if ok:
+                    verified_refs += 1
+                else:
+                    errors.append(f"{location}: claimed {status} but {note}")
         elif status == "verified_digitization":
             artifact = (
                 locator.get("digitization_artifact")
