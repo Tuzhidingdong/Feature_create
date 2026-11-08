@@ -300,6 +300,19 @@ def main(argv: list[str] | None = None) -> int:
                 skipped.append({"task_id": task_id, "reason": f"unsupported_decision_{decision}"})
                 continue
 
+            unresolved_history = unresolved.setdefault("resolution_history", [])
+            if not any(
+                item.get("task_id") == task_id
+                for item in unresolved_history if isinstance(item, dict)
+            ):
+                unresolved_history.append({
+                    "task_id": task_id,
+                    "decision": decision,
+                    "rationale": payload.get("rationale"),
+                    "review_evidence_refs": payload.get("review_evidence_refs", []),
+                    "reviewed_at": utc_now(),
+                })
+
             history = record.setdefault("context_review_history", [])
             if not any(item.get("task_id") == task_id for item in history if isinstance(item, dict)):
                 history.append({
