@@ -255,7 +255,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             repeat_report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(0, repeat_report["tasks_applied"])
             self.assertEqual(
-                "unresolved_item_changed_after_context_queue_build",
+                "result_record_changed_after_context_queue_build",
                 repeat_report["skipped_tasks"][0]["reason"],
             )
 
