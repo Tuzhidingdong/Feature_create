@@ -14,6 +14,42 @@ class ApplyContextReviewTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def _bind_context_artifacts(self, task: dict, root: Path) -> dict:
+        source_manifest = root / "source_manifest.json"
+        context_manifest = root / "context_evidence_manifest.json"
+        bundle = root / "task_input.md"
+        prompt = root / "worker_b_cross_chunk_context.md"
+        image = root / "figure.png"
+        self._write_json(source_manifest, {"sources": []})
+        self._write_json(context_manifest, {"assigned_units": []})
+        bundle.write_text("targeted task bundle", encoding="utf-8")
+        prompt.write_text("targeted context prompt", encoding="utf-8")
+        image.write_bytes(b"synthetic image bytes")
+
+        task.update({
+            "source_manifest_path": str(source_manifest),
+            "source_manifest_sha256": hashlib.sha256(source_manifest.read_bytes()).hexdigest(),
+            "context_evidence_manifest_path": str(context_manifest),
+            "context_evidence_manifest_sha256": hashlib.sha256(context_manifest.read_bytes()).hexdigest(),
+            "bundle_path": str(bundle),
+            "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+            "prompt_path": str(prompt),
+            "prompt_sha256": hashlib.sha256(prompt.read_bytes()).hexdigest(),
+            "attachment_sha256": {
+                str(image): hashlib.sha256(image.read_bytes()).hexdigest(),
+            },
+            "attachment_paths": [str(context_manifest), str(image)],
+        })
+        return {
+            "source_manifest": task["source_manifest_sha256"],
+            "context_evidence_manifest": task["context_evidence_manifest_sha256"],
+            "bundle": task["bundle_sha256"],
+            "prompt": task["prompt_sha256"],
+            "attachments": {
+                str(image): task["attachment_sha256"][str(image)],
+            },
+        }
+
     def test_confirmed_context_adds_only_context_facts_and_resolves_issue(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -49,6 +85,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "record_id": record_id,
                 "origin_worker_task_id": "TASK-A",
             }
+            artifact_hashes = self._bind_context_artifacts(task, root)
             queue_path = root / "context_review_task_queue.json"
             self._write_json(queue_path, {"tasks": [task]})
             self._write_json(task_output / "task_state.json", {
@@ -77,10 +114,13 @@ class ApplyContextReviewTests(unittest.TestCase):
             self._write_json(task_output / "response.json", response)
             response_sha256 = hashlib.sha256((task_output / "response.json").read_bytes()).hexdigest()
             self._write_json(run_dir / "evidence_validation.json", {
+                "manifest_path": task["source_manifest_path"],
+                "manifest_sha256": artifact_hashes["source_manifest"],
                 "tasks": [{
                     "task_id": task_id,
                     "status": "evidence_checked",
                     "response_sha256": response_sha256,
+                    "artifact_sha256": artifact_hashes,
                 }],
             })
 
@@ -190,6 +230,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "record_id": record_id,
                 "origin_worker_task_id": "TASK-A",
             }
+            artifact_hashes = self._bind_context_artifacts(task, root)
             queue_path = root / "context_review_task_queue.json"
             self._write_json(queue_path, {"tasks": [task]})
             self._write_json(task_output / "task_state.json", {
@@ -212,10 +253,13 @@ class ApplyContextReviewTests(unittest.TestCase):
             })
             validated_hash = hashlib.sha256(response_path.read_bytes()).hexdigest()
             self._write_json(run_dir / "evidence_validation.json", {
+                "manifest_path": task["source_manifest_path"],
+                "manifest_sha256": artifact_hashes["source_manifest"],
                 "tasks": [{
                     "task_id": task_id,
                     "status": "evidence_checked",
                     "response_sha256": validated_hash,
+                    "artifact_sha256": artifact_hashes,
                 }],
             })
             # Simulate a response being edited/replaced after validation.
@@ -286,6 +330,7 @@ class ApplyContextReviewTests(unittest.TestCase):
                 "record_id": record_id,
                 "origin_worker_task_id": "TASK-A",
             }
+            artifact_hashes = self._bind_context_artifacts(task, root)
             queue_path = root / "context_review_task_queue.json"
             self._write_json(queue_path, {"tasks": [task]})
             self._write_json(task_output / "task_state.json", {
@@ -310,10 +355,13 @@ class ApplyContextReviewTests(unittest.TestCase):
             })
             response_sha256 = hashlib.sha256((task_output / "response.json").read_bytes()).hexdigest()
             self._write_json(run_dir / "evidence_validation.json", {
+                "manifest_path": task["source_manifest_path"],
+                "manifest_sha256": artifact_hashes["source_manifest"],
                 "tasks": [{
                     "task_id": task_id,
                     "status": "evidence_checked",
                     "response_sha256": response_sha256,
+                    "artifact_sha256": artifact_hashes,
                 }],
             })
             records_path = root / "result_records.jsonl"
