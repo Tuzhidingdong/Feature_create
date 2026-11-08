@@ -231,5 +231,69 @@ class BuildTaskQueueTests(unittest.TestCase):
 
 
 
+    def test_large_paper_is_split_into_multiple_chunk_scoped_worker_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            prepared = base / "prepared"
+            extracted = prepared / "extracted_text"
+            extracted.mkdir(parents=True)
+            text = (
+                "# Main Analysis\nDOI: 10.1234/large\n\n"
+                "## Page 1 (MAIN)\n\n"
+                + ("Page one paragraph: capacity retention 91 percent. " * 120)
+                + "\n\n## Page 2 (MAIN)\n\n"
+                + ("Page two paragraph: coulombic efficiency 99 percent. " * 120)
+            )
+            (extracted / "main.txt").write_text(text, encoding="utf-8")
+            source = {
+                "source_id": "SRC-LARGE-MAIN",
+                "paper_id": "10.1234/large",
+                "source_role": "main",
+                "source_type": "main_text",
+                "component": "main_text",
+                "relative_path": "preprocessing/main_analysis.md",
+                "parse_status": "upstream_preprocessed_text",
+                "sha256": "synthetic-text-hash",
+                "extracted_text_path": "extracted_text/main.txt",
+            }
+            manifest = {
+                "manifest_version": "0.3",
+                "source_kind": "chem-literature-preprocessed-research_corpus_paired.csv",
+                "corpus_fingerprint": "large-paper-fingerprint",
+                "sources": [source],
+                "papers": [{
+                    "paper_id": "10.1234/large",
+                    "doi": "10.1234/large",
+                    "title": "Large synthetic paper",
+                    "year": "2026",
+                    "journal": "Example",
+                    "article_type": "Original Research",
+                    "pair_status": "paired_files_verified",
+                    "input_status": "ready",
+                    "source_ids": ["SRC-LARGE-MAIN"],
+                }],
+            }
+            manifest_path = prepared / "source_manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = base / "dispatch"
+
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--output", str(output),
+                "--max-bundle-chars", "10000",
+            ]), 0)
+
+            queue = json.loads((output / "task_queue.json").read_text(encoding="utf-8"))
+            chunks = {task["chunk_id"] for task in queue["tasks"]}
+            self.assertGreaterEqual(len(chunks), 2)
+            self.assertEqual(len(chunks) * 2, len(queue["tasks"]))
+            self.assertTrue(all(task["task_status"] == "pending" for task in queue["tasks"]))
+            self.assertTrue(all(task["source_ids"] == ["SRC-LARGE-MAIN"] for task in queue["tasks"]))
+            self.assertTrue(all(task["chunk_evidence_index_path"] for task in queue["tasks"]))
+            self.assertTrue(all(task["paper_chunk_index_path"] for task in queue["tasks"]))
+            self.assertTrue(all(task["source_unit_ids"]["SRC-LARGE-MAIN"] for task in queue["tasks"]))
+            self.assertTrue(all(task["chunk_count"] == len(chunks) for task in queue["tasks"]))
+
+
 if __name__ == "__main__":
     unittest.main()
