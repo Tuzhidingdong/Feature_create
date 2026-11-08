@@ -146,6 +146,15 @@ def validate_payload(
         if not source:
             errors.append(f"{location}: unknown source_id {source_id!r}.")
             continue
+        assigned_source_ids = set(task.get("source_ids", []))
+        if source_id not in assigned_source_ids:
+            errors.append(
+                f"{location}: source_id {source_id!r} was not assigned to this worker task."
+            )
+        if source.get("paper_id") != task.get("paper_id"):
+            errors.append(
+                f"{location}: source_id {source_id!r} belongs to a different paper."
+            )
 
         locator = ref.get("locator")
         if not isinstance(locator, dict) or not locator:
@@ -191,6 +200,10 @@ def validate_payload(
             record_source = record.get("source_id")
             if record_source not in sources:
                 errors.append(f"result_records/{index}: unknown source_id {record_source!r}.")
+            elif record_source not in set(task.get("source_ids", [])):
+                errors.append(f"result_records/{index}: source_id was not assigned to this worker task.")
+            elif sources[record_source].get("paper_id") != task.get("paper_id"):
+                errors.append(f"result_records/{index}: source_id belongs to a different paper.")
             if record.get("candidate_observation_id") not in observations:
                 errors.append(f"result_records/{index}: missing matching feature observation.")
             if record.get("value_extraction_status") == "visual_only" and record.get("numeric_value") is not None:
