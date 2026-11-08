@@ -149,12 +149,32 @@ def _paper_chunk_index(
                 f"{unit.get('doc_type')}:{unit.get('page_number')}"
                 for unit in chunk["units"] if unit.get("page_number") is not None
             }),
+            "text_segment_locators": [
+                {
+                    "unit_id": unit["unit_id"],
+                    "source_id": unit["source_id"],
+                    "doc_type": unit.get("doc_type"),
+                    "page_number": unit.get("page_number"),
+                    "text_segment_index_1based": (unit.get("locator") or {}).get("text_segment_index_1based"),
+                    "text_segment_count": (unit.get("locator") or {}).get("text_segment_count"),
+                    "source_text_offset_start": (unit.get("locator") or {}).get("source_text_offset_start"),
+                    "source_text_offset_end": (unit.get("locator") or {}).get("source_text_offset_end"),
+                    "page_text_offset_start": (unit.get("locator") or {}).get("page_text_offset_start"),
+                    "page_text_offset_end": (unit.get("locator") or {}).get("page_text_offset_end"),
+                }
+                for unit in chunk["units"] if unit.get("unit_kind") == "text"
+            ],
             "table_locators": [
                 {
+                    "unit_id": unit["unit_id"],
+                    "source_id": unit["source_id"],
                     "table_id": unit.get("table_id"),
+                    "page_number": unit.get("page_number"),
                     "row_indices_1based": (unit.get("locator") or {}).get("row_indices_1based", []),
                     "row_index_start_1based": (unit.get("locator") or {}).get("row_index_start_1based"),
                     "row_index_end_1based": (unit.get("locator") or {}).get("row_index_end_1based"),
+                    "row_index_1based": (unit.get("locator") or {}).get("row_index_1based"),
+                    "column_indices_1based": (unit.get("locator") or {}).get("column_indices_1based", []),
                     "cell_fragments": (unit.get("locator") or {}).get("cell_fragments", []),
                 }
                 for unit in chunk["units"] if unit.get("table_id")
