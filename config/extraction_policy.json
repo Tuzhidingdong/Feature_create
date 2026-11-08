@@ -1,0 +1,60 @@
+{
+  "config_version": "0.1",
+  "discovery": {
+    "source_of_truth": "paper_and_supplementary_information",
+    "existing_schema_is_discovery_boundary": false,
+    "preserve_raw_feature_names": true,
+    "preserve_raw_definitions": true,
+    "discover_features_from_text_tables_figures_and_datasets": true
+  },
+  "record_granularity": {
+    "one_record_per_reported_result_value": true,
+    "separate_samples": true,
+    "separate_conditions": true,
+    "separate_time_points": true,
+    "separate_cycles": true,
+    "separate_series": true,
+    "do_not_replace_ranges_with_midpoints": true,
+    "preserve_source_numeric_string": true
+  },
+  "context_roles": [
+    "sample_identity",
+    "condition",
+    "time_or_cycle",
+    "protocol",
+    "statistical_scope",
+    "other"
+  ],
+  "figure_status": [
+    "digitized",
+    "visual_only",
+    "not_extractable",
+    "exact_text",
+    "exact_table_cell"
+  ],
+  "feature_relationships": [
+    "SAME_FEATURE",
+    "RELATED_BUT_DISTINCT",
+    "SAME_FAMILY_DIFFERENT_STATISTIC",
+    "INSUFFICIENT_EVIDENCE",
+    "NOT_A_RESULT_FEATURE",
+    "CONDITION_ONLY"
+  ],
+  "merge_policy": {
+    "name_similarity_is_sufficient": false,
+    "unit_similarity_is_sufficient": false,
+    "require_definition_and_scope_compatibility": true,
+    "uncertain_candidates_remain_separate": true,
+    "preserve_merge_split_history": true
+  },
+  "evidence_policy": {
+    "every_accepted_record_requires_evidence": true,
+    "table_values_require_row_column_or_cell_provenance": true,
+    "exact_numeric_values_from_visual_estimates_forbidden": true,
+    "unreviewed_sources_must_not_be_counted_as_reviewed": true
+  },
+  "formal_outputs": [
+    "result_feature_records.txt",
+    "result_feature_list.txt"
+  ]
+}
