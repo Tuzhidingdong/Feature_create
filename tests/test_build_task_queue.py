@@ -298,6 +298,26 @@ class BuildTaskQueueTests(unittest.TestCase):
             self.assertTrue(all(task["source_unit_ids"]["SRC-LARGE-MAIN"] for task in queue["tasks"]))
             self.assertTrue(all(task["chunk_count"] == len(chunks) for task in queue["tasks"]))
 
+            paper_index_path = Path(queue["tasks"][0]["paper_chunk_index_path"])
+            paper_index = json.loads(paper_index_path.read_text(encoding="utf-8"))
+            segment_locators = [
+                segment
+                for chunk in paper_index["chunks"]
+                for segment in chunk["text_segment_locators"]
+            ]
+            self.assertGreater(len(segment_locators), 1)
+            self.assertTrue(all(item["unit_id"] and item["source_id"] == "SRC-LARGE-MAIN" for item in segment_locators))
+            self.assertTrue(all(
+                item["source_text_offset_end"] > item["source_text_offset_start"]
+                for item in segment_locators
+            ))
+            self.assertEqual(
+                sorted(item["source_text_offset_start"] for item in segment_locators),
+                [item["source_text_offset_start"] for item in sorted(
+                    segment_locators, key=lambda item: item["source_text_offset_start"]
+                )],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
