@@ -394,7 +394,7 @@ def render_bundle(
         "- A source is fully reviewed only when every scope assigned to this task has been reviewed completely.",
         "- Keep the original source_id unchanged in all evidence references. Use the original page number and original 1-based table row/column positions.",
         "- For split table sources, inspect only the primary original row range for new result extraction; the first up to three repeated context rows are for multi-row headers/table structure and must not be extracted again unless they are also in this scope's primary range.",
-        "- Use the upstream evidence index and QC status as authoritative. Raw MAIN/SI source files are provenance only; never parse them again.",
+        "- Use the upstream evidence index and QC status as authoritative. Do not request or perform a second PDF/SI parsing pass. Raw MAIN/SI source files are provenance only; never parse them again.",
         "- Preserve sample identity, conditions, time/cycle facts, protocol facts, and reported result values as separate facts.",
         "- Figure/table images are already-extracted upstream assets. Inspect all attached assets; an asset's existence alone does not prove it was interpreted.",
         "- Use explicit unresolved items when a result depends on context outside the assigned scope. Do not invent cross-page context.",
