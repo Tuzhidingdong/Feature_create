@@ -128,11 +128,12 @@ def validate_policy(
                     f"Worker {worker} model has no verified Free value for {field}."
                 )
 
-        model_id = model_ref.split("/", 1)[1]
-        if model_ref not in models_output and model_id not in models_output:
+        # Require the complete provider/model reference. Matching a bare model
+        # ID could accidentally accept the same ID under a different provider.
+        if model_ref not in models_output:
             raise ModelPolicyError(
-                f"Worker {worker} model is absent from current 'opencode models' output: "
-                f"{model_ref}"
+                f"Worker {worker} provider/model reference is absent from current "
+                f"'opencode models' output: {model_ref}"
             )
 
     return [configured["A"], configured["B"]]
