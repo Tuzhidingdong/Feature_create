@@ -275,6 +275,7 @@ def build_context_task(
     max_attachments: int,
     max_command_chars: int,
     review_attempt: int = 0,
+    first_pass_worker_b_task_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     unresolved_id = str(unresolved["unresolved_id"])
     current_chunk_id = str(current_task.get("chunk_id") or "")
@@ -347,6 +348,7 @@ def build_context_task(
         ],
         "attachment_hashes": attachment_hashes,
         "model_ref": model_ref,
+        "first_pass_worker_b_task_ids": sorted(first_pass_worker_b_task_ids or []),
         "prompt_sha256": prompt_sha256,
         "review_attempt": review_attempt,
     }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
@@ -461,6 +463,7 @@ def build_context_task(
         "unresolved_id": unresolved_id,
         "record_id": record.get("record_id"),
         "origin_worker_task_id": current_task.get("task_id"),
+        "first_pass_worker_b_task_ids": sorted(first_pass_worker_b_task_ids or []),
         "current_chunk_id": current_chunk_id,
         "target_chunk_ids": target_chunk_ids,
         "current_unit_ids": [unit["unit_id"] for unit in current_units],
@@ -783,6 +786,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_attachments=args.max_attachments,
                 max_command_chars=args.max_command_chars,
                 review_attempt=review_attempt,
+                first_pass_worker_b_task_ids=[
+                    str(item["task_id"]) for item in paired_worker_b if item
+                ],
             )
             tasks.append(task)
         except ContextQueueError as exc:
