@@ -278,6 +278,8 @@ def build_context_task(
     max_command_chars: int,
     review_attempt: int = 0,
     first_pass_worker_b_task_ids: list[str] | None = None,
+    source_manifest_path: Path | None = None,
+    source_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     unresolved_id = str(unresolved["unresolved_id"])
     current_chunk_id = str(current_task.get("chunk_id") or "")
@@ -349,6 +351,7 @@ def build_context_task(
             for unit, unit_text in rendered
         ],
         "attachment_hashes": attachment_hashes,
+        "source_manifest_sha256": source_manifest_sha256,
         "model_ref": model_ref,
         "first_pass_worker_b_task_ids": sorted(first_pass_worker_b_task_ids or []),
         "prompt_sha256": prompt_sha256,
@@ -457,6 +460,8 @@ def build_context_task(
         "bundle_sha256": hashlib.sha256(bundle.encode("utf-8")).hexdigest(),
         "attachment_sha256": attachment_hashes,
         "context_evidence_manifest_sha256": sha256_file(manifest_path),
+        "source_manifest_path": str(source_manifest_path.resolve()) if source_manifest_path else None,
+        "source_manifest_sha256": source_manifest_sha256,
         "prompt_path": str(prompt.resolve()),
         "bundle_path": str(bundle_path.resolve()),
         "attachment_paths": [str(manifest_path.resolve()), *attachment_paths],
@@ -791,6 +796,8 @@ def main(argv: list[str] | None = None) -> int:
                 first_pass_worker_b_task_ids=[
                     str(item["task_id"]) for item in paired_worker_b if item
                 ],
+                source_manifest_path=manifest_path,
+                source_manifest_sha256=sha256_file(manifest_path),
             )
             tasks.append(task)
         except ContextQueueError as exc:
