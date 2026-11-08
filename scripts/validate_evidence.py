@@ -51,6 +51,64 @@ def normalize_for_search(value: str) -> str:
     return normalized.strip()
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def validate_context_task_artifacts(
+    task: dict[str, Any],
+    source_manifest_path: Path,
+) -> tuple[dict[str, Any], list[str]]:
+    """Hash-bind all inputs that materially define a targeted context review."""
+    hashes: dict[str, Any] = {}
+    errors: list[str] = []
+    expected_source_path = str(source_manifest_path.resolve())
+    declared_source_path = str(Path(str(task.get("source_manifest_path") or "")).resolve())
+    if declared_source_path != expected_source_path:
+        errors.append("Context task source_manifest_path does not match the manifest used by evidence validation.")
+    try:
+        hashes["source_manifest"] = sha256_file(source_manifest_path)
+    except OSError as exc:
+        errors.append(f"Unable to hash source manifest: {exc}")
+
+    artifact_fields = (
+        ("context_evidence_manifest", "context_evidence_manifest_path", "context_evidence_manifest_sha256"),
+        ("bundle", "bundle_path", "bundle_sha256"),
+        ("prompt", "prompt_path", "prompt_sha256"),
+    )
+    for label, path_field, expected_field in artifact_fields:
+        path_value = task.get(path_field)
+        expected_hash = task.get(expected_field)
+        path = Path(str(path_value or "")).resolve()
+        if not path_value or not path.is_file():
+            errors.append(f"Context task {label} file is missing: {path}")
+            continue
+        actual_hash = sha256_file(path)
+        hashes[label] = actual_hash
+        if not expected_hash or actual_hash != expected_hash:
+            errors.append(f"Context task {label} SHA-256 differs from the queued task fingerprint.")
+
+    expected_attachments = task.get("attachment_sha256") or {}
+    attachment_hashes: dict[str, str] = {}
+    for attachment, expected_hash in expected_attachments.items():
+        path = Path(str(attachment)).resolve()
+        if not path.is_file():
+            errors.append(f"Context visual attachment is missing: {path}")
+            continue
+        actual_hash = sha256_file(path)
+        attachment_hashes[str(path)] = actual_hash
+        if actual_hash != expected_hash:
+            errors.append(f"Context visual attachment SHA-256 differs from the queued task fingerprint: {path}")
+    hashes["attachments"] = attachment_hashes
+    if set(attachment_hashes) != {str(Path(value).resolve()) for value in expected_attachments}:
+        errors.append("One or more context visual attachment hashes could not be verified.")
+    return hashes, errors
+
+
 def load_manifest(manifest_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]], Path]:
     manifest = read_json(manifest_path)
     output_root = manifest_path.resolve().parent
@@ -655,7 +713,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args(argv)
 
-    manifest, sources, output_root = load_manifest(args.manifest.resolve())
+    manifest_path = args.manifest.resolve()
+    manifest, sources, output_root = load_manifest(manifest_path)
     queue = read_json(args.queue.resolve())
     run_dir = args.run_dir.resolve()
     results = []
@@ -679,12 +738,20 @@ def main(argv: list[str] | None = None) -> int:
         result = validate_payload(payload, role, task, sources, output_root)
         result["response_path"] = str(response_path)
         result["response_sha256"] = hashlib.sha256(response_bytes).hexdigest()
+        if role == "cross_chunk_context":
+            artifact_hashes, artifact_errors = validate_context_task_artifacts(task, manifest_path)
+            result["artifact_sha256"] = artifact_hashes
+            if artifact_errors:
+                result["errors"].extend(artifact_errors)
+                result["error_count"] = len(result["errors"])
+                result["status"] = "needs_review"
         results.append(result)
 
     summary = {
         "validation_version": "0.1",
         "validated_at": datetime.now(timezone.utc).isoformat(),
-        "manifest_path": str(args.manifest.resolve()),
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": sha256_file(manifest_path),
         "task_count": len(results),
         "passed_count": sum(1 for item in results if item.get("status") == "evidence_checked"),
         "needs_review_count": sum(1 for item in results if item.get("status") != "evidence_checked"),
