@@ -498,7 +498,7 @@ def attempt_worker_task(
             export_return_code = None
             if session_id:
                 export_result = run_process(
-                    [opencode_bin, "session", "export", session_id, "--sanitize"],
+                    [opencode_bin, "session", "export", session_id],
                     attempt_dir,
                     env,
                     timeout_seconds=min(timeout_seconds, 180),
@@ -506,7 +506,7 @@ def attempt_worker_task(
                 # Compatibility with older CLI releases exposing the legacy export command.
                 if export_result.returncode != 0:
                     legacy_export = run_process(
-                        [opencode_bin, "export", session_id, "--sanitize"],
+                        [opencode_bin, "export", session_id],
                         attempt_dir,
                         env,
                         timeout_seconds=min(timeout_seconds, 180),
