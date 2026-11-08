@@ -262,6 +262,26 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 item["unit_id"] for item in evidence["assigned_units"]
             })
 
+            mismatched_tasks = json.loads(source_queue.read_text(encoding="utf-8"))["tasks"]
+            mismatched_tasks[-1]["model_ref"] = policy["workers"]["worker_a"]["model_ref"]
+            mismatched_queue = prepared / "task_queue_mismatched_worker_b.json"
+            mismatched_queue.write_text(json.dumps({"tasks": mismatched_tasks}), encoding="utf-8")
+            mismatched_output = root / "context_dispatch_mismatched_worker_b"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(mismatched_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(mismatched_output),
+            ]), 0)
+            mismatched_result = json.loads((mismatched_output / "context_review_task_queue.json").read_text(encoding="utf-8"))
+            self.assertEqual(0, mismatched_result["task_count"])
+            self.assertEqual(1, mismatched_result["blocked_unresolved_count"])
+            self.assertIn(
+                "first_pass_worker_b_model_mismatch",
+                mismatched_result["blocked_unresolved"][0]["reason"],
+            )
+
             unresolved_rows = [json.loads(line) for line in unresolved.read_text(encoding="utf-8").splitlines() if line.strip()]
             unresolved_rows[0]["description"] += " The follow-up specifically asks for the electrolyte definition."
             unresolved.write_text(
