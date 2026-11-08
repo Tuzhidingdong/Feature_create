@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/worker-b.schema.json",
+  "title": "Worker B — Feature-centric Discovery and Coverage Audit Output",
+  "description": "Independent feature inventory and omission-focused audit. It is not required to duplicate all value extraction performed by Worker A.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "task_id",
+    "worker_role",
+    "paper_id",
+    "coverage_audit",
+    "feature_observations",
+    "omission_candidates",
+    "semantic_distinctions",
+    "unresolved_items"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_role": {
+      "const": "feature_audit"
+    },
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage_audit": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/coverageAuditItem"
+      }
+    },
+    "feature_observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/featureObservation"
+      }
+    },
+    "omission_candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/omissionCandidate"
+      }
+    },
+    "semantic_distinctions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/semanticDistinction"
+      }
+    },
+    "unresolved_items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unresolvedItem"
+      }
+    }
+  },
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "source_type",
+        "locator"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_type": {
+          "enum": [
+            "main_text",
+            "main_table",
+            "main_figure",
+            "main_figure_caption",
+            "si_text",
+            "si_table",
+            "si_figure",
+            "si_figure_caption",
+            "supporting_dataset",
+            "other"
+          ]
+        },
+        "locator": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "quote_or_cell_value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_status": {
+          "enum": [
+            "unverified",
+            "verified_text",
+            "verified_table_cell",
+            "verified_digitization",
+            "visual_only",
+            "unreadable",
+            "not_applicable"
+          ]
+        }
+      }
+    },
+    "coverageAuditItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "component",
+        "status",
+        "audit_note"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "component": {
+          "enum": [
+            "main_text",
+            "main_tables",
+            "main_figures",
+            "si_text",
+            "si_tables",
+            "si_figures",
+            "supporting_datasets",
+            "other"
+          ]
+        },
+        "status": {
+          "enum": [
+            "reviewed",
+            "partially_reviewed",
+            "not_accessible",
+            "not_present",
+            "uncertain"
+          ]
+        },
+        "audit_note": {
+          "type": "string"
+        },
+        "possible_missing_material": {
+          "type": "boolean"
+        }
+      }
+    },
+    "featureObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_observation_id",
+        "source_id",
+        "raw_feature_name",
+        "variable_role",
+        "result_type",
+        "evidence_refs"
+      ],
+      "properties": {
+        "candidate_observation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Task-local reference only; Python assigns persistent IDs."
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_feature_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reported_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reported_method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_type": {
+          "enum": [
+            "measured",
+            "calculated",
+            "derived",
+            "simulated",
+            "model_output",
+            "not_stated",
+            "uncertain"
+          ]
+        },
+        "variable_role": {
+          "enum": [
+            "result_feature",
+            "condition_only",
+            "sample_descriptor",
+            "uncertain"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      }
+    },
+    "omissionCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "missing_material_type",
+        "description",
+        "raw_feature_name",
+        "evidence_refs"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "missing_material_type": {
+          "enum": [
+            "feature_not_in_inventory",
+            "result_series_not_extracted",
+            "additional_result_values",
+            "si_result_not_covered",
+            "figure_series_not_covered",
+            "table_region_not_covered",
+            "other"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_feature_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        },
+        "proposed_targeted_review": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "semanticDistinction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_a_id",
+        "candidate_b_id",
+        "relationship",
+        "rationale",
+        "evidence_refs"
+      ],
+      "properties": {
+        "candidate_a_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_b_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship": {
+          "enum": [
+            "SAME_FEATURE",
+            "RELATED_BUT_DISTINCT",
+            "SAME_FAMILY_DIFFERENT_STATISTIC",
+            "INSUFFICIENT_EVIDENCE",
+            "NOT_A_RESULT_FEATURE",
+            "CONDITION_ONLY"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      }
+    },
+    "unresolvedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_type",
+        "description",
+        "evidence_refs"
+      ],
+      "properties": {
+        "item_type": {
+          "enum": [
+            "ambiguous_feature",
+            "possible_omission",
+            "semantic_conflict",
+            "missing_source",
+            "inaccessible_source",
+            "unreadable_figure",
+            "other"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        },
+        "suggested_review": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
