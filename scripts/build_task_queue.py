@@ -287,6 +287,28 @@ def _paper_chunk_index(
             "next_chunk_id": chunk.get("next_chunk_id"),
             "unit_count": chunk["unit_count"],
             "source_ids": chunk["source_ids"],
+            "source_locators": [
+                {
+                    "source_id": source_id,
+                    "source_type": source_type,
+                    "doc_type": doc_type,
+                    "page_numbers": sorted(page_numbers),
+                    "table_ids": sorted(table_ids),
+                    "figure_ids": sorted(figure_ids),
+                }
+                for source_id, source_type, doc_type, page_numbers, table_ids, figure_ids
+                in sorted({
+                    (
+                        str(unit.get("source_id")),
+                        str(unit.get("source_type") or "other"),
+                        str(unit.get("doc_type") or ""),
+                        (int(unit["page_number"]),) if unit.get("page_number") is not None else (),
+                        (str(unit["table_id"]),) if unit.get("table_id") else (),
+                        (str(unit["figure_id"]),) if unit.get("figure_id") else (),
+                    )
+                    for unit in chunk["units"]
+                })
+            ],
             "page_locators": sorted({
                 f"{unit.get('doc_type')}:{unit.get('page_number')}"
                 for unit in chunk["units"] if unit.get("page_number") is not None
@@ -295,6 +317,34 @@ def _paper_chunk_index(
                 str(unit.get("figure_id")) for unit in chunk["units"] if unit.get("figure_id")
             }),
         } for chunk in chunks],
+        "unit_navigation": [
+            {
+                "unit_id": unit["unit_id"],
+                "chunk_id": unit["chunk_id"],
+                "source_ids": unit.get("source_ids", []),
+                "source_type": unit.get("source_type"),
+                "component": unit.get("component"),
+                "unit_kind": unit.get("unit_kind"),
+                "doc_type": unit.get("doc_type"),
+                "page_number": unit.get("page_number"),
+                "table_id": unit.get("table_id"),
+                "figure_id": unit.get("figure_id"),
+                "locator": {
+                    key: value
+                    for key, value in (unit.get("locator") or {}).items()
+                    if key in {
+                        "doc_type", "page_number", "text_segment_index_1based",
+                        "text_segment_count", "source_text_offset_start",
+                        "source_text_offset_end", "page_text_offset_start",
+                        "page_text_offset_end", "table_id", "row_indices_1based",
+                        "row_index_start_1based", "row_index_end_1based",
+                        "row_index_1based", "column_indices_1based",
+                        "cell_fragments", "figure_id", "bbox", "asset_id",
+                    }
+                },
+            }
+            for unit in units
+        ],
         "all_supplementary_evidence_locators": supplementary_targets,
         "cross_chunk_text_boundaries": cross_chunk_text_boundaries,
         "same_original_table_row_groups": table_row_groups,
