@@ -221,13 +221,17 @@ class BuildTaskQueueTests(unittest.TestCase):
             for task in queue["tasks"]:
                 attachments = task["attachment_paths"]
                 self.assertIn(str(image_path), attachments)
-                self.assertIn(str(evidence_index), attachments)
+                self.assertIn(task["chunk_evidence_index_path"], attachments)
+                self.assertIn(task["paper_chunk_index_path"], attachments)
+                self.assertNotIn(str(evidence_index), attachments)
                 self.assertIn(str(qc_report), attachments)
                 self.assertFalse(any(path.lower().endswith((".pdf", ".zip", ".docx", ".xlsx")) for path in attachments))
                 self.assertEqual(task["preprocessing_status"], "WARNING_SCANNED_PAGES")
                 task_input = Path(task["bundle_path"]).read_text(encoding="utf-8")
                 self.assertIn("OCR was not performed", task_input)
                 self.assertIn("Do not request or perform a second PDF/SI parsing pass", task_input)
+                chunk_index = json.loads(Path(task["chunk_evidence_index_path"]).read_text(encoding="utf-8"))
+                self.assertEqual("evidence-hash", chunk_index["upstream_evidence_index_sha256"])
 
 
 
