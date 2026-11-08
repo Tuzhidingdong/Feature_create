@@ -55,7 +55,7 @@ def normalize_doi(value: Any) -> str | None:
 def clean_stem(stem: str) -> str:
     """Compatibility helper retained for existing callers; never used for discovery."""
     value = stem.casefold()
-    value = re.sub(r"\\.(pdf|md|txt|xml|csv|xlsx|html?|docx)$", "", value)
+    value = re.sub(r"\.(pdf|md|txt|xml|csv|xlsx|html?|docx)$", "", value)
     value = re.sub(
         r"([_-](si|supp|supplement|supplementary|supporting|supporting_information|supplementary_information)([_-].*)?)$",
         "", value,
