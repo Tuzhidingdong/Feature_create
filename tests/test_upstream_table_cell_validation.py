@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.validate_evidence import verify_table_cell
+from scripts.validate_evidence import verify_table_cell, verify_table_cell_is_assigned
 
 
 class UpstreamTableCellValidationTests(unittest.TestCase):
@@ -50,6 +50,46 @@ class UpstreamTableCellValidationTests(unittest.TestCase):
         ok, note = verify_table_cell(self.source, {"table_id": "MAIN_TAB_P3_01"}, "220 mAh g-1")
         self.assertIsNone(ok)
         self.assertIn("row_index_1based", note)
+
+    def test_verifies_exact_fragment_of_an_oversized_cell(self) -> None:
+        value = "abcdefghij"
+        source = {
+            "source_type": "main_table",
+            "table_data": {"rows": [["Metric", "Long value"], ["Result", value]]},
+        }
+        ok, note = verify_table_cell(
+            source,
+            {
+                "row_index_1based": 2,
+                "column_index_1based": 2,
+                "cell_text_offset_start": 3,
+                "cell_text_offset_end": 7,
+            },
+            "defg",
+        )
+        self.assertTrue(ok)
+        self.assertIn("fragment verified", note)
+
+    def test_rejects_cell_fragment_from_another_chunk(self) -> None:
+        unit = {
+            "locator": {
+                "cell_fragments": [{
+                    "row_index_1based": 2,
+                    "column_index_1based": 2,
+                    "cell_text_offset_start": 0,
+                    "cell_text_offset_end": 5,
+                    "cell_text_segment_count": 2,
+                }]
+            }
+        }
+        ok, note = verify_table_cell_is_assigned(
+            unit,
+            2,
+            2,
+            {"cell_text_offset_start": 5, "cell_text_offset_end": 10},
+        )
+        self.assertFalse(ok)
+        self.assertIn("does not match", note)
 
     def test_accepts_a1_style_cell_address(self) -> None:
         ok, _ = verify_table_cell(
