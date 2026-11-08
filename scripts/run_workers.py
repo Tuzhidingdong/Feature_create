@@ -50,12 +50,14 @@ DEFAULT_EXECUTION_POLICY = ROOT / "config" / "execution_policy.json"
 SCHEMA_PATHS = {
     "source_discovery": ROOT / "contracts" / "worker-a.schema.json",
     "feature_audit": ROOT / "contracts" / "worker-b.schema.json",
+    "cross_chunk_context": ROOT / "contracts" / "worker-context-review.schema.json",
     "semantic_reconciliation": ROOT / "contracts" / "feature-reconciliation-batch.schema.json",
     "existing_schema_mapping": ROOT / "contracts" / "existing-feature-mapping-batch.schema.json",
 }
 WORKER_AGENTS = {
     "source_discovery": "feature_create_worker_a",
     "feature_audit": "feature_create_worker_b",
+    "cross_chunk_context": "feature_create_worker_b",
     "semantic_reconciliation": "feature_create_worker_b",
     "existing_schema_mapping": "feature_create_worker_b",
 }
@@ -397,6 +399,51 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
                     f"{label}: scope_id {scope_id!r} belongs to source_id "
                     f"{expected_source!r}, not {source_id!r}."
                 )
+
+    if task["worker_role"] == "cross_chunk_context":
+        if payload.get("task_type") != "cross_chunk_context":
+            problems.append("task_type must be cross_chunk_context.")
+        if payload.get("unresolved_id") != task.get("unresolved_id"):
+            problems.append("unresolved_id does not match the dispatched context review.")
+        if payload.get("record_id") != task.get("record_id"):
+            problems.append("record_id does not match the dispatched result record.")
+
+        allowed_units = {
+            str(item.get("unit_id")): item
+            for item in task.get("evidence_unit_map", [])
+            if item.get("unit_id")
+        }
+        all_refs = list(payload.get("review_evidence_refs", []))
+        for fact in payload.get("context_facts", []):
+            all_refs.extend(fact.get("evidence_refs", []))
+        sides: set[str] = set()
+        for index, ref in enumerate(all_refs):
+            side = str(ref.get("evidence_side") or "")
+            sides.add(side)
+            locator = ref.get("locator") or {}
+            unit_id = str(locator.get("unit_id") or "")
+            assigned = allowed_units.get(unit_id)
+            if not assigned:
+                problems.append(f"evidence_refs/{index}: unit_id is not assigned to this context review.")
+                continue
+            if locator.get("chunk_id") != assigned.get("chunk_id"):
+                problems.append(f"evidence_refs/{index}: chunk_id does not match the assigned unit.")
+            if ref.get("source_id") not in set(assigned.get("source_ids") or []):
+                problems.append(f"evidence_refs/{index}: source_id is not linked to the assigned unit.")
+            if side not in {"current", "target"}:
+                problems.append(f"evidence_refs/{index}: evidence_side must be current or target.")
+        if payload.get("decision") == "association_confirmed":
+            if not payload.get("context_facts"):
+                problems.append("association_confirmed requires at least one context_fact.")
+            if not {"current", "target"}.issubset(sides):
+                problems.append("association_confirmed requires both current-side and target-side evidence.")
+            for index, fact in enumerate(payload.get("context_facts", [])):
+                fact_sides = {ref.get("evidence_side") for ref in fact.get("evidence_refs", [])}
+                if not {"current", "target"}.issubset(fact_sides):
+                    problems.append(f"context_facts/{index}: each fact must cite both current and target evidence.")
+        elif payload.get("context_facts"):
+            problems.append("Only association_confirmed may return context_facts.")
+        return problems
 
     if task["worker_role"] == "source_discovery":
         observations = {
