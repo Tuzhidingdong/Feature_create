@@ -124,7 +124,7 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 - Tables are split by original 1-based source rows. A single oversized row is split into cell fragments while preserving original table ID, row, column, and character offsets. Multi-row headers remain available as context.
 - An upstream image asset is assigned once to its related figure/table evidence unit when the evidence index identifies that relationship. Orphaned assets remain explicit units.
 - Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Worker evidence locators must cite both, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
-- `paper_chunk_index.json` exposes the other chunks' IDs, page/table/figure locators, and candidate MAIN-to-SI links. Candidate links are navigation aids, not confirmed semantic associations.
+- `paper_chunk_index.json` exposes the other chunks' IDs, exact text-segment offsets and previous/next segment links, same-table-row unit links (including cell fragments), page/table/figure locators, and candidate MAIN-to-SI links. Candidate MAIN-to-SI links are navigation aids, not confirmed semantic associations.
 - If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
 - A source is counted fully reviewed only when every chunk assigned to that worker has successful chunk-scoped coverage. A single completed chunk cannot mark the whole source complete.
 
