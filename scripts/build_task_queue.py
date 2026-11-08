@@ -75,9 +75,15 @@ def build_bundle(
         f"- Upstream landing page: {paper.get('landing_page_url') or 'not supplied'}",
         f"- Upstream paired status: {paper.get('pair_status', 'not recorded')}",
         "",
+        f"- Upstream CSV row count: {paper.get('upstream_csv_row_count', 1)}",
+        "",
         "## Upstream abstract",
         "",
         str(paper.get("abstract") or "[No abstract supplied in paired CSV.]"),
+        "",
+        "## Original chem-literature CSV row metadata",
+        "",
+        json.dumps(paper.get("upstream_csv_rows", []), ensure_ascii=False, indent=2),
         "",
         "## Source manifest",
         "",
@@ -206,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                     "article_type", "landing_page_url", "abstract",
                 )
             },
-            "upstream_artifact_sha256": manifest.get("upstream_artifact_sha256"),
+            "upstream_csv_rows": paper.get("upstream_csv_rows", []),
         }
         paper_hash = hashlib.sha256(
             json.dumps(paper_input_fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")
