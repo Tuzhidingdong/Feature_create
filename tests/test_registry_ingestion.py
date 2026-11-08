@@ -126,7 +126,6 @@ class RegistryIngestionTests(unittest.TestCase):
             feature_id,
             "Coulombic efficiency",
             "galvanostatic cycling",
-            [],
             self.source_map,
             self.root,
         )
@@ -146,14 +145,14 @@ class RegistryIngestionTests(unittest.TestCase):
             feature_id,
             "Coulombic efficiency",
             "galvanostatic cycling",
-            [{
+            self.source_map,
+            self.root,
+            unresolved_issues=[{
                 "item_type": "missing_context",
                 "description": "Current density was not reported for this value.",
                 "evidence_refs": [self.reference],
                 "suggested_review": None,
             }],
-            self.source_map,
-            self.root,
         )
         self.assertNotEqual(first["record_id"], second["record_id"])
         self.assertEqual(second["unresolved_issues"][0]["item_type"], "missing_context")
