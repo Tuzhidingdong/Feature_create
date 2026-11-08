@@ -180,8 +180,13 @@ def feature_methods(
 
 def build_feature_rows(
     registry: dict[str, Any],
+    existing_schema: dict[str, Any] | None = None,
 ) -> tuple[list[list[Any]], dict[str, dict[str, Any]], list[str]]:
     observations = {item["observation_id"]: item for item in registry.get("observations", [])}
+    existing_by_id = {
+        item["FEATURE_ID"]: item
+        for item in (existing_schema or {}).get("features", [])
+    }
     feature_by_id = {
         item["registry_feature_id"]: item
         for item in registry.get("canonical_features", [])
@@ -219,32 +224,74 @@ def build_feature_rows(
         )
         measurement_methods, calculation_methods = feature_methods(feature, observations)
         dimensions = sorted(set(feature.get("unit_dimensions", [])), key=str.casefold)
-        unit_object = {
-            "reported_units": units,
-            "dimensions": dimensions,
-        }
-        result_types = sorted(set(feature.get("result_types", [])))
+        result_types = set(feature.get("result_types", []))
         feature_id = feature.get("existing_feature_id") or feature["registry_feature_id"]
-        standardization_notes = (
-            "Canonical name and aliases were reconciled across source observations. "
-            "Source-reported unit spellings are retained; extraction does not silently convert values."
+        legacy = existing_by_id.get(feature.get("existing_feature_id")) if feature.get("existing_feature_id") else None
+        if feature.get("existing_feature_id") and legacy is None:
+            errors.append(
+                f"Feature {feature['registry_feature_id']} maps to existing FEATURE_ID "
+                f"{feature['existing_feature_id']} but that ID is absent from the supplied schema."
+            )
+            continue
+
+        aliases = set(feature.get("aliases", []))
+        if legacy:
+            aliases.update(legacy.get("ALIASES", []))
+            if feature.get("canonical_name") != legacy.get("CANONICAL_NAME"):
+                aliases.add(feature.get("canonical_name", ""))
+            result_types.update(legacy.get("RESULT_TYPE", []))
+            units.extend(legacy.get("UNITS_AND_DIMENSION", {}).get("reported_units", []))
+            dimensions.extend(legacy.get("UNITS_AND_DIMENSION", {}).get("dimensions", []))
+            measurement_methods = sorted(
+                set(measurement_methods) | set(legacy.get("MEASUREMENT_METHODS", [])),
+                key=str.casefold,
+            )
+            calculation_methods = sorted(
+                set(calculation_methods) | set(legacy.get("CALCULATION_METHODS", [])),
+                key=str.casefold,
+            )
+        aliases.discard("")
+        unit_object = {
+            "reported_units": sorted(set(units), key=str.casefold),
+            "dimensions": sorted(set(dimensions), key=str.casefold),
+        }
+        definition = (
+            legacy.get("DEFINITION") if legacy and legacy.get("DEFINITION")
+            else feature.get("definition") or ""
         )
+        canonical_name = (
+            legacy.get("CANONICAL_NAME") if legacy else feature.get("canonical_name")
+        )
+        result_types_list = sorted(result_types)
+        standardization_notes = (
+            legacy.get("STANDARDIZATION_NOTES") if legacy and legacy.get("STANDARDIZATION_NOTES")
+            else "Canonical name and aliases were reconciled across source observations."
+        )
+        generated_standardization = (
+            " Source-reported unit spellings are retained; extraction does not silently convert values."
+        )
+        standardization_notes = (standardization_notes or "") + generated_standardization
         comparability_notes = (
-            "Compare individual records only after checking their sample identity, experimental protocol, "
+            legacy.get("COMPARABILITY_NOTES") if legacy and legacy.get("COMPARABILITY_NOTES")
+            else ""
+        )
+        generated_comparability = (
+            " Compare individual records only after checking sample identity, experimental protocol, "
             "statistic, temporal/cycle scope, result type, method, and reported unit. "
             "Method/result-type differences remain visible at record level."
         )
+        comparability_notes = (comparability_notes + " " if comparability_notes else "") + generated_comparability
         rows.append([
             feature_id,
-            feature.get("canonical_name"),
-            json_cell(sorted(set(feature.get("aliases", [])), key=str.casefold)),
-            feature.get("definition") or "",
-            json_cell(result_types),
+            canonical_name,
+            json_cell(sorted(aliases, key=str.casefold)),
+            definition,
+            json_cell(result_types_list),
             json_cell(unit_object),
             json_cell(measurement_methods),
             json_cell(calculation_methods),
-            standardization_notes,
-            comparability_notes,
+            standardization_notes.strip(),
+            comparability_notes.strip(),
         ])
 
     return rows, feature_by_id, errors
@@ -337,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--records", type=Path, required=True)
     parser.add_argument("--review-queue", type=Path, required=True)
+    parser.add_argument("--existing-schema", type=Path, help="Optional normalized existing_feature_schema.json for legacy name/definition/alias preservation.")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--audit-report", type=Path, help="Optional separate internal audit JSON path.")
     args = parser.parse_args(argv)
@@ -346,6 +394,9 @@ def main(argv: list[str] | None = None) -> int:
     schema_errors = validate_registry(registry)
     review_rows = read_jsonl(args.review_queue.resolve())
     records = read_jsonl(args.records.resolve())
+    existing_schema = read_json(args.existing_schema.resolve()) if args.existing_schema else None
+    if existing_schema and existing_schema.get("contract_version") != "0.1":
+        raise ExportError("Existing schema must be normalized with import_existing_schema.py.")
 
     active_unresolved_pairs = [
         item for item in review_rows
@@ -353,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             "pending_semantic_review", "under_review", "blocked",
         }
     ]
-    feature_rows, feature_by_id, feature_errors = build_feature_rows(registry)
+    feature_rows, feature_by_id, feature_errors = build_feature_rows(registry, existing_schema)
     record_rows, record_errors = build_record_rows(records, feature_by_id)
 
     errors = list(schema_errors) + feature_errors + record_errors
