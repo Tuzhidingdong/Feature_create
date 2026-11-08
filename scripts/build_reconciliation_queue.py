@@ -276,8 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         }
         bundle_text = json.dumps(bundle, ensure_ascii=False, indent=2)
         input_hash = hashlib.sha256(bundle_text.encode("utf-8")).hexdigest()
-        pair_ids = [pair["candidate_pair_id"] for pair in batch]
-        task_id = stable_task_id(registry["registry_id"], pair_ids, input_hash)
+        all_pair_ids = [pair["candidate_pair_id"] for pair in batch]
+        reviewable_pair_ids = [context["candidate_pair_id"] for context in contexts]
+        task_id = stable_task_id(registry["registry_id"], all_pair_ids, input_hash)
         task_dir = output_root / "tasks" / task_id
         task_dir.mkdir(parents=True, exist_ok=True)
         bundle_path = task_dir / "task_input.json"
@@ -316,7 +317,8 @@ def main(argv: list[str] | None = None) -> int:
             "bundle_path": str(bundle_path.resolve()),
             "attachment_paths": sorted(set(attachments)),
             "output_dir": str(task_dir.resolve()),
-            "candidate_pair_ids": pair_ids,
+            "candidate_pair_ids": reviewable_pair_ids,
+            "blocked_pair_ids": [item["candidate_pair_id"] for item in blocked_pairs],
             "pair_count": len(batch),
             "reviewable_pair_count": len(contexts),
             "blocked_pairs": blocked_pairs,
