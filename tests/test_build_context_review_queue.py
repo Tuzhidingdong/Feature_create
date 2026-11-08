@@ -249,6 +249,10 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 (Path(__file__).resolve().parents[1] / "config" / "execution_policy.json").read_text(encoding="utf-8")
             )
             self.assertEqual(policy["workers"]["worker_b"]["model_ref"], task["model_ref"])
+            self.assertEqual(
+                {"TASK-B-CURRENT", "TASK-B-TARGET"},
+                set(task["first_pass_worker_b_task_ids"]),
+            )
             self.assertEqual({"UNIT-CURRENT", "UNIT-TARGET"}, set(task["assigned_unit_ids"]))
             self.assertEqual(["UNIT-CURRENT"], task["current_unit_ids"])
             self.assertEqual(["UNIT-TARGET"], task["target_unit_ids"])
