@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/existing-feature-mapping-batch.schema.json",
+  "title": "Feature_create Existing FEATURE_ID Mapping Batch",
+  "description": "Worker B semantic assessment of provisional/canonical Registry Features against a user's existing Feature Schema. This never controls feature discovery.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "task_id",
+    "task_type",
+    "registry_id",
+    "existing_schema_sha256",
+    "mapping_decisions",
+    "unresolved_items"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_type": {
+      "const": "existing_schema_mapping"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "existing_schema_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "mapping_decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mappingDecision"
+      }
+    },
+    "unresolved_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "registry_feature_id",
+          "description"
+        ],
+        "properties": {
+          "registry_feature_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_review": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "mappingAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity_equivalent",
+        "definition_equivalent",
+        "formula_and_normalization_compatible",
+        "statistic_scope_compatible",
+        "temporal_scope_compatible",
+        "unit_dimension_compatible",
+        "no_contradictory_evidence"
+      ],
+      "properties": {
+        "quantity_equivalent": {
+          "type": "boolean"
+        },
+        "definition_equivalent": {
+          "type": "boolean"
+        },
+        "formula_and_normalization_compatible": {
+          "type": "boolean"
+        },
+        "statistic_scope_compatible": {
+          "type": "boolean"
+        },
+        "temporal_scope_compatible": {
+          "type": "boolean"
+        },
+        "unit_dimension_compatible": {
+          "type": "boolean"
+        },
+        "no_contradictory_evidence": {
+          "type": "boolean"
+        },
+        "missing_information": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mappingDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry_feature_id",
+        "mapping_status",
+        "existing_feature_id",
+        "rationale",
+        "mapping_assessment",
+        "compared_observation_ids"
+      ],
+      "properties": {
+        "registry_feature_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mapping_status": {
+          "enum": [
+            "MAP_TO_EXISTING",
+            "NO_MATCH",
+            "INSUFFICIENT_EVIDENCE",
+            "CONFLICTING_CANDIDATES"
+          ]
+        },
+        "existing_feature_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mapping_assessment": {
+          "$ref": "#/$defs/mappingAssessment"
+        },
+        "compared_observation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mapping_status": {
+                "const": "MAP_TO_EXISTING"
+              }
+            },
+            "required": [
+              "mapping_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "existing_feature_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "compared_observation_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mapping_status": {
+                "enum": [
+                  "NO_MATCH",
+                  "INSUFFICIENT_EVIDENCE",
+                  "CONFLICTING_CANDIDATES"
+                ]
+              }
+            },
+            "required": [
+              "mapping_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "existing_feature_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
