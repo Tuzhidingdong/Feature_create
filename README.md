@@ -14,7 +14,7 @@ The intended architecture is:
 - **Antigravity Supervisor:** thin orchestration and monitoring layer. It prepares/dispatches tasks, inspects compact progress cards, handles exceptions, and coordinates reconciliation. It must not read every paper in full or perform the bulk extraction itself.
 - **OpenCode Worker A:** source-centric discovery and value extraction, pinned to a verified free OpenCode Go model.
 - **OpenCode Worker B:** independent feature-centric discovery and omission audit, pinned to a second, distinct verified free OpenCode Go model.
-- **Local Python:** deterministic parsing, chunking, scheduling, evidence validation, stable IDs, Registry persistence, checkpoints, audits, and TXT export.
+- **Local Python:** deterministic indexing of upstream parsed outputs, task scheduling, provenance/evidence validation, stable IDs, Registry persistence, checkpoints, audits, and TXT export.
 
 ## Zero paid model-token consumption requirement
 
@@ -74,15 +74,16 @@ python -m pip install -r requirements.txt
 
 ### Required upstream input
 
-Run [chem-literature](https://github.com/Tuzhidingdong/chem-literature) first and ensure it has produced:
-- `research_corpus_paired.csv`
-- the referenced `papers_pdf/` and `papers_si/` files
+Run the [chem-literature preprocessing branch](https://github.com/Tuzhidingdong/chem-literature/tree/feat/chem-literacy-preprocessing-stage) first. Its final `research_corpus_paired.csv` must contain:
+- the curated paper rows and original `local_pdf_path` / `local_si_info` provenance;
+- `preprocessing_path`, `preprocessing_status`, and `preprocessing_qc_report`;
+- one `01_preprocessing/` package per paper, including `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, `main_analysis.md`, `si_analysis.md`, extracted tables, and image assets.
 
-Feature_create consumes that curated CSV only. It does not scan the literature workspace, discover additional PDFs, re-filter papers, or independently decide which files form the paired corpus.
+Feature_create consumes this CSV and the already-generated preprocessing packages. It does not parse PDFs, unpack SI archives, re-extract tables, or render PDF pages. It hashes the CSV-listed raw files only to confirm that they still match the upstream package; raw PDFs/SI are provenance and are never attached to Worker A/B. The CSV remains the complete paper-selection boundary.
 
 Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
 
-Prepare the upstream paired corpus:
+Index the upstream preprocessing packages:
 
 ```powershell
 python scripts/prepare_corpus.py `
@@ -91,7 +92,7 @@ python scripts/prepare_corpus.py `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
 ```
 
-This creates an internal `source_manifest.json` derived from the CSV rows and their referenced files. The manifest is not an independent discovery source.
+This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
 
 Build the isolated Worker A/B queue:
 
