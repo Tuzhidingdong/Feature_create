@@ -43,6 +43,14 @@ class BuildContextReviewQueueTests(unittest.TestCase):
             {"SI-TABLE-UNIT"},
             paper_index,
         ))
+        main_collision_index = json.loads(json.dumps(paper_index))
+        main_collision_index["unit_navigation"][1]["doc_type"] = "MAIN"
+        self.assertFalse(_is_valid_relation(
+            "main_si_reference",
+            {"MAIN-UNIT"},
+            {"SI-TABLE-UNIT"},
+            main_collision_index,
+        ))
         paper_index["cross_source_references"] = []
         self.assertFalse(_is_valid_relation(
             "main_si_reference",
