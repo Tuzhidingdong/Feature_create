@@ -274,6 +274,34 @@ class BuildContextReviewQueueTests(unittest.TestCase):
                 item["unit_id"] for item in evidence["assigned_units"]
             })
 
+            # A corpus-wide manifest update for an unrelated paper must change
+            # the integrity hash but not this paper's task identity.
+            manifest_rows = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_rows["sources"].append({
+                "source_id": "SRC-UNRELATED",
+                "paper_id": "PAPER-OTHER",
+                "source_role": "main",
+                "source_type": "main_text",
+                "extracted_text_path": "extracted_text/unrelated.txt",
+            })
+            manifest_path.write_text(
+                json.dumps(manifest_rows, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            unrelated_change_output = root / "context_dispatch_unrelated_manifest_change"
+            self.assertEqual(main([
+                "--manifest", str(manifest_path),
+                "--queue", str(source_queue),
+                "--unresolved", str(unresolved),
+                "--records", str(records),
+                "--output", str(unrelated_change_output),
+            ]), 0)
+            unchanged_task = json.loads(
+                (unrelated_change_output / "context_review_task_queue.json").read_text(encoding="utf-8")
+            )["tasks"][0]
+            self.assertEqual(task["task_id"], unchanged_task["task_id"])
+            self.assertNotEqual(task["source_manifest_sha256"], unchanged_task["source_manifest_sha256"])
+
             mismatched_tasks = json.loads(source_queue.read_text(encoding="utf-8"))["tasks"]
             mismatched_tasks[-1]["model_ref"] = policy["workers"]["worker_a"]["model_ref"]
             mismatched_queue = prepared / "task_queue_mismatched_worker_b.json"
