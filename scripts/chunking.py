@@ -487,7 +487,9 @@ def build_evidence_units(
         0 if unit.get("source_role") == "main" else 1,
         int(unit.get("page_number") or 0),
         int(unit.get("sort_type") or 0),
+        int((unit.get("locator") or {}).get("source_text_offset_start") or 0),
         int(unit.get("table_sort_index") or 0),
+        int((unit.get("locator") or {}).get("row_index_start_1based") or 0),
         str(unit.get("unit_id")),
     ))
     for unit in units:
