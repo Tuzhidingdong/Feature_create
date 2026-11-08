@@ -152,8 +152,10 @@ def _paper_chunk_index(
             "table_locators": [
                 {
                     "table_id": unit.get("table_id"),
+                    "row_indices_1based": (unit.get("locator") or {}).get("row_indices_1based", []),
                     "row_index_start_1based": (unit.get("locator") or {}).get("row_index_start_1based"),
                     "row_index_end_1based": (unit.get("locator") or {}).get("row_index_end_1based"),
+                    "cell_fragments": (unit.get("locator") or {}).get("cell_fragments", []),
                 }
                 for unit in chunk["units"] if unit.get("table_id")
             ],
