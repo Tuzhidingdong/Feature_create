@@ -302,6 +302,84 @@ def verify_table_cell_is_assigned(
     return True, "table row belongs to this assigned table unit"
 
 
+def validate_cross_chunk_target_nominations(
+    payload: dict[str, Any],
+    task: dict[str, Any],
+) -> list[str]:
+    """Check nominated remote targets against the deterministic paper navigation index."""
+    issues = payload.get("unresolved_items", [])
+    nominated = [item for item in issues if item.get("cross_chunk_target")]
+    if not nominated:
+        return []
+    path_value = task.get("paper_chunk_index_path")
+    if not path_value or not Path(str(path_value)).is_file():
+        return ["Cross-chunk target nominations require the paper_chunk_index.json."]
+    index = read_json(Path(str(path_value)))
+    navigation = {
+        str(item.get("unit_id")): item
+        for item in index.get("unit_navigation", [])
+        if item.get("unit_id")
+    }
+    adjacent_pairs = {
+        (
+            str((item.get("from_segment") or {}).get("unit_id") or ""),
+            str((item.get("to_segment") or {}).get("unit_id") or ""),
+        )
+        for item in index.get("cross_chunk_text_boundaries", [])
+    }
+    row_groups = [
+        {str(unit.get("unit_id")) for unit in group.get("units", [])}
+        for group in index.get("same_original_table_row_groups", [])
+    ]
+    errors: list[str] = []
+    current_chunk_id = str(task.get("chunk_id") or "")
+    for issue_index, issue in enumerate(nominated):
+        target = issue.get("cross_chunk_target") or {}
+        current_ids = {
+            str((ref.get("locator") or {}).get("unit_id"))
+            for ref in issue.get("evidence_refs", [])
+            if (ref.get("locator") or {}).get("unit_id")
+        }
+        target_ids: set[str] = set()
+        target_rows = target.get("target_units") or []
+        if not 1 <= len(target_rows) <= 8:
+            errors.append(
+                f"unresolved_items/{issue_index}/cross_chunk_target: target_units must contain 1-8 units."
+            )
+        for target_index, descriptor in enumerate(target_rows):
+            unit_id = str(descriptor.get("unit_id") or "")
+            nav = navigation.get(unit_id)
+            location = f"unresolved_items/{issue_index}/cross_chunk_target/target_units/{target_index}"
+            if not nav:
+                errors.append(f"{location}: unit_id is not in paper navigation index.")
+                continue
+            if str(descriptor.get("chunk_id")) != str(nav.get("chunk_id")):
+                errors.append(f"{location}: chunk_id does not match unit navigation.")
+            if str(descriptor.get("source_id")) not in set(nav.get("source_ids") or []):
+                errors.append(f"{location}: source_id does not match unit navigation.")
+            if str(nav.get("chunk_id")) == current_chunk_id:
+                errors.append(f"{location}: nominated target must belong to a different chunk.")
+            if unit_id in current_ids:
+                errors.append(f"{location}: target unit duplicates a current evidence unit.")
+            target_ids.add(unit_id)
+
+        basis = target.get("relation_basis")
+        linked = True
+        if basis == "adjacent_text_boundary":
+            linked = any(
+                (left in current_ids and right in target_ids)
+                or (right in current_ids and left in target_ids)
+                for left, right in adjacent_pairs
+            )
+        elif basis == "same_original_table_row":
+            linked = any(bool(group & current_ids) and bool(group & target_ids) for group in row_groups)
+        if not linked:
+            errors.append(
+                f"unresolved_items/{issue_index}/cross_chunk_target: nominated units do not match relation_basis {basis!r}."
+            )
+    return errors
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -458,17 +536,26 @@ def validate_payload(
             if not {"current", "target"}.issubset(review_sides):
                 errors.append("Confirmed context association requires current and target review evidence.")
             for index, fact in enumerate(payload.get("context_facts", [])):
+                fact_refs = fact.get("evidence_refs", [])
                 fact_sides = {
-                    ref.get("evidence_side") for ref in fact.get("evidence_refs", [])
+                    ref.get("evidence_side") for ref in fact_refs
                 }
                 if not {"current", "target"}.issubset(fact_sides):
                     errors.append(
                         f"context_facts/{index}: each context fact must cite current and target evidence."
                     )
+                if any(
+                    ref.get("evidence_status") not in {"verified_text", "verified_table_cell"}
+                    for ref in fact_refs
+                ):
+                    errors.append(
+                        f"context_facts/{index}: confirmed facts require locally verifiable text or table-cell evidence."
+                    )
         elif payload.get("context_facts"):
             errors.append("Non-confirmed context decisions cannot add context_facts.")
 
     if role == "source_discovery":
+        errors.extend(validate_cross_chunk_target_nominations(payload, task))
         observations = {
             item.get("candidate_observation_id")
             for item in payload.get("feature_observations", [])
