@@ -276,7 +276,12 @@ def make_source_units(
             "main_text": 0, "main_tables": 1, "main_figures": 2,
             "si_text": 0, "si_tables": 1, "si_figures": 2,
         }.get(component, 3)
-        return role_order, page_order, component_order, str(unit["scope"]["scope_id"])
+        # Keep a figure caption/image or a table image close to its parent evidence
+        # source. If a unit must spill into another chunk, the stable figure/table
+        # ID still makes the relationship explicit in both bundles.
+        entity_key = str(source.get("table_id") or source.get("figure_id") or source.get("source_id"))
+        asset_order = 0 if source.get("is_visual_asset") else 1
+        return role_order, page_order, component_order, entity_key, asset_order, str(unit["scope"]["scope_id"])
     units.sort(key=sort_key)
     return units
 
