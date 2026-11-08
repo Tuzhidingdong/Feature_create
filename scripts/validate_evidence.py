@@ -268,6 +268,8 @@ def verify_table_cell_is_assigned(
             return False, "The cited table cell is not part of this assigned cell-fragment unit."
         start = locator.get("cell_text_offset_start")
         end = locator.get("cell_text_offset_end")
+        if any(int(cell.get("cell_text_segment_count", 1)) > 1 for cell in matches) and (start is None or end is None):
+            return False, "Split table-cell evidence must cite the exact cell_text_offset_start/end range."
         if start is not None or end is not None:
             if not any(cell.get("cell_text_offset_start") == start and cell.get("cell_text_offset_end") == end for cell in matches):
                 return False, "The cited cell text range does not match the assigned cell fragment."
