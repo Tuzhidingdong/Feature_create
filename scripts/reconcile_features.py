@@ -294,6 +294,25 @@ def evidence_summary(
     }
 
 
+def evidence_refs_in_payload(payload: Any) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            refs = value.get("evidence_refs")
+            if isinstance(refs, list):
+                references.extend(ref for ref in refs if isinstance(ref, dict))
+            for key, child in value.items():
+                if key != "evidence_refs":
+                    visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(payload)
+    return references
+
+
 def initialize_registry(path: Path) -> dict[str, Any]:
     if path.is_file():
         registry = read_json(path)
@@ -747,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
     added_observations = 0
     added_features = 0
     skipped_tasks: list[str] = []
+    skipped_task_reasons: dict[str, str] = {}
 
     with exclusive_lock(lock_path):
         registry = initialize_registry(registry_path)
@@ -765,15 +785,22 @@ def main(argv: list[str] | None = None) -> int:
             task_state = read_json(task_state_path)
             if task_state.get("status") != "complete":
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = f"worker_status_{task_state.get('status', 'unknown')}"
                 continue
             requested_model = task.get("model_ref")
+            if task_state.get("requested_model") != requested_model:
+                skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "worker_requested_model_mismatch"
+                continue
             observed_models = task_state.get("observed_models") or []
             if observed_models and observed_models != [requested_model]:
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "worker_observed_model_mismatch"
                 continue
             validation_item = validation_by_task.get(task_id, {})
             if validation_item.get("status") not in {"evidence_checked", "needs_review"}:
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "missing_or_invalid_evidence_validation"
                 continue
 
             payload = read_json(response_path)
@@ -783,14 +810,44 @@ def main(argv: list[str] | None = None) -> int:
             schema_errors = list(Draft202012Validator(schema).iter_errors(payload))
             if schema_errors:
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "worker_payload_schema_invalid"
                 continue
             if payload.get("task_id") != task_id or payload.get("paper_id") != task["paper_id"]:
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "worker_payload_task_or_paper_id_mismatch"
                 continue
 
             paper = next((item for item in manifest.get("papers", []) if item["paper_id"] == task["paper_id"]), None)
             if not paper:
                 skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "paper_not_found_in_source_manifest"
+                continue
+
+            assigned_source_ids = set(task.get("source_ids", []))
+            payload_source_ids = {
+                str(reference.get("source_id"))
+                for reference in evidence_refs_in_payload(payload)
+                if reference.get("source_id")
+            }
+            payload_source_ids.update(
+                str(candidate.get("source_id"))
+                for candidate in payload.get("feature_observations", [])
+                if candidate.get("source_id")
+            )
+            payload_source_ids.update(
+                str(record.get("source_id"))
+                for record in payload.get("result_records", [])
+                if record.get("source_id")
+            )
+            invalid_source_ids = [
+                source_id for source_id in payload_source_ids
+                if source_id not in assigned_source_ids
+                or source_id not in source_map
+                or source_map.get(source_id, {}).get("paper_id") != paper["paper_id"]
+            ]
+            if invalid_source_ids:
+                skipped_tasks.append(task_id)
+                skipped_task_reasons[task_id] = "evidence_source_outside_assigned_paper:" + ",".join(sorted(invalid_source_ids))
                 continue
 
             candidate_to_persistent: dict[str, tuple[str, str | None, str]] = {}
@@ -900,6 +957,7 @@ def main(argv: list[str] | None = None) -> int:
         "tasks_ingested": len(task_summaries),
         "tasks_skipped": len(skipped_tasks),
         "skipped_task_ids": skipped_tasks,
+        "skipped_task_reasons": skipped_task_reasons,
         "new_observations": added_observations,
         "new_provisional_features": added_features,
         "new_result_records": records_added,
