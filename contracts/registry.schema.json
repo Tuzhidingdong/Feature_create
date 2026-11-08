@@ -449,7 +449,8 @@
           "enum": [
             "python_rule",
             "antigravity_model_recommendation",
-            "human"
+            "human",
+            "opencode_model_recommendation"
           ]
         },
         "contract_version": {
