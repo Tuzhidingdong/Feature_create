@@ -370,6 +370,12 @@ class ApplyContextReviewTests(unittest.TestCase):
             # Keep the Worker B response unchanged, but alter the exact input
             # bundle after validation. The context decision must not be applied.
             Path(task["bundle_path"]).write_text("changed after validation", encoding="utf-8")
+            # Simulate an edited queue that now declares the changed bundle as
+            # the expected input; the older validation report must still reject it.
+            task["bundle_sha256"] = hashlib.sha256(
+                Path(task["bundle_path"]).read_bytes()
+            ).hexdigest()
+            self._write_json(queue_path, {"tasks": [task]})
 
             records_path = root / "result_records.jsonl"
             records_path.write_text(json.dumps({
