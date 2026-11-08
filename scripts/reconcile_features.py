@@ -277,7 +277,10 @@ def evidence_summary(
         "verified_digitization",
         "visual_only",
     )
-    reported_statuses = {item["status_reported"] for item in references}
+    reported_statuses = {
+        item.get("evidence_status", "unverified")
+        for item in references
+    }
     best_status = next((status for status in status_priority if status in reported_statuses), "unverified")
     if verified_refs:
         effective_status = best_status
