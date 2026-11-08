@@ -498,6 +498,7 @@ def make_record(
     reported_method: str | None,
     source_map: dict[str, dict[str, Any]],
     manifest_root: Path,
+    unresolved_issues: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     refs = candidate_record.get("evidence_refs") or []
     evidence = evidence_summary(refs, source_map, manifest_root)
@@ -567,7 +568,7 @@ def make_record(
         "evidence_status": evidence["status"],
         "evidence_verification": evidence,
         "context_notes": candidate_record.get("context_notes"),
-        "unresolved_issues": [],
+        "unresolved_issues": unresolved_issues or [],
         "worker_task_id": task["task_id"],
         "worker_model": task.get("model_ref"),
         "created_at": utc_now(),
@@ -763,6 +764,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     records_to_add: list[dict[str, Any]] = []
+    unresolved_to_add: list[dict[str, Any]] = []
     omissions_to_add: list[dict[str, Any]] = []
     distinctions_to_add: list[dict[str, Any]] = []
     task_summaries: list[dict[str, Any]] = []
@@ -877,11 +879,61 @@ def main(argv: list[str] | None = None) -> int:
                     existing_feature_ids.add(registry_feature_id)
 
             if role == "source_discovery":
+                unresolved_by_record: dict[str, list[dict[str, Any]]] = {}
+                unresolved_by_observation: dict[str, list[dict[str, Any]]] = {}
+                for unresolved_item in payload.get("unresolved_items", []):
+                    unresolved_id = stable_id(
+                        "UNRES",
+                        task_id,
+                        str(unresolved_item.get("item_type")),
+                        str(unresolved_item.get("description")),
+                        str(unresolved_item.get("related_candidate_record_id") or ""),
+                        str(unresolved_item.get("related_candidate_observation_id") or ""),
+                    )
+                    unresolved_to_add.append({
+                        "unresolved_id": unresolved_id,
+                        "paper_id": paper["paper_id"],
+                        "worker_task_id": task_id,
+                        **unresolved_item,
+                    })
+                    linked_record_id = unresolved_item.get("related_candidate_record_id")
+                    linked_observation_id = unresolved_item.get("related_candidate_observation_id")
+                    if linked_record_id:
+                        unresolved_by_record.setdefault(str(linked_record_id), []).append(unresolved_item)
+                    if linked_observation_id:
+                        unresolved_by_observation.setdefault(str(linked_observation_id), []).append(unresolved_item)
+
                 for result in payload.get("result_records", []):
-                    mapping = candidate_to_persistent.get(result["candidate_observation_id"])
+                    candidate_observation_id = result["candidate_observation_id"]
+                    mapping = candidate_to_persistent.get(candidate_observation_id)
                     if not mapping:
                         continue
                     observation_id, registry_feature_id, raw_name = mapping
+                    linked = (
+                        unresolved_by_record.get(str(result.get("candidate_record_id")), [])
+                        + unresolved_by_observation.get(str(candidate_observation_id), [])
+                    )
+                    deduplicated_linked = {
+                        json.dumps(item, sort_keys=True, ensure_ascii=False): item
+                        for item in linked
+                    }
+                    normalized_issues = [
+                        {
+                            "item_type": item.get("item_type"),
+                            "description": item.get("description"),
+                            "evidence_refs": item.get("evidence_refs", []),
+                            "suggested_review": item.get("suggested_review"),
+                        }
+                        for item in deduplicated_linked.values()
+                    ]
+                    reported_method = next(
+                        (
+                            candidate.get("reported_method")
+                            for candidate in payload.get("feature_observations", [])
+                            if candidate.get("candidate_observation_id") == candidate_observation_id
+                        ),
+                        None,
+                    )
                     records_to_add.append(
                         make_record(
                             paper=paper,
@@ -890,8 +942,10 @@ def main(argv: list[str] | None = None) -> int:
                             observation_id=observation_id,
                             registry_feature_id=registry_feature_id,
                             raw_feature_name=raw_name,
+                            reported_method=reported_method,
                             source_map=source_map,
                             manifest_root=manifest_root,
+                            unresolved_issues=normalized_issues,
                         )
                     )
 
@@ -936,6 +990,11 @@ def main(argv: list[str] | None = None) -> int:
             })
 
         records_added = write_upsert_jsonl(records_path, records_to_add, "record_id")
+        unresolved_added = write_upsert_jsonl(
+            report_path.parent / "unresolved_extraction_items.jsonl",
+            unresolved_to_add,
+            "unresolved_id",
+        )
         omissions_added = write_upsert_jsonl(
             report_path.parent / "omission_candidates.jsonl",
             omissions_to_add,
@@ -964,6 +1023,7 @@ def main(argv: list[str] | None = None) -> int:
         "new_observations": added_observations,
         "new_provisional_features": added_features,
         "new_result_records": records_added,
+        "new_unresolved_extraction_items": unresolved_added,
         "new_omission_candidates": omissions_added,
         "new_semantic_distinction_recommendations": distinctions_added,
         "registry_observation_count": len(registry["observations"]),
