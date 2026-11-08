@@ -112,7 +112,7 @@ The task builder does not create one unbounded whole-paper prompt. It creates as
 - `paper_chunk_index.json` provides paper-wide chunk navigation, while each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
 - oversized atomic bundles that still exceed the configured hard limit are blocked explicitly, never truncated silently.
 
-The queue produces one independent Worker A and Worker B task per chunk. The audit counts a source as fully reviewed only after every chunk assigned to each worker has a successful chunk-scoped coverage result.
+The queue produces one independent Worker A and Worker B task per chunk. Each task contains a coverage checklist with one stable `scope_id` for every `(source_id, unit_id)` assignment, including linked visual assets. Each worker must return one coverage item per scope; when a source spans several units/chunks, coverage is aggregated across every scope before that source can be counted as fully reviewed.
 First perform model-price preflight and command planning without inference:
 
 ```powershell
