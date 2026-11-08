@@ -199,12 +199,13 @@ def _chunk_evidence_index(
         # every text block from a page when that page is split across chunks.
         page_slice["blocks"] = [
             {
-                "block_index": block.get("block_index"),
-                "bbox": block.get("bbox"),
-                "type": block.get("type"),
-                "char_count": len(str(block.get("text") or "")),
+                **{
+                    key: value for key, value in block.items()
+                    if key not in {"text", "content", "raw_text", "html"}
+                },
+                "text_char_count": len(str(block.get("text") or block.get("content") or "")),
                 "text_sha256": hashlib.sha256(
-                    str(block.get("text") or "").encode("utf-8")
+                    str(block.get("text") or block.get("content") or "").encode("utf-8")
                 ).hexdigest(),
             }
             for block in page.get("blocks", [])
@@ -645,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
                     task_status = "blocked_preprocessing"
                 elif bundle_char_count > args.max_bundle_chars:
                     task_status = "blocked_bundle_over_limit"
+                elif len(chunk["attachment_paths"]) > args.max_attachments_per_chunk:
+                    task_status = "blocked_attachment_limit"
                 elif command_chars > args.max_command_chars:
                     task_status = "blocked_command_line"
                 else:
@@ -673,6 +676,8 @@ def main(argv: list[str] | None = None) -> int:
                     "unit_ids": chunk["unit_ids"],
                     "unit_count": chunk["unit_count"],
                     "attachment_count": len(attachments),
+                    "visual_attachment_count": len(chunk["attachment_paths"]),
+                    "max_visual_attachments_per_chunk": args.max_attachments_per_chunk,
                     "preprocessing_status": paper.get("preprocessing_status"),
                     "input_status": paper.get("input_status", "ready"),
                     "chunk_id": chunk["chunk_id"],
@@ -718,6 +723,7 @@ def main(argv: list[str] | None = None) -> int:
         "blocked_count": sum(task["task_status"] != "pending" for task in tasks),
         "oversize_atomic_unit_count": oversize_atomic_unit_count,
         "bundle_over_limit_count": sum(1 for task in tasks if task.get("task_status") == "blocked_bundle_over_limit"),
+        "attachment_limit_blocked_count": sum(1 for task in tasks if task.get("task_status") == "blocked_attachment_limit"),
         "chunking_policy": {
             "text_boundary": "upstream page headings, then paragraph/newline boundaries",
             "table_boundary": "original source table rows with global 1-based row and column indices",
@@ -738,6 +744,7 @@ def main(argv: list[str] | None = None) -> int:
         "blocked_count": queue["blocked_count"],
         "oversize_atomic_unit_count": oversize_atomic_unit_count,
         "bundle_over_limit_count": queue["bundle_over_limit_count"],
+        "attachment_limit_blocked_count": queue["attachment_limit_blocked_count"],
         "queue": str(queue_path),
     }
     (output_root / "queue_summary.json").write_text(
