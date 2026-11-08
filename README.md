@@ -109,7 +109,7 @@ The task builder does not create one unbounded whole-paper prompt. It creates as
 - structured tables are divided by original 1-based row numbers; a single oversized row is split into original row/column cell fragments with exact character offsets;
 - a pre-extracted figure/table image is assigned once to its related evidence unit when the upstream index provides that relationship;
 - adjacent snippets and repeated table-prefix rows are marked context-only and do not count as assigned coverage;
-- `paper_chunk_index.json` provides paper-wide chunk navigation, while each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
+- `paper_chunk_index.json` provides paper-wide chunk navigation, including previous/next text-segment links (same source offsets) and same-original-table-row links across chunks; each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
 - oversized atomic bundles that still exceed the configured hard limit are blocked explicitly, never truncated silently.
 
 The queue produces one independent Worker A and Worker B task per chunk. The audit counts a source as fully reviewed only after every chunk assigned to each worker has a successful chunk-scoped coverage result.
