@@ -224,6 +224,8 @@ def _is_valid_relation(
         target_evidence_ids = set()
         for unit_id in target_unit_ids:
             item = navigation.get(unit_id, {})
+            if str(item.get("doc_type") or "").upper() != "SI":
+                continue
             if item.get("table_id"):
                 target_evidence_ids.add(str(item["table_id"]).casefold())
             if item.get("figure_id"):
