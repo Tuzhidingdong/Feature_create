@@ -56,6 +56,39 @@ class ApplyContextReviewTests(unittest.TestCase):
         self._write_json(path, {"contract_version": "0.1"})
         return path
 
+    def _bind_record_and_unresolved_snapshots(
+        self,
+        task: dict,
+        records_path: Path,
+        unresolved_path: Path,
+        queue_path: Path,
+    ) -> None:
+        record = json.loads(records_path.read_text(encoding="utf-8").splitlines()[0])
+        unresolved = json.loads(unresolved_path.read_text(encoding="utf-8").splitlines()[0])
+        record_fields = (
+            "record_id", "paper_id", "doi", "registry_feature_id", "observation_id",
+            "raw_feature_name", "raw_value", "numeric_value", "reported_unit",
+            "result_type", "value_extraction_status", "extraction_status",
+            "statistic_label", "replicate_count", "sample_identity", "condition_facts",
+            "time_cycle_facts", "protocol_facts", "other_context_facts",
+            "measurement_or_calculation_method", "source_id", "source_type",
+            "source_location", "evidence_refs", "evidence_status", "context_notes",
+            "worker_task_id", "worker_model",
+        )
+        unresolved_fields = (
+            "unresolved_id", "paper_id", "worker_task_id", "item_type", "description",
+            "related_candidate_record_id", "related_candidate_observation_id",
+            "evidence_refs", "cross_chunk_target", "resolution_status", "resolution_history",
+        )
+        record_snapshot = {key: record.get(key) for key in record_fields}
+        unresolved_snapshot = {key: unresolved.get(key) for key in unresolved_fields}
+        canonical = lambda value: json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        task["record_snapshot_sha256"] = hashlib.sha256(canonical(record_snapshot)).hexdigest()
+        task["unresolved_snapshot_sha256"] = hashlib.sha256(canonical(unresolved_snapshot)).hexdigest()
+        self._write_json(queue_path, {"tasks": [task]})
+
     def test_confirmed_context_adds_only_context_facts_and_resolves_issue(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
