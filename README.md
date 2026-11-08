@@ -71,13 +71,26 @@ Install Python dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Prepare the corpus:
+### Required upstream input
+
+Run [chem-literature](https://github.com/Tuzhidingdong/chem-literature) first and ensure it has produced:
+- `research_corpus_paired.csv`
+- the referenced `papers_pdf/` and `papers_si/` files
+
+Feature_create consumes that curated CSV only. It does not scan the literature workspace, discover additional PDFs, re-filter papers, or independently decide which files form the paired corpus.
+
+Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
+
+Prepare the upstream paired corpus:
 
 ```powershell
 python scripts/prepare_corpus.py `
-  --input "E:\\Zinc_batters_datas" `
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
+  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
 ```
+
+This creates an internal `source_manifest.json` derived from the CSV rows and their referenced files. The manifest is not an independent discovery source.
 
 Build the isolated Worker A/B queue:
 
