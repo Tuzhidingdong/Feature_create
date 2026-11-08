@@ -58,6 +58,14 @@ def stable_id(prefix: str, *parts: str, length: int = 16) -> str:
     return f"{prefix}-{hashlib.sha256(material.encode('utf-8')).hexdigest()[:length].upper()}"
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def safe_source_text(source: dict[str, Any], root: Path) -> str:
     relative = source.get("extracted_text_path")
     if not relative:
@@ -309,7 +317,7 @@ def build_context_task(
         "other_context_facts_already_extracted": record.get("other_context_facts", []),
     }
     attachment_hashes = {
-        attachment: hashlib.sha256(Path(attachment).read_bytes()).hexdigest()
+        attachment: sha256_file(Path(attachment))
         for attachment in attachment_paths if Path(attachment).is_file()
     }
     prompt_sha256 = hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()
