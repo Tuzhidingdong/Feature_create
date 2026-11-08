@@ -136,6 +136,20 @@ class ApplyContextReviewTests(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(1, report["tasks_applied"])
             self.assertEqual(1, report["context_facts_added"])
+            self.assertEqual(1, len(updated["context_review_history"]))
+
+            # Re-applying the same completed task must not duplicate either the
+            # context fact or its decision-history entry.
+            self.assertEqual(main([
+                "--queue", str(queue_path),
+                "--run-dir", str(run_dir),
+                "--records", str(records_path),
+                "--unresolved", str(unresolved_path),
+                "--report", str(report_path),
+            ]), 0)
+            repeated = json.loads(records_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(1, len(repeated["sample_identity"]))
+            self.assertEqual(1, len(repeated["context_review_history"]))
 
     def test_insufficient_evidence_keeps_unresolved_issue_open_and_adds_no_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
