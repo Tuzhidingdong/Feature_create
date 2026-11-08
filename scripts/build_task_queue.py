@@ -88,6 +88,22 @@ def build_bundle(
         }:
             attachments.append(str(source_path.resolve()))
 
+        # Rendered figure/table pages are stored beside the source manifest.
+        # Add them explicitly so visual axes/panels are available to the worker.
+        for visual_page in source.get("visual_pages", []):
+            relative_visual_path = visual_page.get("relative_path")
+            if not relative_visual_path:
+                continue
+            visual_path = (source_output_root / "visual_assets" / relative_visual_path).resolve()
+            try:
+                visual_path.relative_to(source_output_root.resolve())
+            except ValueError as exc:
+                raise TaskQueueError(
+                    f"Visual asset path escapes prepared corpus directory: {visual_path}"
+                ) from exc
+            if visual_path.is_file():
+                attachments.append(str(visual_path))
+
     lines.extend([
         "",
         "## Review requirements",
@@ -99,6 +115,11 @@ def build_bundle(
         "- Keep sample identity, conditions, time/cycle facts, protocols, and result values separate.",
         "- Figure images are attached individually where available. Original PDFs are also attached where present.",
         "- If an attachment could not be read, report it in coverage and unresolved items.",
+        "",
+        "## Visual page attachments",
+        "",
+        "- PDF pages containing figure/table/scheme captions are rendered into visual_assets and attached separately when available.",
+        "- These page images supplement the extracted text and original PDFs; a missing render is recorded in the source manifest.",
         "",
         "## Extracted source text",
         "",
