@@ -37,6 +37,34 @@ def stable_task_id(paper_id: str, worker_role: str, fingerprint: str) -> str:
     return f"FC-{prefix}-{digest}"
 
 
+def _scope_id(unit_id: str, source_id: str) -> str:
+    digest = hashlib.sha256(f"{unit_id}|{source_id}".encode("utf-8")).hexdigest()[:16].upper()
+    return f"SCP-{digest}"
+
+
+def _source_scopes_for_units(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Create one auditable scope per unit/source pair, including linked visual assets."""
+    scopes = []
+    for unit in units:
+        for source_id in sorted(set(unit.get("source_ids") or [unit.get("source_id")])):
+            if not source_id:
+                continue
+            scopes.append({
+                "scope_id": _scope_id(str(unit["unit_id"]), str(source_id)),
+                "source_id": str(source_id),
+                "unit_id": str(unit["unit_id"]),
+                "component": unit.get("component", "other"),
+                "source_type": unit.get("source_type", "other"),
+                "unit_kind": unit.get("unit_kind", "other"),
+                "doc_type": unit.get("doc_type"),
+                "page_number": unit.get("page_number"),
+                "table_id": unit.get("table_id"),
+                "figure_id": unit.get("figure_id"),
+                "locator": unit.get("locator", {}),
+            })
+    return sorted(scopes, key=lambda item: (item["source_id"], item["unit_id"]))
+
+
 def load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -399,6 +427,21 @@ def build_bundle(
     ]
     attachments: list[str] = []
     all_chars = 0
+    source_scopes = _source_scopes_for_units(chunk["units"])
+    lines.extend([
+        "",
+        "## Assigned review scopes (coverage checklist)",
+        "",
+        "| Scope ID | Source ID | Unit ID | Component | Unit kind | Original locator |",
+        "|---|---|---|---|---|---|",
+    ])
+    for scope in source_scopes:
+        locator = json.dumps(scope.get("locator") or {}, ensure_ascii=False, separators=(",", ":")).replace("|", "\\|")
+        lines.append(
+            f"| {scope['scope_id']} | {scope['source_id']} | {scope['unit_id']} | "
+            f"{scope.get('component')} | {scope.get('unit_kind')} | {locator} |"
+        )
+    lines.extend(["", "Each row above is one required coverage item. Repeat the source_id when it has multiple assigned units."])
     for unit in chunk["units"]:
         locator = json.dumps(unit.get("locator", {}), ensure_ascii=False, separators=(",", ":")).replace("|", "\\|")
         lines.append(
@@ -410,7 +453,9 @@ def build_bundle(
         "",
         "## Review requirements",
         "",
-        "- Review every assigned evidence unit in this chunk; report coverage for the assigned source IDs only.",
+        "- Review every assigned evidence unit in this chunk; return exactly one coverage/coverage_audit entry for every row in Assigned review scopes.",
+        "- Every coverage entry must contain the exact scope_id and source_id shown in the checklist. A repeated source_id with different scope_id values requires separate entries; never collapse these entries into one source-level status.",
+        "- A scope is fully reviewed/reviewed only if the entire assigned evidence unit (including every assigned original text range, table row/cell fragment, and its linked asset) was inspected. Context-only text and repeated header rows are not assigned scopes.",
         "- Every evidence reference locator must include the exact unit_id and chunk_id from the assigned evidence manifest, plus the original upstream page/table/row/column/figure/bbox locator.",
         "- For source IDs spanning multiple chunks, mark only the assigned page/range/table rows/cells as reviewed in the coverage notes.",
         "- Never claim the whole source or paper is fully reviewed merely because this chunk is complete.",
@@ -657,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
                 for unit in chunk["units"]:
                     for source_id in unit.get("source_ids", []):
                         source_unit_ids.setdefault(source_id, []).append(unit["unit_id"])
+                source_scopes = _source_scopes_for_units(chunk["units"])
                 worker_task = {
                     "task_id": task_id,
                     "contract_version": "0.2",
@@ -675,6 +721,8 @@ def main(argv: list[str] | None = None) -> int:
                     "source_count": len(chunk["source_ids"]),
                     "unit_ids": chunk["unit_ids"],
                     "unit_count": chunk["unit_count"],
+                    "source_scopes": source_scopes,
+                    "scope_count": len(source_scopes),
                     "attachment_count": len(attachments),
                     "visual_attachment_count": len(chunk["attachment_paths"]),
                     "max_visual_attachments_per_chunk": args.max_attachments_per_chunk,
