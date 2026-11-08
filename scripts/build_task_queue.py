@@ -556,6 +556,15 @@ def build_bundle(
     ]
     attachments: list[str] = []
     all_chars = 0
+    # Finish the evidence-manifest table before starting the coverage checklist.
+    for unit in chunk["units"]:
+        locator = json.dumps(unit.get("locator", {}), ensure_ascii=False, separators=(",", ":")).replace("|", "\\|")
+        lines.append(
+            f"| {unit['unit_id']} | {', '.join(unit.get('source_ids', []))} | "
+            f"{unit.get('component', 'other')} | {unit.get('source_type', 'other')} | {locator} |"
+        )
+        attachments.extend(unit.get("attachment_paths", []))
+
     source_scopes = _source_scopes_for_units(chunk["units"])
     lines.extend([
         "",
@@ -571,13 +580,6 @@ def build_bundle(
             f"{scope.get('component')} | {scope.get('unit_kind')} | {locator} |"
         )
     lines.extend(["", "Each row above is one required coverage item. Repeat the source_id when it has multiple assigned units."])
-    for unit in chunk["units"]:
-        locator = json.dumps(unit.get("locator", {}), ensure_ascii=False, separators=(",", ":")).replace("|", "\\|")
-        lines.append(
-            f"| {unit['unit_id']} | {', '.join(unit.get('source_ids', []))} | "
-            f"{unit.get('component', 'other')} | {unit.get('source_type', 'other')} | {locator} |"
-        )
-        attachments.extend(unit.get("attachment_paths", []))
     lines.extend([
         "",
         "## Review requirements",
