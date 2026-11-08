@@ -184,7 +184,7 @@ The builder retrieves only:
 - the specific remote target unit(s) nominated by Worker A and verified against the paper navigation index;
 - the existing result record's identifying fields and already-extracted context, for reference only.
 
-It does not attach the entire paper, read other workers' outputs, or parse raw PDFs/SI. The default cap is eight target units per review. The existing Worker B model from config/execution_policy.json is reused; no third model is introduced.
+It does not attach the entire paper, read other workers' outputs, or parse raw PDFs/SI. The default cap is eight target units per review. The existing Worker B model from config/execution_policy.json is reused; no third model is introduced. Already reviewed/resolved unresolved items are skipped by default. A task ID fingerprints the exact question, current/target unit content and locators, visual-asset hashes, model ID, and dedicated prompt hash; changed inputs therefore create a new task instead of reusing a stale completed response.
 
 Run the free-model preflight without inference:
 
@@ -223,7 +223,7 @@ python scripts/apply_context_reviews.py `
   --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs\\application_report.json"
 ~~~
 
-A confirmed fact is appended only to its matching context category (sample_identity, condition_facts, time_cycle_facts, protocol_facts, or other_context_facts). The applier protects the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, and first-pass evidence references. no_association closes that specific question without adding a fact. insufficient_evidence and conflicting_evidence remain open for human review. Every decision and its two-sided citations are retained in the unresolved item and the linked result record's context-review history.
+A confirmed fact is appended only to its matching context category (sample_identity, condition_facts, time_cycle_facts, protocol_facts, or other_context_facts). When the same fact already exists from Worker A, the applier enriches that single fact with the additional verified evidence references rather than duplicating it. The applier protects the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, first-pass evidence references, and other result metadata. It also checks that the current response.json SHA-256 still matches the exact response file hash recorded by evidence_validation.json; a changed file is not applied. no_association and conflicting_evidence require verified text/table evidence on both sides; if either side cannot be verified, Worker B must return insufficient_evidence. no_association closes that specific question without adding a fact. insufficient_evidence and conflicting_evidence remain open for human review. Every decision and its two-sided citations are retained in the unresolved item and the linked result record's context-review history.
 
 ## 9. Build global cross-paper Feature review tasks
 
