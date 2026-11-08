@@ -303,7 +303,8 @@ class BuildContextReviewQueueTests(unittest.TestCase):
             ]), 0)
             retry_queue = json.loads((inconclusive_retry / "context_review_task_queue.json").read_text(encoding="utf-8"))
             self.assertEqual(1, retry_queue["task_count"])
-            self.assertEqual(revised_queue["tasks"][0]["task_id"], retry_queue["tasks"][0]["task_id"])
+            self.assertNotEqual(revised_queue["tasks"][0]["task_id"], retry_queue["tasks"][0]["task_id"])
+            self.assertEqual(1, retry_queue["tasks"][0]["review_attempt"])
 
 
 if __name__ == "__main__":
