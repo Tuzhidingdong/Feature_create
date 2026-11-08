@@ -57,7 +57,7 @@ def source_text(output_root: Path, source: dict[str, Any]) -> str:
 def build_bundle(
     paper: dict[str, Any],
     source_records: list[dict[str, Any]],
-    output_root: Path,
+    source_output_root: Path,
 ) -> tuple[str, list[str], int]:
     lines = [
         "# Feature_create paper task input",
@@ -104,7 +104,7 @@ def build_bundle(
     ])
 
     for source in source_records:
-        text = source_text(output_root, source)
+        text = source_text(source_output_root, source)
         if not text.strip():
             lines.extend([
                 f"### SOURCE {source['source_id']} — {source['relative_path']}",
@@ -149,12 +149,14 @@ def main(argv: list[str] | None = None) -> int:
     sources_by_id = {source["source_id"]: source for source in manifest.get("sources", [])}
     tasks: list[dict[str, Any]] = []
     papers = manifest.get("papers", [])
+    manifest_root = args.manifest.expanduser().resolve().parent
+
     for paper in papers:
         paper_sources = [sources_by_id[sid] for sid in paper.get("source_ids", []) if sid in sources_by_id]
         if not paper_sources:
             continue
         paper_sources.sort(key=lambda s: (s["source_role"] != "main", s["relative_path"].casefold()))
-        bundle, attachments, extracted_chars = build_bundle(paper, paper_sources, output_root)
+        bundle, attachments, extracted_chars = build_bundle(paper, paper_sources, manifest_root)
         paper_hash = hashlib.sha256(
             "|".join(sorted(s["sha256"] for s in paper_sources)).encode("utf-8")
         ).hexdigest()
