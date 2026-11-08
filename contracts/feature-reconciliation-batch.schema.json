@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/feature-reconciliation-batch.schema.json",
+  "title": "Feature_create Global Feature Reconciliation Batch",
+  "description": "Worker B semantic review of candidate canonical feature pairs. This is a recommendation contract; Python applies only decisions that pass deterministic merge gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "task_id",
+    "task_type",
+    "registry_id",
+    "pair_decisions",
+    "unresolved_items"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_type": {
+      "const": "semantic_reconciliation"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pair_decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pairDecision"
+      }
+    },
+    "unresolved_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_pair_id",
+          "description"
+        ],
+        "properties": {
+          "candidate_pair_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_review": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "equivalenceAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity_equivalent",
+        "definition_equivalent",
+        "formula_and_normalization_compatible",
+        "statistic_scope_compatible",
+        "temporal_scope_compatible",
+        "unit_dimension_compatible",
+        "no_contradictory_evidence"
+      ],
+      "properties": {
+        "quantity_equivalent": {
+          "type": "boolean"
+        },
+        "definition_equivalent": {
+          "type": "boolean"
+        },
+        "formula_and_normalization_compatible": {
+          "type": "boolean"
+        },
+        "statistic_scope_compatible": {
+          "type": "boolean"
+        },
+        "temporal_scope_compatible": {
+          "type": "boolean"
+        },
+        "unit_dimension_compatible": {
+          "type": "boolean"
+        },
+        "no_contradictory_evidence": {
+          "type": "boolean"
+        },
+        "measurement_method_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_type_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing_information": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "pairDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_pair_id",
+        "registry_feature_a_id",
+        "registry_feature_b_id",
+        "relationship",
+        "recommended_action",
+        "rationale",
+        "equivalence_assessment",
+        "compared_observation_ids",
+        "evidence_refs"
+      ],
+      "properties": {
+        "candidate_pair_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry_feature_a_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry_feature_b_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship": {
+          "enum": [
+            "SAME_FEATURE",
+            "RELATED_BUT_DISTINCT",
+            "SAME_FAMILY_DIFFERENT_STATISTIC",
+            "INSUFFICIENT_EVIDENCE",
+            "NOT_A_RESULT_FEATURE",
+            "CONDITION_ONLY"
+          ]
+        },
+        "recommended_action": {
+          "enum": [
+            "merge_candidates",
+            "keep_separate",
+            "request_targeted_review",
+            "no_change"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "equivalence_assessment": {
+          "$ref": "#/$defs/equivalenceAssessment"
+        },
+        "compared_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observation_id",
+              "source_id",
+              "locator"
+            ],
+            "properties": {
+              "observation_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "locator": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "quote_or_cell_value": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
