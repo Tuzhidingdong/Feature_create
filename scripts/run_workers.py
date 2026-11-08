@@ -359,31 +359,58 @@ def validate_worker_payload(payload: dict[str, Any], task: dict[str, Any]) -> li
     if payload.get("paper_id") != task["paper_id"]:
         problems.append("paper_id does not match the dispatched task.")
 
+    def validate_scope_coverage(rows: list[dict[str, Any]], label: str) -> None:
+        expected = {
+            str(scope.get("scope_id")): str(scope.get("source_id"))
+            for scope in task.get("source_scopes", [])
+            if scope.get("scope_id") and scope.get("source_id")
+        }
+        if not expected:
+            # Compatibility for legacy queues that have not yet been rebuilt.
+            returned_sources = {item.get("source_id") for item in rows}
+            for missing_source_id in sorted(set(task.get("source_ids", [])) - returned_sources):
+                problems.append(
+                    f"{label}: source_id {missing_source_id!r} is missing from the coverage manifest."
+                )
+            return
+
+        returned_scope_ids = [str(item.get("scope_id") or "") for item in rows]
+        returned = set(returned_scope_ids)
+        missing = sorted(set(expected) - returned)
+        unexpected = sorted(returned - set(expected))
+        duplicates = sorted({
+            scope_id for scope_id in returned_scope_ids
+            if scope_id and returned_scope_ids.count(scope_id) > 1
+        })
+        if missing:
+            problems.append(f"{label}: missing assigned scope_ids: " + ", ".join(missing))
+        if unexpected:
+            problems.append(f"{label}: unexpected scope_ids: " + ", ".join(unexpected))
+        if duplicates:
+            problems.append(f"{label}: duplicate scope_ids: " + ", ".join(duplicates))
+        for item in rows:
+            scope_id = str(item.get("scope_id") or "")
+            source_id = str(item.get("source_id") or "")
+            expected_source = expected.get(scope_id)
+            if expected_source is not None and source_id != expected_source:
+                problems.append(
+                    f"{label}: scope_id {scope_id!r} belongs to source_id "
+                    f"{expected_source!r}, not {source_id!r}."
+                )
+
     if task["worker_role"] == "source_discovery":
         observations = {
             item.get("candidate_observation_id")
             for item in payload.get("feature_observations", [])
         }
-        coverage_source_ids = {
-            item.get("source_id") for item in payload.get("coverage", [])
-        }
-        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
-            problems.append(
-                f"coverage: source_id {missing_source_id!r} is missing from the coverage manifest."
-            )
+        validate_scope_coverage(payload.get("coverage", []), "coverage")
         for index, record in enumerate(payload.get("result_records", [])):
             if record.get("candidate_observation_id") not in observations:
                 problems.append(
                     f"result_records/{index}: candidate_observation_id is not in feature_observations."
                 )
     elif task["worker_role"] == "feature_audit":
-        coverage_source_ids = {
-            item.get("source_id") for item in payload.get("coverage_audit", [])
-        }
-        for missing_source_id in sorted(set(task.get("source_ids", [])) - coverage_source_ids):
-            problems.append(
-                f"coverage_audit: source_id {missing_source_id!r} is missing from the independent coverage review."
-            )
+        validate_scope_coverage(payload.get("coverage_audit", []), "coverage_audit")
     return problems
 
 
