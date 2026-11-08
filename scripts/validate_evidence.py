@@ -176,7 +176,28 @@ def verify_table_cell(
             f"table has {len(rows)} rows."
         )
     actual = rows[row_index - 1][column_index - 1]
-    if normalize_for_search(str(actual if actual is not None else "")) != normalize_for_search(quote):
+    actual_text = "" if actual is None else str(actual)
+    fragment_start = locator.get("cell_text_offset_start")
+    fragment_end = locator.get("cell_text_offset_end")
+    if fragment_start is not None or fragment_end is not None:
+        try:
+            start = int(fragment_start)
+            end = int(fragment_end)
+        except (TypeError, ValueError):
+            return False, "Cell fragment locator requires integer cell_text_offset_start/end."
+        if start < 0 or end < start or end > len(actual_text):
+            return False, "Cell fragment offsets are outside the original cell value."
+        expected = actual_text[start:end]
+        if normalize_for_search(expected) != normalize_for_search(quote):
+            return False, (
+                f"Claimed table-cell fragment does not match upstream rows at "
+                f"row {row_index}, column {column_index}, offsets {start}:{end}."
+            )
+        return True, (
+            f"exact upstream table-cell fragment verified at row {row_index}, "
+            f"column {column_index}, offsets {start}:{end}"
+        )
+    if normalize_for_search(actual_text) != normalize_for_search(quote):
         return False, (
             f"Claimed table cell does not match upstream rows at "
             f"row {row_index}, column {column_index}."
