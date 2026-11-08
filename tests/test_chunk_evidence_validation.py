@@ -153,7 +153,7 @@ class ChunkEvidenceValidationTests(unittest.TestCase):
             invalid["review_evidence_refs"][1]["quote_or_cell_value"] = "Capacity for sample S-01"
             bad_result = validate_payload(invalid, "cross_chunk_context", task, sources, root)
             self.assertEqual("needs_review", bad_result["status"])
-            self.assertTrue(any("not present within the exact assigned text-unit range" in item for item in bad_result["errors"]))
+            self.assertTrue(any("not present within the assigned text-unit range" in item for item in bad_result["errors"]))
 
     def test_quote_must_be_inside_assigned_text_segment_not_elsewhere_in_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
