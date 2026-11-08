@@ -342,6 +342,7 @@ class ApplyContextReviewTests(unittest.TestCase):
             }) + "\n", encoding="utf-8")
 
             self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
+            self._bind_record_and_unresolved_snapshots(task, records_path, unresolved_path, queue_path)
             report_path = root / "report.json"
             self.assertEqual(main([
                 "--queue", str(queue_path),
