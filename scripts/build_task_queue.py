@@ -322,6 +322,7 @@ def _paper_chunk_index(
             {
                 "unit_id": unit["unit_id"],
                 "chunk_id": unit["chunk_id"],
+                "source_id": unit.get("source_id"),
                 "source_ids": unit.get("source_ids", []),
                 "source_type": unit.get("source_type"),
                 "component": unit.get("component"),
