@@ -123,6 +123,8 @@ def context_issue_count(record: dict[str, Any]) -> int:
     count = 0
     for issue in explicit:
         if isinstance(issue, dict):
+            if issue.get("resolution_status") in {"association_confirmed", "no_association"}:
+                continue
             issue_type = str(issue.get("type") or issue.get("item_type") or "").casefold()
             description = str(issue.get("description") or "").casefold()
             if (
@@ -155,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--reconciliation-queue", type=Path)
     parser.add_argument("--mapping-queue", type=Path)
+    parser.add_argument("--context-review-queue", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -171,9 +174,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.reconciliation_queue else {}
     )
     mapping_queue = read_json(args.mapping_queue.resolve(), required=False) if args.mapping_queue else {}
+    context_review_queue = read_json(args.context_review_queue.resolve(), required=False) if args.context_review_queue else {}
     reconciliation_tasks = reconciliation_queue.get("tasks", [])
     mapping_tasks = mapping_queue.get("tasks", [])
-    all_tasks = list(tasks) + list(reconciliation_tasks) + list(mapping_tasks)
+    context_review_tasks = context_review_queue.get("tasks", [])
+    all_tasks = list(tasks) + list(reconciliation_tasks) + list(mapping_tasks) + list(context_review_tasks)
 
     tasks_by_role: dict[str, list[dict[str, Any]]] = {}
     for task in all_tasks:
@@ -344,6 +349,22 @@ def main(argv: list[str] | None = None) -> int:
     new_id_features = sum(1 for item in active_features if not item.get("existing_feature_id"))
 
     explicit_context_unresolved = sum(context_issue_count(record) for record in records)
+    context_review_status_counts = Counter()
+    context_review_decision_counts = Counter()
+    for context_task in context_review_tasks:
+        state = task_state(context_task)
+        state_name = str(
+            state.get("status")
+            or (context_task.get("task_status") if context_task.get("task_status") != "pending" else "not_started")
+        )
+        context_review_status_counts[state_name] += 1
+        response_path = Path(str(context_task.get("output_dir") or "")) / "response.json"
+        if state_name == "complete" and response_path.is_file():
+            try:
+                response = read_json(response_path)
+                context_review_decision_counts[str(response.get("decision", "not_reported"))] += 1
+            except Exception:
+                context_review_decision_counts["invalid_response"] += 1
     records_with_context_notes = sum(
         1 for record in records
         if isinstance(record.get("context_notes"), str) and record["context_notes"].strip()
@@ -435,12 +456,19 @@ def main(argv: list[str] | None = None) -> int:
             "initial_discovery_task_count": len(tasks),
             "cross_paper_reconciliation_task_count": len(reconciliation_tasks),
             "existing_schema_mapping_task_count": len(mapping_tasks),
+            "cross_chunk_context_review_task_count": len(context_review_tasks),
             "all_worker_task_count": len(all_tasks),
             "planned_paper_chunk_count": len(chunk_ids),
             "chunks_fully_reviewed_by_both": len(chunks_full_both),
             "chunks_partial_or_missing": len(chunk_ids) - len(chunks_full_both),
         },
         "paper_chunk_coverage": chunk_counts_by_paper,
+        "cross_chunk_context_review": {
+            "task_count": len(context_review_tasks),
+            "task_status_counts": dict(context_review_status_counts),
+            "decision_counts": dict(context_review_decision_counts),
+            "unresolved_context_items_remaining": explicit_context_unresolved,
+        },
         "existing_schema_mapping": {
             "mapping_task_count": len(mapping_queue.get("tasks", [])),
             "mapping_task_status_counts": dict(Counter(mapping_task_states)),
