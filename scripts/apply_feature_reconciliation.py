@@ -560,10 +560,10 @@ def main(argv: list[str] | None = None) -> int:
                 report["pairs_under_review"] += 1
                 continue
 
-            if pair.get("decision_status") in {"applied_merge", "resolved_keep_separate"}:
+            if pair.get("decision_status") in {"applied_merge", "resolved_keep_separate", "stale_after_merge"}:
                 report["decisions"].append({
                     "candidate_pair_id": pair_id,
-                    "status": "already_resolved",
+                    "status": pair.get("decision_status", "already_resolved"),
                 })
                 continue
 
