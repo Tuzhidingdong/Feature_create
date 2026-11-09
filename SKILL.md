@@ -89,14 +89,14 @@ Python must never silently change the provider/model to continue a failed task.
 
 ### Phase 0 — Preflight and cost gate
 
-1. Require `research_corpus_paired.csv` from the merged [chem-literature main branch](https://github.com/Tuzhidingdong/chem-literature), not a harvesting-only CSV.
-2. Require `preprocessing_path` and `preprocessing_status` on every selected CSV row.
+1. Require the complete `research_corpus_paired.csv` from the merged [chem-literature main branch](https://github.com/Tuzhidingdong/chem-literature), not a harvesting-only CSV. An optional sample may be created from this file before preparation.
+2. For the selected input CSV (full or sampled), require `preprocessing_path` and `preprocessing_status` on every row.
 3. Resolve `preprocessing_path`, `local_pdf_path`, and `local_si_info` against the upstream workflow working directory (CSV directory by default, or an explicit corpus root).
-4. Treat CSV rows as the complete and authoritative paper list. Do not scan for extra papers, repeat article screening, or substitute unlisted files.
+4. Treat the CSV supplied to the current run as its complete and authoritative paper list. Do not scan for extra papers, repeat article screening, or substitute unlisted files.
 5. Validate the per-paper `01_preprocessing/` package, package version 1.1.0, `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, parsed text, table metadata, and referenced image assets.
 6. Hash-check the CSV-listed raw MAIN/SI files against upstream inventory records. This is integrity verification only; raw files must not be parsed, unpacked, rendered, or attached to workers.
 7. Require CSV `preprocessing_status` to match `evidence_index.processing_summary.status`. Block missing/corrupt packages and hash conflicts. Preserve scanned-page and unsupported-SI states as explicit warnings.
-8. Record upstream CSV and evidence-index paths/hashes, row count, source IDs, package statuses, QC warnings, raw-source hashes, and asset hashes.
+8. Record upstream CSV and evidence-index paths/hashes, row count, source IDs, package statuses, QC warnings, raw-source hashes, and asset hashes. When sampling was used, also verify and record the sampling manifest, seed, fraction, strata, selected-paper count, and sampled-CSV hash.
 9. Read the supplied Feature Schema as a mapping reference only.
 10. Refresh/check the available OpenCode model catalog.
 11. Confirm Worker A and Worker B use two distinct exact OpenCode Go model references.
@@ -104,9 +104,24 @@ Python must never silently change the provider/model to continue a failed task.
 13. Check deterministic task titles and ensure no helper-model default can select a paid model.
 14. If cost/availability checks are inconclusive, stop before dispatching semantic work.
 
+### Phase 0A — Optional deterministic paper-level sampling
+
+For a very large chem-literature corpus, the user may choose to build the Feature tree from a reproducible subset instead of every preprocessed paper. This is an explicit reduction of the run's paper scope, not a new literature-screening or feature-selection step.
+
+1. Run `scripts/sample_corpus.py` against the complete `research_corpus_paired.csv` before `prepare_corpus.py`.
+2. Default to `--fraction 0.1` (10% of eligible unique papers) and `--stratify-by year`. The default seed is `feature-create-v1`; record any user-supplied seed.
+3. Treat a normalized DOI as the paper identity. If DOI is missing, use normalized title + year + journal. Keep every CSV row that belongs to a selected paper.
+4. Exclude rows with missing `preprocessing_path` or unsupported/failed preprocessing status before calculating the sample size. Report every excluded paper and reason in `sampling_manifest.json`.
+5. Use proportional largest-remainder allocation across configured strata so selected counts sum exactly to the rounded target sample count. The identical input bytes, fraction, seed, and stratification columns must reproduce the same selected identities.
+6. Inspect the generated `sampled_research_corpus_paired.csv` and `sampling_manifest.json`. Do not edit the sampled CSV after creating the manifest.
+7. Pass both files to `prepare_corpus.py` using `--paired-csv` and `--sampling-manifest`. Preparation must verify the sampled CSV SHA-256 before indexing and preserve the sampling parameters, source/sample hashes, selected keys, and selection counts in `source_manifest.json`.
+8. If the user chooses full-corpus processing, skip the sampler and omit `--sampling-manifest`. Never silently sample or silently expand a sample to the full corpus.
+
+Sampling operates only on CSV metadata; it does not open raw PDFs, SI files, or preprocessed package contents. Once a paper is selected, its entire upstream-preprocessed MAIN/SI text, tables, captions, evidence index, and related visual assets remain available to the normal downstream pipeline. It is not permissible to take 10% of the pages, tables, or evidence units from a selected paper.
+
 ### Phase 1 — Index upstream preprocessing packages
 
-1. Read only the rows in `research_corpus_paired.csv`.
+1. Read only the rows in the CSV selected for this run: the complete `research_corpus_paired.csv` or the hash-verified `sampled_research_corpus_paired.csv`.
 2. Follow each row's `preprocessing_path` to its `01_preprocessing/` package. Keep `local_pdf_path` and `local_si_info` only as raw-source provenance and hash-integrity inputs.
 3. Keep upstream DOI/title/year/journal/article type and all original CSV row metadata.
 4. Read `main_analysis.md` and `si_analysis.md` exactly as created upstream.
