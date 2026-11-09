@@ -105,10 +105,7 @@ class CorpusSamplingTests(unittest.TestCase):
             decisions = {item["doi"]: item for item in manifest["paper_decisions"]}
             self.assertEqual(20, result["source_paper_count"])
             self.assertEqual(4, result["selected_paper_count"])
-            self.assertEqual(
-                2 if decisions["10.1234/paper-0000"]["selected"] else 1,
-                decisions["10.1234/paper-0000"]["row_count"],
-            )
+            self.assertEqual(2, decisions["10.1234/paper-0000"]["row_count"])
             selected_rows = selected_dois(Path(result["sampled_csv"]))
             self.assertEqual(5 if decisions["10.1234/paper-0000"]["selected"] else 4, len(selected_rows))
 
