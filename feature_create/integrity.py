@@ -174,8 +174,6 @@ def audit_integrity(
                 issues.append(_issue("record_observation_feature_mismatch", "error", f"Result Record {record_id} Feature does not match its Observation's Feature after redirects.", record_id=record_id, record_feature_id=record_feature, observation_feature_id=observation_feature))
             else:
                 feature_to_records[str(resolved_record)].append(record_id)
-        if record.get("source_id") and observation.get("source_id") and record.get("source_id") != observation.get("source_id"):
-            issues.append(_issue("record_observation_source_mismatch", "error", f"Result Record {record_id} and Observation {observation_id} refer to different source IDs.", record_id=record_id, record_source_id=record.get("source_id"), observation_source_id=observation.get("source_id")))
 
     for observation_id, observation in observations.items():
         if observation.get("variable_role") != "result_feature" or observation.get("discovery_status") == "excluded":
