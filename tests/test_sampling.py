@@ -375,6 +375,29 @@ class CorpusSamplingTests(unittest.TestCase):
             self.assertEqual(0, second["newly_selected_paper_count"])
             self.assertEqual([], selected_dois(Path(second["incremental_csv"])))
 
+    def test_csv_header_whitespace_is_normalized_without_losing_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "headers-with-spaces.csv"
+            rows = make_rows(20)
+            with source.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow([f" {name} " for name in FIELDS])
+                for row in rows:
+                    writer.writerow([row[name] for name in FIELDS])
+
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.2", seed="header-normalization",
+                stratify_by=("year",),
+            )
+            sampled = Path(result["sampled_csv"])
+            with sampled.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                self.assertEqual(FIELDS, reader.fieldnames)
+                output_rows = list(reader)
+            self.assertEqual(4, len(output_rows))
+            self.assertTrue(all(row["abstract"].startswith("Abstract ") for row in output_rows))
+
     def test_invalid_fraction_and_missing_identity_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
