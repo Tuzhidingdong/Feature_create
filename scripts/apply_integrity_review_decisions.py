@@ -203,11 +203,21 @@ def main(argv: list[str] | None = None) -> int:
                 existing_snapshots.add(snapshot_key)
             appended = append_jsonl(ledger_path, to_append) if to_append else 0
 
+        decision_counts: dict[str, int] = {}
+        action_counts: dict[str, int] = {}
+        for entry in new_entries:
+            decision = str(entry.get("review_decision") or "")
+            action = str(entry.get("action") or "")
+            decision_counts[decision] = decision_counts.get(decision, 0) + 1
+            action_counts[action] = action_counts.get(action, 0) + 1
+
         report = {
             "status": "applied",
             "queue_fingerprint": queue.get("queue_fingerprint"),
             "decision_rows_validated": len(validated),
             "ledger_entries_appended": appended,
+            "decision_counts": decision_counts,
+            "action_counts": action_counts,
             "ledger_path": str(ledger_path),
             "registry_modified": False,
             "records_modified": False,
