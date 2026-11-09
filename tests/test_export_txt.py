@@ -148,6 +148,8 @@ class ExportTxtTests(unittest.TestCase):
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0]["RAW_VALUE"], "99.1")
             self.assertEqual(records[0]["FEATURE_ID"], "RFEAT-1")
+            self.assertEqual(records[0]["CONTEXT_ASSOCIATION_STATUS"], "not_required")
+            self.assertEqual(json.loads(records[0]["OPEN_CONTEXT_UNRESOLVED_ITEMS"]), [])
             self.assertEqual(json.loads(records[0]["CONDITION_FACTS"])[0]["raw_label"], "Current density")
             self.assertEqual(len(features), 1)
             self.assertEqual(features[0]["CANONICAL_NAME"], "Coulombic efficiency")
@@ -228,7 +230,7 @@ class ExportTxtTests(unittest.TestCase):
             )
             self.assertEqual(status, 0)
             with (root / "formal" / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
-                row = next(csv.DictReader(handle, delimiter="\\t"))
+                row = next(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(row["CONTEXT_ASSOCIATION_STATUS"], "inconclusive")
             open_items = json.loads(row["OPEN_CONTEXT_UNRESOLVED_ITEMS"])
             self.assertEqual(open_items[0]["unresolved_id"], "UNRES-OPEN")
@@ -260,7 +262,7 @@ class ExportTxtTests(unittest.TestCase):
             status = self.invoke_export(root, self.make_registry(), record, [])
             self.assertEqual(status, 0)
             with (root / "formal" / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
-                row = next(csv.DictReader(handle, delimiter="\\t"))
+                row = next(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(row["CONTEXT_ASSOCIATION_STATUS"], "resolved")
             self.assertEqual(json.loads(row["OPEN_CONTEXT_UNRESOLVED_ITEMS"]), [])
             self.assertEqual(json.loads(row["UNRESOLVED_ISSUES"])[1]["resolution_status"], "no_association")
