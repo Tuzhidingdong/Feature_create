@@ -19,7 +19,7 @@ From the repository root (PowerShell):
 
 ```powershell
 python scripts/audit_global_integrity.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\registry\\feature_registry.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\registry\\global_feature_registry.json" `
   --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
   --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
   --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
