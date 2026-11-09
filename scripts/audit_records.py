@@ -365,6 +365,41 @@ def main(argv: list[str] | None = None) -> int:
                 context_review_decision_counts[str(response.get("decision", "not_reported"))] += 1
             except Exception:
                 context_review_decision_counts["invalid_response"] += 1
+    manual_context_histories = [
+        (record, history_item)
+        for record in records
+        for history_item in (record.get("context_review_history") or [])
+        if isinstance(history_item, dict) and history_item.get("actor") == "human"
+    ]
+    manual_context_decision_counts = Counter(
+        str(history_item.get("decision") or "not_reported")
+        for _record, history_item in manual_context_histories
+    )
+    manual_context_unresolved_ids = sorted({
+        str(history_item.get("unresolved_id"))
+        for _record, history_item in manual_context_histories
+        if history_item.get("unresolved_id")
+    })
+    manual_context_records = {
+        str(record.get("record_id"))
+        for record, _history_item in manual_context_histories
+        if record.get("record_id")
+    }
+    manual_context_adjudication = {
+        "decision_count": len(manual_context_histories),
+        "decision_counts": dict(manual_context_decision_counts),
+        "records_with_human_adjudication": len(manual_context_records),
+        "unresolved_ids_reviewed_by_human": manual_context_unresolved_ids,
+        "context_facts_added": sum(
+            int(history_item.get("context_facts_added") or 0)
+            for _record, history_item in manual_context_histories
+        ),
+        "context_facts_enriched": sum(
+            int(history_item.get("context_facts_enriched") or 0)
+            for _record, history_item in manual_context_histories
+        ),
+        "questions_retained_unresolved": manual_context_decision_counts.get("remain_unresolved", 0),
+    }
     records_with_context_notes = sum(
         1 for record in records
         if isinstance(record.get("context_notes"), str) and record["context_notes"].strip()
@@ -467,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
             "task_count": len(context_review_tasks),
             "task_status_counts": dict(context_review_status_counts),
             "decision_counts": dict(context_review_decision_counts),
+            "human_adjudication": manual_context_adjudication,
             "unresolved_context_items_remaining": explicit_context_unresolved,
         },
         "existing_schema_mapping": {
