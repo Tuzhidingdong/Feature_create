@@ -197,6 +197,14 @@ def candidate_card(record: dict[str, Any]) -> dict[str, Any]:
         "reported_unit": record.get("reported_unit"),
         "registry_feature_id": record.get("registry_feature_id"),
         "source_id": record.get("source_id"),
+        "source_type": record.get("source_type"),
+        "source_location": record.get("source_location", []),
+        "evidence_refs": record.get("evidence_refs", []),
+        "sample_identity": record.get("sample_identity", []),
+        "condition_facts": record.get("condition_facts", []),
+        "time_cycle_facts": record.get("time_cycle_facts", []),
+        "protocol_facts": record.get("protocol_facts", []),
+        "other_context_facts": record.get("other_context_facts", []),
     }
 
 
@@ -293,6 +301,10 @@ def prepare_templates(
                 "current_resolution_status": unresolved.get("resolution_status") or "pending",
                 "related_candidate_record_id": unresolved.get("related_candidate_record_id"),
                 "related_candidate_observation_id": unresolved.get("related_candidate_observation_id"),
+                "unresolved_evidence_refs": unresolved.get("evidence_refs", []),
+                "cross_chunk_target": unresolved.get("cross_chunk_target"),
+                "prior_resolution_history": unresolved.get("resolution_history", []),
+                "prior_manual_review_history": unresolved.get("manual_review_history", []),
                 "record_id": selected_record_id,
                 "record_selection_required": len(candidates) != 1,
                 "record_linkage_basis": link_basis,
@@ -320,6 +332,8 @@ def prepare_templates(
             "mode": "prepare",
             "prepared_at": utc_now(),
             "template_path": str(output_path.resolve()),
+            "template_sha256": sha256_file(output_path.resolve()),
+            "source_manifest_sha256": manifest_hash,
             "unresolved_item_count": len(unresolved_items),
             "template_count": len(templates),
             "skipped_count": len(skipped),
@@ -774,7 +788,9 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_record_snapshot_sha256", "unresolved_snapshot_sha256",
                     "source_manifest_sha256", "paper_source_text_sha256",
                     "candidate_records", "related_candidate_record_id",
-                    "related_candidate_observation_id",
+                    "related_candidate_observation_id", "unresolved_evidence_refs",
+                    "cross_chunk_target", "prior_resolution_history",
+                    "prior_manual_review_history",
                 )
                 if any(item.get(field) != prepared_template.get(field) for field in immutable_fields):
                     errors.append(f"{decision_id}: prepared template metadata was modified; restore it from the unchanged template file.")
@@ -797,6 +813,11 @@ def main(argv: list[str] | None = None) -> int:
                     "validated_count": len(validated),
                     "applied_count": 0,
                     "status": "blocked",
+                    "template_path": str(args.template.resolve()),
+                    "template_sha256": sha256_file(args.template.resolve()),
+                    "decision_path": str(args.decisions.resolve()),
+                    "decision_sha256": sha256_file(args.decisions.resolve()),
+                    "source_manifest_sha256": manifest_hash,
                     "errors": errors,
                 }
                 atomic_write_json(args.report.resolve(), report)
@@ -821,6 +842,11 @@ def main(argv: list[str] | None = None) -> int:
             "adjudication_version": "0.1",
             "mode": "apply",
             "applied_at": utc_now(),
+            "template_path": str(args.template.resolve()),
+            "template_sha256": sha256_file(args.template.resolve()),
+            "decision_path": str(args.decisions.resolve()),
+            "decision_sha256": sha256_file(args.decisions.resolve()),
+            "source_manifest_sha256": manifest_hash,
             "decision_count": len(decisions),
             "validated_count": len(validated),
             "applied_count": len(applied),
