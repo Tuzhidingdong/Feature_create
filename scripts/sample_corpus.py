@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", default="feature-create-v1", help="Fixed seed; identical inputs/options produce the same selected papers.")
     parser.add_argument("--stratify-by", default="year", help="Comma-separated CSV columns for proportional stratification; use 'none' for global sampling.")
     parser.add_argument("--min-papers", type=int, default=1, help="Minimum selected paper count when eligible papers exist; default 1.")
+    parser.add_argument("--previous-manifest", type=Path, help="Optional previous sampling_manifest.json. Requires the same source CSV, seed and strata, and a larger new fraction; emits only newly selected papers in a separate CSV.")
     args = parser.parse_args(argv)
 
     stratify_by = () if args.stratify_by.strip().casefold() in {"", "none", "global"} else tuple(
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             args.paired_csv, args.output_dir,
             fraction=args.fraction, seed=args.seed,
             stratify_by=stratify_by, min_papers=args.min_papers,
+            previous_manifest=args.previous_manifest,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
