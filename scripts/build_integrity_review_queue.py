@@ -150,11 +150,11 @@ def commit_artifacts(output_dir: Path, payloads: dict[str, bytes]) -> None:
         for name, payload in payloads.items():
             target = output_dir / name
             temporary = output_dir / f".{name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+            staged[name] = temporary
             with temporary.open("xb") as handle:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
-            staged[name] = temporary
         for name in (
             "global_integrity_audit.json",
             "integrity_review_queue.json",
