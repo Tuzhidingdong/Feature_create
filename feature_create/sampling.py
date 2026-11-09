@@ -162,6 +162,7 @@ def _read_previous_manifest(
     source_csv_hash: str,
     seed: str,
     stratify_by: tuple[str, ...],
+    min_papers: int,
     candidates: list[dict[str, Any]],
 ) -> dict[str, Any]:
     try:
@@ -187,6 +188,8 @@ def _read_previous_manifest(
         raise SamplingError("Previous sampling manifest contains invalid sample parameters.") from exc
     if previous_min < 1:
         raise SamplingError("Previous sampling manifest has an invalid min_papers value.")
+    if previous_min != min_papers:
+        raise SamplingError("The min_papers setting must remain unchanged when expanding a previous sample.")
     previous_keys = previous.get("selected_paper_keys")
     if not isinstance(previous_keys, list) or any(not isinstance(key, str) for key in previous_keys):
         raise SamplingError("Previous manifest selected_paper_keys is invalid.")
@@ -311,6 +314,7 @@ def create_corpus_sample(
             source_csv_hash=source_csv_hash,
             seed=str(seed),
             stratify_by=normalized_strata,
+            min_papers=min_papers,
             candidates=candidates,
         )
         if previous["fraction"] >= fraction_value:
