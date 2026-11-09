@@ -26,18 +26,27 @@
     "sampled_csv_sha256",
     "selected_paper_keys",
     "stratum_summary",
-    "paper_decisions"
+    "paper_decisions",
+    "previous_manifest_path",
+    "previous_manifest_sha256",
+    "previous_sample_fraction",
+    "previous_selected_paper_count",
+    "newly_selected_paper_count",
+    "newly_selected_row_count",
+    "newly_selected_paper_keys",
+    "incremental_csv_path",
+    "incremental_csv_sha256"
   ],
   "properties": {
     "sampling_manifest_version": {
-      "const": "0.1"
+      "const": "0.2"
     },
     "created_at": {
       "type": "string",
       "format": "date-time"
     },
     "algorithm": {
-      "const": "sha256_rank_within_strata_v1"
+      "const": "sha256_rank_within_strata_dhondt_v2"
     },
     "seed": {
       "type": "string",
@@ -113,7 +122,8 @@
         "required": [
           "stratum",
           "eligible_paper_count",
-          "selected_paper_count"
+          "selected_paper_count",
+          "newly_selected_paper_count"
         ],
         "properties": {
           "stratum": {
@@ -124,6 +134,10 @@
             "minimum": 1
           },
           "selected_paper_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "newly_selected_paper_count": {
             "type": "integer",
             "minimum": 0
           }
@@ -197,6 +211,53 @@
     "min_papers": {
       "type": "integer",
       "minimum": 1
+    },
+    "previous_manifest_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previous_manifest_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "previous_sample_fraction": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previous_selected_paper_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "newly_selected_paper_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "newly_selected_row_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "newly_selected_paper_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "incremental_csv_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "incremental_csv_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     }
   }
 }
