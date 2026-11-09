@@ -24,7 +24,7 @@ def registry():
 
 
 def record():
-    return {"record_id": "R-1", "observation_id": "OBS-1", "registry_feature_id": "F-1", "source_id": "SRC-1"}
+    return {"record_id": "R-1", "observation_id": "OBS-1", "registry_feature_id": "F-1", "source_id": "SRC-1", "evidence_refs": [{"source_id": "SRC-1", "locator": {"page": 1}}]}
 
 
 class IntegrityAuditTests(unittest.TestCase):
