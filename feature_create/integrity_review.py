@@ -172,45 +172,66 @@ def _build_finding_context(
         elif value in features:
             feature_ids.add(str(value))
 
-    for record_id in list(record_ids):
-        record = records.get(record_id)
-        if record:
-            if record.get("observation_id"):
-                observation_ids.add(str(record["observation_id"]))
-            feature_id = record.get("registry_feature_id") or record.get("feature_id")
-            if feature_id:
-                feature_ids.add(str(feature_id))
+    selected_event_map: dict[str, dict[str, Any]] = {}
+    while True:
+        before = (
+            len(record_ids), len(observation_ids), len(feature_ids),
+            len(event_ids), len(selected_event_map),
+        )
+        for record_id in list(record_ids):
+            record = records.get(record_id)
+            if record:
+                if record.get("observation_id"):
+                    observation_ids.add(str(record["observation_id"]))
+                feature_id = record.get("registry_feature_id") or record.get("feature_id")
+                if feature_id:
+                    feature_ids.add(str(feature_id))
 
-    for observation_id in list(observation_ids):
-        observation = observations.get(observation_id)
-        if observation and observation.get("linked_registry_feature_id"):
-            feature_ids.add(str(observation["linked_registry_feature_id"]))
+        for feature_id in list(feature_ids):
+            feature = features.get(feature_id)
+            if feature:
+                observation_ids.update(str(value) for value in feature.get("observation_ids", []) if value)
+                if feature.get("redirect_to"):
+                    feature_ids.add(str(feature["redirect_to"]))
 
-    for feature_id in list(feature_ids):
-        feature = features.get(feature_id)
-        if feature:
-            observation_ids.update(str(value) for value in feature.get("observation_ids", []) if value)
+        for observation_id, observation in observations.items():
+            if str(observation.get("linked_registry_feature_id") or "") in feature_ids:
+                observation_ids.add(observation_id)
+        for observation_id in list(observation_ids):
+            observation = observations.get(observation_id)
+            if observation and observation.get("linked_registry_feature_id"):
+                feature_ids.add(str(observation["linked_registry_feature_id"]))
 
-    for observation_id, observation in observations.items():
-        if str(observation.get("linked_registry_feature_id") or "") in feature_ids:
-            observation_ids.add(observation_id)
+        for record_id, record in records.items():
+            if str(record.get("observation_id") or "") in observation_ids:
+                record_ids.add(record_id)
 
-    for record_id, record in records.items():
-        if str(record.get("observation_id") or "") in observation_ids:
-            record_ids.add(record_id)
+        for event_index, event in enumerate(events):
+            subjects = {str(value) for value in event.get("subject_ids", [])}
+            evidence_ids = {str(value) for value in event.get("evidence_observation_ids", [])}
+            event_id = str(event.get("event_id") or f"event_index_{event_index}")
+            if (
+                event_id in event_ids
+                or subjects.intersection(feature_ids | observation_ids)
+                or evidence_ids.intersection(observation_ids)
+            ):
+                selected_event_map[event_id] = event
+                event_ids.add(event_id)
+                for subject in subjects:
+                    if subject in observations:
+                        observation_ids.add(subject)
+                    if subject in features:
+                        feature_ids.add(subject)
+                observation_ids.update(item for item in evidence_ids if item in observations)
 
-    selected_events = []
-    for event in events:
-        subjects = {str(value) for value in event.get("subject_ids", [])}
-        evidence_ids = {str(value) for value in event.get("evidence_observation_ids", [])}
-        if (
-            str(event.get("event_id") or "") in event_ids
-            or subjects.intersection(feature_ids | observation_ids)
-            or evidence_ids.intersection(observation_ids)
-        ):
-            selected_events.append(event)
-            if event.get("event_id"):
-                event_ids.add(str(event["event_id"]))
+        after = (
+            len(record_ids), len(observation_ids), len(feature_ids),
+            len(event_ids), len(selected_event_map),
+        )
+        if after == before:
+            break
+
+    selected_events = list(selected_event_map.values())
 
     projected_observations = [
         _project_observation(observations[item])
@@ -392,6 +413,7 @@ def build_review_queue(
         "audit_status": audit_report.get("status"),
         "input_fingerprints": input_fingerprints,
         "finding_ids": [item["finding_id"] for item in findings],
+        "known_source_ids": sorted(sources),
     }
     queue = {
         **queue_core,
@@ -435,6 +457,7 @@ def validate_review_rows(
     if [item.get("finding_id") for item in template_rows] != expected_finding_ids:
         raise ValueError("The immutable template does not match the queue finding inventory.")
 
+    allowed_source_ids = set(queue.get("known_source_ids") or [])
     validated = []
     for original, edited in zip(template_rows, decision_rows):
         if original.get("audit_fingerprint") != expected_audit_fingerprint:
@@ -482,6 +505,8 @@ def validate_review_rows(
                 or not ref.get("locator")
             ):
                 raise ValueError(f"{original['finding_id']}: review_evidence_refs/{ref_index} needs source_id and a non-empty locator.")
+            if allowed_source_ids and str(ref.get("source_id")) not in allowed_source_ids:
+                raise ValueError(f"{original['finding_id']}: review_evidence_refs/{ref_index} references a source absent from the prepared manifest.")
         validated.append({
             "template_version": TEMPLATE_VERSION,
             "audit_fingerprint": original["audit_fingerprint"],
