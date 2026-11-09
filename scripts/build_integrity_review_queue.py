@@ -30,6 +30,8 @@ def read_object(path: Path) -> dict[str, Any]:
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
     rows = []
     try:
         with path.open("r", encoding="utf-8") as handle:
