@@ -73,6 +73,15 @@ python scripts/sample_corpus.py `
 
 The round-20 cumulative CSV contains the full 20% sample. The `newly_selected_research_corpus_paired.csv` contains only papers added beyond round 10. The tool rejects a different source snapshot, seed, strata, minimum count, or non-increasing fraction. It also verifies that the previous manifest and previous cumulative CSV still match their hashes. If rounding yields no new papers, it reports `no_new_papers`; do not dispatch the empty incremental CSV.
 
+Before preparing the batch, run the optional read-only quality diagnostic against the cumulative sample:
+
+~~~powershell
+python scripts/report_sampling_quality.py --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" --sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\round-20\\sampling_manifest.json" --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\round-20\\quality"
+~~~
+
+It checks unique-paper distributions for year, journal, article type, and preprocessing status by default. It reports TVD, share differences, categories absent from the sample, and metadata conflicts. Use the cumulative 20% sample recorded in the manifest; the incremental-only CSV is deliberately rejected for this comparison. These are metadata diagnostics, not a guarantee of scientific representativeness. See [sampling_quality.md](sampling_quality.md).
+
+
 Prepare a new batch from its incremental CSV and matching manifest in a fresh output directory:
 
 ~~~powershell
