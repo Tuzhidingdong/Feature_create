@@ -40,6 +40,8 @@ RECORD_HEADERS = [
     "TIME_CYCLE_FACTS",
     "PROTOCOL_FACTS",
     "OTHER_CONTEXT_FACTS",
+    "CONTEXT_ASSOCIATION_STATUS",
+    "OPEN_CONTEXT_UNRESOLVED_ITEMS",
     "MEASUREMENT_OR_CALCULATION_METHOD",
     "SOURCE_TYPE",
     "SOURCE_LOCATION",
@@ -150,6 +152,102 @@ def resolve_feature_id(feature_id: str | None, feature_by_id: dict[str, dict[str
         if not redirect:
             raise ExportError(f"Retired Feature {current} has no redirect_to target.")
         current = redirect
+
+
+
+CONTEXT_RESOLVED_STATUSES = {"association_confirmed", "no_association"}
+CONTEXT_PENDING_STATUSES = {"pending", "under_review", "blocked"}
+CONTEXT_INCONCLUSIVE_STATUSES = {"insufficient_evidence", "conflicting_evidence"}
+
+
+def is_context_association_issue(issue: Any) -> bool:
+    """Identify unresolved items that can affect record-to-context attribution."""
+    if isinstance(issue, dict):
+        kind = str(issue.get("item_type") or issue.get("type") or "").casefold()
+        if kind == "missing_context":
+            return True
+        if any(token in kind for token in (
+            "context", "sample_identity", "condition", "time_cycle",
+            "time_or_cycle", "protocol_context", "statistical_scope",
+        )):
+            return True
+        if not kind:
+            description = str(issue.get("description") or "").casefold()
+            return any(token in description for token in (
+                "missing context", "sample identity", "condition association",
+                "time/cycle association", "protocol association",
+                "statistical scope association",
+            ))
+        return False
+    if isinstance(issue, str):
+        lowered = issue.casefold()
+        return any(token in lowered for token in (
+            "missing context", "sample identity", "condition association",
+            "time/cycle association", "protocol association",
+            "statistical scope association",
+        ))
+    return False
+
+
+def context_association_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a fail-closed summary of all context-association gaps linked to one record."""
+    linked = [
+        issue for issue in (record.get("unresolved_issues") or [])
+        if is_context_association_issue(issue)
+    ]
+    if not linked:
+        return {
+            "status": "not_required",
+            "open_items": [],
+            "issue_count": 0,
+            "invalid_status_count": 0,
+        }
+
+    open_items: list[dict[str, Any]] = []
+    statuses: list[str] = []
+    invalid_status_count = 0
+    for issue in linked:
+        if isinstance(issue, dict):
+            status = str(issue.get("resolution_status") or "pending").casefold()
+            item = {
+                "unresolved_id": issue.get("unresolved_id"),
+                "item_type": issue.get("item_type") or issue.get("type") or "missing_context",
+                "description": issue.get("description"),
+                "resolution_status": status,
+            }
+        else:
+            status = "pending"
+            item = {
+                "unresolved_id": None,
+                "item_type": "legacy_missing_context",
+                "description": str(issue),
+                "resolution_status": status,
+            }
+        statuses.append(status)
+        if status not in CONTEXT_RESOLVED_STATUSES:
+            open_items.append(item)
+            if status not in (CONTEXT_PENDING_STATUSES | CONTEXT_INCONCLUSIVE_STATUSES):
+                invalid_status_count += 1
+
+    if invalid_status_count:
+        status = "invalid_status"
+    elif not open_items:
+        status = "resolved"
+    elif any(value in CONTEXT_RESOLVED_STATUSES for value in statuses):
+        status = "mixed"
+    elif all(value in CONTEXT_PENDING_STATUSES for value in statuses):
+        status = "pending"
+    elif all(value in CONTEXT_INCONCLUSIVE_STATUSES for value in statuses):
+        status = "inconclusive"
+    else:
+        status = "mixed"
+
+    return {
+        "status": status,
+        "open_items": open_items,
+        "issue_count": len(linked),
+        "invalid_status_count": invalid_status_count,
+    }
 
 
 def feature_methods(
@@ -303,10 +401,16 @@ def build_record_rows(
     records: list[dict[str, Any]],
     feature_by_id: dict[str, dict[str, Any]],
     canonical_names: dict[str, str] | None = None,
-) -> tuple[list[list[Any]], list[str]]:
+ ) -> tuple[list[list[Any]], list[str], dict[str, Any]]:
     rows: list[list[Any]] = []
     errors: list[str] = []
     seen_record_ids: set[str] = set()
+    context_summary = {
+        "status_counts": {},
+        "records_with_open_context": 0,
+        "open_context_issue_count": 0,
+        "invalid_context_status_count": 0,
+    }
 
     for record in records:
         record_id = record.get("record_id")
@@ -343,6 +447,19 @@ def build_record_rows(
             )
             continue
 
+        context_summary_for_record = context_association_summary(record)
+        context_status = context_summary_for_record["status"]
+        open_context_items = context_summary_for_record["open_items"]
+        context_summary["status_counts"][context_status] = (
+            context_summary["status_counts"].get(context_status, 0) + 1
+        )
+        if open_context_items:
+            context_summary["records_with_open_context"] += 1
+            context_summary["open_context_issue_count"] += len(open_context_items)
+        context_summary["invalid_context_status_count"] += (
+            context_summary_for_record["invalid_status_count"]
+        )
+
         feature_id = feature.get("existing_feature_id") or canonical_id
         source_location = {
             "source_id": record.get("source_id"),
@@ -365,6 +482,8 @@ def build_record_rows(
             json_cell(record.get("time_cycle_facts", [])),
             json_cell(record.get("protocol_facts", [])),
             json_cell(record.get("other_context_facts", [])),
+            context_status,
+            json_cell(open_context_items),
             record.get("measurement_or_calculation_method"),
             record.get("source_type"),
             json_cell(source_location),
@@ -379,7 +498,7 @@ def build_record_rows(
         str(row[3] or ""),
         str(row[0] or ""),
     ))
-    return rows, errors
+    return rows, errors, context_summary
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -390,6 +509,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--existing-schema", type=Path, help="Optional normalized existing_feature_schema.json for legacy name/definition/alias preservation.")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--audit-report", type=Path, help="Optional separate internal audit JSON path.")
+    parser.add_argument(
+        "--allow-unresolved-context",
+        action="store_true",
+        help="Explicitly export a provisional package while keeping every open context association flagged in the records.",
+    )
     args = parser.parse_args(argv)
 
     registry_path = args.registry.resolve()
@@ -408,7 +532,9 @@ def main(argv: list[str] | None = None) -> int:
         }
     ]
     feature_rows, feature_by_id, canonical_names, feature_errors = build_feature_rows(registry, existing_schema)
-    record_rows, record_errors = build_record_rows(records, feature_by_id, canonical_names)
+    record_rows, record_errors, context_summary = build_record_rows(
+        records, feature_by_id, canonical_names
+    )
 
     errors = list(schema_errors) + feature_errors + record_errors
     if existing_schema is None and any(
@@ -426,6 +552,14 @@ def main(argv: list[str] | None = None) -> int:
     if active_unresolved_pairs:
         errors.append(
             f"{len(active_unresolved_pairs)} candidate Feature pair(s) remain pending or under review."
+        )
+    if context_summary["invalid_context_status_count"]:
+        errors.append(
+            f"{context_summary['invalid_context_status_count']} context association item(s) have an unknown resolution status; export is blocked even with --allow-unresolved-context."
+        )
+    if context_summary["open_context_issue_count"] and not args.allow_unresolved_context:
+        errors.append(
+            f"{context_summary['open_context_issue_count']} context association item(s) remain unresolved across {context_summary['records_with_open_context']} result record(s). Complete the review or explicitly use --allow-unresolved-context for a clearly flagged provisional export."
         )
 
     report = {
@@ -445,8 +579,22 @@ def main(argv: list[str] | None = None) -> int:
         "record_error_count": len(record_errors),
         "feature_error_count": len(feature_errors),
         "schema_error_count": len(schema_errors),
+        "context_association_status_counts": context_summary["status_counts"],
+        "records_with_open_context": context_summary["records_with_open_context"],
+        "open_context_issue_count": context_summary["open_context_issue_count"],
+        "invalid_context_status_count": context_summary["invalid_context_status_count"],
+        "allow_unresolved_context": bool(args.allow_unresolved_context),
+        "warnings": (
+            ["Formal TXT files contain explicitly flagged unresolved context associations; treat this package as provisional."]
+            if context_summary["open_context_issue_count"] and args.allow_unresolved_context
+            else []
+        ),
         "errors": errors,
-        "status": "blocked" if errors else "ready",
+        "status": (
+            "blocked" if errors
+            else "exported_with_unresolved_context" if context_summary["open_context_issue_count"]
+            else "ready"
+        ),
     }
 
     if errors:
@@ -469,7 +617,11 @@ def main(argv: list[str] | None = None) -> int:
     atomic_write_tsv(features_path, FEATURE_HEADERS, feature_rows)
 
     report.update({
-        "status": "exported",
+        "status": (
+            "exported_with_unresolved_context"
+            if context_summary["open_context_issue_count"]
+            else "exported"
+        ),
         "result_feature_records": str(records_path),
         "result_feature_list": str(features_path),
         "formal_output_files": [records_path.name, features_path.name],
