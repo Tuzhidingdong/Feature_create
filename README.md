@@ -194,7 +194,7 @@ After multiple batches have been ingested into the same persistent Registry and 
 python scripts/report_feature_saturation.py --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" --batch "round-10=E:\Zinc_batters_datas\runs\Feature_create\prepared\round-10\source_manifest.json" --batch "round-20-incremental=E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" --output-dir "E:\Zinc_batters_datas\runs\Feature_create\diagnostics\feature-saturation"
 ~~~
 
-The JSON and Markdown reports show batch-level marginal yield, cumulative canonical Feature counts, evidence-verified observations, uncertain observations, and scope warnings. No automatic saturated/not-saturated verdict is generated. A low yield may reflect incomplete extraction or unresolved reconciliation rather than genuine discovery saturation. See [docs/feature_discovery_saturation.md](docs/feature_discovery_saturation.md).
+The JSON and Markdown reports show batch-level marginal yield, cumulative canonical Feature counts, evidence-verified observations, uncertain observations, and scope warnings. No automatic saturated/not-saturated verdict is generated. A single batch can establish a baseline; at least three batches are more useful for a descriptive trend. A low yield may reflect incomplete extraction or unresolved reconciliation rather than genuine discovery saturation. This utility is not run unless explicitly invoked. See [docs/feature_discovery_saturation.md](docs/feature_discovery_saturation.md).
 
 ## Targeted cross-chunk context review
 
