@@ -185,6 +185,43 @@ class CorpusSamplingTests(unittest.TestCase):
                 set(selected_dois(Path(second["sampled_csv"]))),
             )
 
+    def test_existing_sample_outputs_are_not_silently_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(30))
+            output = root / "sample"
+            first = create_corpus_sample(source, output, fraction="0.1", seed="first")
+            manifest_path = Path(first["sampling_manifest"])
+            original_manifest = manifest_path.read_bytes()
+
+            with self.assertRaises(SamplingError):
+                create_corpus_sample(source, output, fraction="0.2", seed="second")
+
+            self.assertEqual(original_manifest, manifest_path.read_bytes())
+
+    def test_no_doi_papers_use_title_year_journal_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            rows = make_rows(20)
+            rows[0]["doi"] = ""
+            duplicate = dict(rows[0])
+            duplicate["abstract"] = "Second row with the same metadata identity"
+            rows.append(duplicate)
+            write_csv(source, rows)
+
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.2", seed="metadata-fallback", stratify_by=(),
+            )
+            manifest = __import__("json").loads(Path(result["sampling_manifest"]).read_text(encoding="utf-8"))
+            metadata_decisions = [
+                item for item in manifest["paper_decisions"]
+                if item["paper_key"].startswith("metadata:")
+            ]
+            self.assertEqual(1, len(metadata_decisions))
+            self.assertEqual(2, metadata_decisions[0]["row_count"])
+
     def test_invalid_fraction_and_missing_identity_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
