@@ -178,6 +178,31 @@ class IntegrityReviewQueueTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable field code"):
             validate_review_rows(queue, template, edited)
 
+    def test_duplicate_issue_instances_receive_distinct_finding_ids(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        duplicate_report = dict(report, issues=[report["issues"][0], dict(report["issues"][0])])
+        queue, template = build_review_queue(duplicate_report, registry, records, manifest, fingerprints)
+        self.assertEqual(len(queue["findings"]), 2)
+        self.assertNotEqual(queue["findings"][0]["finding_id"], queue["findings"][1]["finding_id"])
+        self.assertEqual(len({row["finding_id"] for row in template}), 2)
+
+    def test_decision_id_changes_when_action_or_evidence_changes(self):
+        base = {
+            "finding_id": "IRF-0123456789ABCDEF0123",
+            "audit_fingerprint": "a" * 64,
+            "review_decision": "repair_required",
+            "action": "record_review",
+            "rationale": "Review this source-backed record in context.",
+            "review_evidence_refs": [{"source_id": "SRC-1", "locator": {"page": 1}}],
+            "follow_up_reference": None,
+        }
+        first = make_ledger_entries([base])[0]["decision_id"]
+        changed_action = make_ledger_entries([dict(base, action="evidence_revalidation")])[0]["decision_id"]
+        changed_evidence = make_ledger_entries([dict(base, review_evidence_refs=[{
+            "source_id": "SRC-1", "locator": {"page": 2},
+        }])])[0]["decision_id"]
+        self.assertEqual(len({first, changed_action, changed_evidence}), 3)
+
     def test_accepted_warning_requires_evidence(self):
         report, registry, records, manifest, fingerprints = fixture()
         warning_report = dict(report, status="pass_with_warnings", summary={
