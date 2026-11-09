@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
-    except SamplingError as exc:
+    except (SamplingError, OSError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
 
