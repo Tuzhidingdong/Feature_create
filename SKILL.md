@@ -121,6 +121,9 @@ For a very large chem-literature corpus, the user may choose to build the Featur
 
 Sampling operates only on CSV metadata; it does not open raw PDFs, SI files, or preprocessed package contents. If increasing the fraction rounds to the same sample count, report `no_new_papers` and do not build/dispatch an empty incremental queue. Once a paper is selected, its entire upstream-preprocessed MAIN/SI text, tables, captions, evidence index, and related visual assets remain available to the normal downstream pipeline. It is not permissible to take 10% of the pages, tables, or evidence units from a selected paper.
 
+Before preparation/queue construction, the Supervisor may run scripts/report_sampling_quality.py using the exact source CSV and that round's sampling manifest. Compare the **cumulative** sample against the eligible population at unique-paper level (default dimensions: year, journal, article_type, preprocessing_status). Inspect share differences, total variation distance, absent categories, and metadata conflicts. Treat this as descriptive metadata diagnostics only; it does not certify scientific/semantic coverage and must not modify the immutable manifest or sample. For a later incremental round, pass that round's cumulative sample, never its incremental-only CSV. See docs/sampling_quality.md.
+
+
 ### Phase 1 — Index upstream preprocessing packages
 
 1. Read only the rows in the CSV selected for this run: the complete `research_corpus_paired.csv`, a hash-verified cumulative `sampled_research_corpus_paired.csv`, or a hash-verified `newly_selected_research_corpus_paired.csv` for an incremental expansion round.
