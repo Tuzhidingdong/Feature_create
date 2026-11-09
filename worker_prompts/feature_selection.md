@@ -16,6 +16,22 @@ Inspect each Observation's `author_emphasis`, `selection_rationale`, and exact `
 
 Consider scientific meaning, distinctiveness, recurrence across independent papers, and contribution to the selected set. Frequency is supporting evidence, never the sole selection rule. Preserve scientifically important low-frequency Features. Exclude synonyms, redundant variants, incidental mentions, and items that are not result outcomes.
 
+## Simple thematic organization
+
+For each Feature marked `select`, assign exactly one primary category. Choose the category that best describes the Feature's scientific role, not the paper's topic or experimental method. Do not invent a category and do not force a precise assignment when the concept spans categories or evidence is thin.
+
+Use only these categories:
+- `performance`: overall function, capability, efficiency, or application-level performance;
+- `material_property`: physical or chemical properties of a material/system (e.g. capacity, conductivity, strength, solubility);
+- `structure_composition`: reported structure, phase, morphology, composition, defects, or chemical-state outcomes;
+- `kinetics_mechanism`: rates, activation behavior, reaction pathways, or mechanistic descriptors;
+- `stability_durability`: degradation, retention, lifetime, cycling durability, or long-term stability;
+- `environmental_process`: removal/degradation outcomes, emissions, resource/energy use, or process-level outcomes;
+- `other`: a clearly identified result that does not fit the groups above;
+- `unclassified`: use when the primary category cannot be assigned confidently.
+
+A Feature receives one primary category only. Do not duplicate a Feature in multiple groups. A brief `category_rationale` is required for every selected Feature. The same physical quantity can be grouped differently only when its scientific role in the source differs; explain the choice.
+
 ## Selection discipline
 
 - Choose a representative set, not an exhaustive inventory.
@@ -30,4 +46,4 @@ Consider scientific meaning, distinctiveness, recurrence across independent pape
 
 ## Output
 
-Return JSON conforming to `contracts/feature-selection.schema.json`. Include exactly one decision for every active canonical Feature in the supplied Registry, excluding only Features marked `retired_merged`. Use `select`, `exclude`, or `review`. Do not include reported values, sample data, experimental conditions, or protocols. No prose outside JSON.
+Return JSON conforming to `contracts/feature-selection.schema.json`. Include exactly one decision for every active canonical Feature in the supplied Registry, excluding only Features marked `retired_merged`. Use `select`, `exclude`, or `review`. Selected decisions must include `primary_category` and `category_rationale`. Do not include reported values, sample data, experimental conditions, or protocols. No prose outside JSON.

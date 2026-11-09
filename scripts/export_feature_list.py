@@ -84,7 +84,31 @@ def render_feature_list(registry: dict[str, Any], decisions: dict[str, dict[str,
         if feature.get("feature_status") != "retired_merged"
         and decisions[feature["registry_feature_id"]]["decision"] == "select"
     ]
-    selected.sort(key=lambda item: (item.get("canonical_name", "").casefold(), item["registry_feature_id"]))
+    category_order = {
+        "performance": 0,
+        "material_property": 1,
+        "structure_composition": 2,
+        "kinetics_mechanism": 3,
+        "stability_durability": 4,
+        "environmental_process": 5,
+        "other": 6,
+        "unclassified": 7,
+    }
+    selected.sort(key=lambda item: (
+        category_order[decisions[item["registry_feature_id"]]["primary_category"]],
+        item.get("canonical_name", "").casefold(),
+        item["registry_feature_id"],
+    ))
+    category_labels = {
+        "performance": "Performance",
+        "material_property": "Material properties",
+        "structure_composition": "Structure and composition",
+        "kinetics_mechanism": "Kinetics and mechanism",
+        "stability_durability": "Stability and durability",
+        "environmental_process": "Environmental and process outcomes",
+        "other": "Other",
+        "unclassified": "Unclassified",
+    }
     output = [
         "RESULT FEATURE LIST",
         "Scope: representative Feature definitions only; values and experimental conditions are handled downstream.",
@@ -99,6 +123,9 @@ def render_feature_list(registry: dict[str, Any], decisions: dict[str, dict[str,
         result_types = sorted(set(feature.get("result_types", [])))
         unit_dimensions = sorted(set(feature.get("unit_dimensions", [])))
         output.extend([
+            f"CATEGORY: {category_labels[decision['primary_category']]}",
+            f"CATEGORY_CODE: {decision['primary_category']}",
+            f"CATEGORY_RATIONALE: {decision['category_rationale']}",
             f"FEATURE_ID: {feature_id}",
             f"CANONICAL_NAME: {feature.get('canonical_name', '')}",
             f"DEFINITION: {feature.get('definition') or 'Not stated in supplied sources.'}",

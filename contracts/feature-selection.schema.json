@@ -52,8 +52,46 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "primary_category": {
+            "enum": [
+              "performance",
+              "material_property",
+              "structure_composition",
+              "kinetics_mechanism",
+              "stability_durability",
+              "environmental_process",
+              "other",
+              "unclassified"
+            ],
+            "description": "One primary display group for the selected Feature. Choose the closest scientific role; use unclassified when evidence is insufficient."
+          },
+          "category_rationale": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One short reason for assigning the primary category; do not infer beyond the source."
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "select"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "required": [
+                "primary_category",
+                "category_rationale"
+              ]
+            }
+          }
+        ]
       }
     }
   }
