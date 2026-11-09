@@ -87,6 +87,9 @@ def audit_integrity(
             if not source_id or not isinstance(locator, dict) or not locator:
                 issues.append(_issue("invalid_observation_evidence_ref", "error", f"Observation {observation_id} has an incomplete evidence reference.", observation_id=observation_id, evidence_index=index))
                 continue
+            if observation.get("source_id") and str(source_id) != str(observation.get("source_id")):
+                issues.append(_issue("observation_evidence_source_mismatch", "error", f"Observation {observation_id} evidence points to a different source than the Observation.", observation_id=observation_id, source_id=source_id))
+                continue
             if manifest_sources is not None and str(source_id) not in manifest_sources:
                 issues.append(_issue("unknown_evidence_source", "error", f"Observation {observation_id} references source {source_id}, which is absent from the source manifest.", observation_id=observation_id, source_id=source_id))
                 continue
@@ -110,6 +113,7 @@ def audit_integrity(
         if status == "confirmed" and not linked_ids:
             issues.append(_issue("confirmed_feature_without_observation", "error", f"Confirmed Feature {feature_id} has no Observations.", feature_id=feature_id))
         valid_linked = 0
+        verified_linked = 0
         for observation_id in linked_ids:
             observation = observations.get(observation_id)
             if observation is None:
@@ -119,8 +123,15 @@ def audit_integrity(
                 issues.append(_issue("observation_feature_backlink_mismatch", "error", f"Observation {observation_id} does not point back to Feature {feature_id}.", feature_id=feature_id, observation_id=observation_id, actual_feature_id=observation.get("linked_registry_feature_id")))
             if observation.get("variable_role") == "result_feature" and observation.get("discovery_status") != "excluded":
                 valid_linked += 1
+                if observation.get("discovery_status") == "evidence_verified" and any(
+                    isinstance(ref, dict) and ref.get("evidence_status") in VERIFIED_EVIDENCE_STATUSES
+                    for ref in (observation.get("evidence_refs") or [])
+                ):
+                    verified_linked += 1
         if status == "confirmed" and valid_linked == 0:
             issues.append(_issue("confirmed_feature_without_valid_observation", "error", f"Confirmed Feature {feature_id} has no eligible result-feature Observation.", feature_id=feature_id))
+        if status == "confirmed" and verified_linked == 0:
+            issues.append(_issue("confirmed_feature_without_verified_source_evidence", "error", f"Confirmed Feature {feature_id} has no evidence-verified Observation with source evidence.", feature_id=feature_id))
 
     for record_id, record in record_by_id.items():
         observation_id = record.get("observation_id")
@@ -129,6 +140,19 @@ def audit_integrity(
             issues.append(_issue("record_without_valid_observation", "error", f"Result Record {record_id} has no valid Observation link.", record_id=record_id, observation_id=observation_id))
             continue
         observation_to_records[str(observation_id)].append(record_id)
+        record_evidence = record.get("evidence_refs") or []
+        if not record_evidence:
+            issues.append(_issue("record_without_evidence", "error", f"Result Record {record_id} has no source evidence references.", record_id=record_id))
+        for evidence_index, ref in enumerate(record_evidence):
+            evidence_source = ref.get("source_id") if isinstance(ref, dict) else None
+            locator = ref.get("locator") if isinstance(ref, dict) else None
+            if not evidence_source or not isinstance(locator, dict) or not locator:
+                issues.append(_issue("invalid_record_evidence_ref", "error", f"Result Record {record_id} has an incomplete evidence reference.", record_id=record_id, evidence_index=evidence_index))
+                continue
+            if record.get("source_id") and str(evidence_source) != str(record.get("source_id")):
+                issues.append(_issue("record_evidence_source_mismatch", "error", f"Result Record {record_id} evidence points to a different source than the record.", record_id=record_id, source_id=evidence_source))
+            if manifest_sources is not None and str(evidence_source) not in manifest_sources:
+                issues.append(_issue("record_evidence_source_unknown", "error", f"Result Record {record_id} references unknown source {evidence_source}.", record_id=record_id, source_id=evidence_source))
         record_feature = record.get("registry_feature_id") or record.get("feature_id")
         observation_feature = observation.get("linked_registry_feature_id")
         if not record_feature:
@@ -169,7 +193,14 @@ def audit_integrity(
                 issues.append(_issue("decision_subject_missing", "error", f"Decision event {event_id or index} references unknown subject {subject}.", event_id=event_id, subject_id=subject))
                 continue
             event_types_by_subject[(str(event.get("event_type")), subject)].append(event)
-        for observation_id in event.get("evidence_observation_ids") or []:
+        evidence_observation_ids = event.get("evidence_observation_ids") or []
+        if event.get("event_type") in {"feature_merged", "feature_split", "feature_excluded", "observation_reassigned"} and not evidence_observation_ids:
+            issues.append(_issue("decision_event_without_evidence_chain", "error", f"Decision event {event_id or index} has no evidence Observation references.", event_id=event_id))
+        if event.get("event_type") in {"feature_merged", "feature_split"}:
+            feature_subjects = [subject for subject in subjects if str(subject) in features]
+            if len(set(feature_subjects)) < 2:
+                issues.append(_issue("incomplete_feature_transition_subjects", "error", f"Decision event {event_id or index} does not identify at least two Feature objects for its merge/split transition.", event_id=event_id))
+        for observation_id in evidence_observation_ids:
             if observation_id not in observations:
                 issues.append(_issue("decision_evidence_observation_missing", "error", f"Decision event {event_id or index} references missing evidence Observation {observation_id}.", event_id=event_id, observation_id=observation_id))
 
