@@ -78,6 +78,18 @@ def _finding_identity(issue: dict[str, Any]) -> tuple[str, str]:
 
 
 def _recommended_route(code: str) -> dict[str, str]:
+    if "decision" in code or "redirect" in code or "split" in code or "excluded" in code:
+        return {
+            "action": "decision_history_review",
+            "workflow": "Compare the current Registry state with the historical decision_log. Do not fabricate a past event; record a new human decision only after evidence review and schema validation.",
+            "entrypoint": "contracts/registry.schema.json + existing reconciliation workflow",
+        }
+    if "evidence" in code or "source" in code:
+        return {
+            "action": "evidence_revalidation",
+            "workflow": "Re-check the upstream source package, source_id, locator, and quoted/table-cell evidence. Correct the originating evidence reference and run the evidence validator.",
+            "entrypoint": "scripts/validate_evidence.py",
+        }
     if code.startswith("record_") or code in {
         "invalid_or_duplicate_record_id",
         "missing_record_id",
@@ -88,30 +100,17 @@ def _recommended_route(code: str) -> dict[str, str]:
             "workflow": "Review the source-backed Result Record and its Observation/Feature links. Re-extract or correct through the existing Record pipeline; do not hand-edit raw values.",
             "entrypoint": "scripts/audit_records.py / scripts/run_workers.py",
         }
-    if "evidence" in code or "source" in code:
-        return {
-            "action": "evidence_revalidation",
-            "workflow": "Re-check the upstream source package, source_id, locator, and quoted/table-cell evidence. Correct the originating evidence reference and run the evidence validator.",
-            "entrypoint": "scripts/validate_evidence.py",
-        }
     if "observation" in code or "feature" in code:
         return {
             "action": "feature_reconciliation",
             "workflow": "Inspect the Feature ↔ Observation identity decision. Use the existing reconciliation workflow for a justified merge/mapping/reassignment; preserve prior decisions and append the correcting event.",
             "entrypoint": "scripts/reconcile_features.py / scripts/apply_feature_reconciliation.py",
         }
-    if "decision" in code or "redirect" in code or "split" in code or "excluded" in code:
-        return {
-            "action": "decision_history_review",
-            "workflow": "Compare the current Registry state with the historical decision_log. Do not fabricate a past event; record a new human decision only after evidence review and schema validation.",
-            "entrypoint": "contracts/registry.schema.json + existing reconciliation workflow",
-        }
     return {
         "action": "manual_review",
         "workflow": "Inspect the referenced Registry objects and evidence, then choose the narrowest existing workflow. Do not apply an automatic repair.",
         "entrypoint": "Manual review; rerun scripts/audit_global_integrity.py",
     }
-
 
 def _project_observation(item: dict[str, Any]) -> dict[str, Any]:
     fields = (
@@ -431,8 +430,15 @@ def validate_review_rows(
     if [item.get("finding_id") for item in template_rows] != [item.get("finding_id") for item in decision_rows]:
         raise ValueError("Decision rows must preserve the template order and finding_id values.")
 
+    expected_audit_fingerprint = queue.get("audit_fingerprint")
+    expected_finding_ids = queue.get("finding_ids") or []
+    if [item.get("finding_id") for item in template_rows] != expected_finding_ids:
+        raise ValueError("The immutable template does not match the queue finding inventory.")
+
     validated = []
     for original, edited in zip(template_rows, decision_rows):
+        if original.get("audit_fingerprint") != expected_audit_fingerprint:
+            raise ValueError(f"{original.get('finding_id')}: template audit fingerprint does not match the queue.")
         for key in (
             "template_version", "audit_fingerprint", "finding_id",
             "finding_fingerprint", "severity", "code", "primary_object",
