@@ -146,6 +146,45 @@ class CorpusSamplingTests(unittest.TestCase):
             with self.assertRaises(CorpusError):
                 load_sampling_provenance(manifest, sampled_csv)
 
+    def test_prepare_corpus_rejects_tampered_selection_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(20))
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.2", seed="tamper-ledger", stratify_by=(),
+            )
+            sampled_csv = Path(result["sampled_csv"])
+            manifest_path = Path(result["sampling_manifest"])
+            manifest = __import__("json").loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["paper_decisions"][0]["selected"] = not manifest["paper_decisions"][0]["selected"]
+            manifest_path.write_text(
+                __import__("json").dumps(manifest, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            with self.assertRaises(CorpusError):
+                load_sampling_provenance(manifest_path, sampled_csv)
+
+    def test_selection_is_independent_of_source_row_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = make_rows(100)
+            first_csv = root / "original.csv"
+            reversed_csv = root / "reversed.csv"
+            write_csv(first_csv, original)
+            write_csv(reversed_csv, list(reversed(original)))
+
+            first = create_corpus_sample(
+                first_csv, root / "sample-a", fraction="0.1", seed="row-order", stratify_by=("year",),
+            )
+            second = create_corpus_sample(
+                reversed_csv, root / "sample-b", fraction="0.1", seed="row-order", stratify_by=("year",),
+            )
+            self.assertEqual(
+                set(selected_dois(Path(first["sampled_csv"]))),
+                set(selected_dois(Path(second["sampled_csv"]))),
+            )
+
     def test_invalid_fraction_and_missing_identity_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
