@@ -90,6 +90,20 @@ class RegistryIngestionTests(unittest.TestCase):
         self.assertEqual(observation["selection_rationale"], "Used by the authors to explain interfacial stabilization.")
         validate_registry(registry)
 
+
+    def test_author_emphasis_does_not_change_stable_observation_id(self) -> None:
+        registry = create_empty_registry()
+        candidate = self.candidate("OBS-CAND-STABLE", "Coulombic efficiency", "Capacity ratio")
+        first_id, _, _ = add_observation(registry, "PAPER-1", self.task, candidate, self.source_map, self.root)
+        enriched = dict(candidate)
+        enriched["author_emphasis"] = "core_conclusion"
+        enriched["selection_rationale"] = "Highlighted in the paper conclusion."
+        second_id, _, _ = add_observation(registry, "PAPER-1", self.task, enriched, self.source_map, self.root)
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(len(registry["observations"]), 1)
+        self.assertEqual(registry["observations"][0]["author_emphasis"], "core_conclusion")
+        validate_registry(registry)
+
     def test_condition_only_observation_is_not_a_canonical_feature(self) -> None:
         registry = create_empty_registry()
         candidate = self.candidate("OBS-CAND-2", "Current density", "Applied current per electrode area")

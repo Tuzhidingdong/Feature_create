@@ -51,6 +51,7 @@ def validate_selection(registry: dict[str, Any], decisions: dict[str, Any]) -> d
         for item in registry["canonical_features"]
         if item.get("feature_status") != "retired_merged"
     }
+    observations_by_id = {item["observation_id"]: item for item in registry["observations"]}
     mapping: dict[str, dict[str, Any]] = {}
     for item in decisions["decisions"]:
         feature_id = item["registry_feature_id"]
@@ -62,6 +63,8 @@ def validate_selection(registry: dict[str, Any], decisions: dict[str, Any]) -> d
         valid = set(active[feature_id].get("observation_ids", []))
         if not support or not support.issubset(valid):
             raise FeatureExportError(f"Supporting Observation IDs do not belong to {feature_id}.")
+        if any(obs_id not in observations_by_id for obs_id in support):
+            raise FeatureExportError(f"Selection cites an Observation missing from the Registry for {feature_id}.")
         mapping[feature_id] = item
 
     missing = sorted(set(active) - set(mapping))

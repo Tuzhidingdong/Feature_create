@@ -386,8 +386,6 @@ def add_observation(
         str(candidate.get("reported_method") or ""),
         str(candidate.get("result_type") or ""),
         str(candidate.get("variable_role") or ""),
-        str(candidate.get("author_emphasis") or "not_assessable"),
-        str(candidate.get("selection_rationale") or ""),
         json.dumps(evidence_refs if (evidence_refs := candidate.get("evidence_refs") or []) else [], sort_keys=True, ensure_ascii=False),
     )
     existing_observation = next(
@@ -395,6 +393,12 @@ def add_observation(
         None,
     )
     if existing_observation:
+        incoming_emphasis = candidate.get("author_emphasis", "not_assessable")
+        if incoming_emphasis != "not_assessable":
+            existing_observation["author_emphasis"] = incoming_emphasis
+        incoming_rationale = candidate.get("selection_rationale")
+        if incoming_rationale:
+            existing_observation["selection_rationale"] = incoming_rationale
         return (
             observation_id,
             existing_observation.get("linked_registry_feature_id"),
