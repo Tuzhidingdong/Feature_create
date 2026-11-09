@@ -181,6 +181,19 @@ After Worker A/B first-pass outputs have been validated and ingested, resolve on
 
 This stage reuses Worker B; it is not a third worker or a repeated full-paper discovery pass. The context queue skips already reviewed/resolved items by default; only inconclusive items may be explicitly retried with the retry-inconclusive switch. Confirmed/no-association items stay closed. Each explicit retry increments review_attempt and gets a fresh task ID, preventing an earlier completed session from being mistaken for a new review. Task IDs are also fingerprinted from the unresolved question, exact current/target content and locators, visual assets, model ID, and dedicated prompt; changed inputs cannot silently reuse a stale completed response. Response SHA-256 must still match the evidence-validation report at apply time. The source manifest, every assigned preprocessed text snapshot, two-sided evidence manifest, bundle, prompt, and every visual attachment are also SHA-256-bound at validation and rechecked before apply; an unregistered attachment or changed input blocks the update. The linked Result Record and unresolved item are separately snapshot-hashed at queue construction; if either changes before apply, the old context decision is rejected and must be reviewed against a rebuilt queue. A no_association decision requires positive counter-evidence and cannot be based only on a missing mention. Items without a linked result record and exact remote target remain in the unresolved queue.
 
+### Phase 4B — Human adjudication of unresolved context links
+
+Use `scripts/adjudicate_unresolved.py` when a targeted Worker B review remains inconclusive, a cross-chunk target cannot be built, or a person needs to make the final record-to-context decision.
+
+1. Run `--prepare` to create a separate template containing the unresolved item, candidate Result Records, and immutable hashes for the unresolved item, candidate records, source manifest, and all extracted text files for the paper.
+2. Keep that template unchanged. Copy it to a separate decision JSONL and select exactly one `record_id`; when an Observation has multiple result values, the choice must be explicit.
+3. A human may choose `association_confirmed`, `no_association`, or `remain_unresolved`. Provide a concrete rationale; no-association additionally requires a positive counter-evidence basis.
+4. For a confirmed association, provide one or more context facts. Every fact must cite exact, locally verifiable text/table evidence from both current and target sides. No-association also needs verified current+target evidence. Unverified or visual-only citations cannot close an association.
+5. Run `--apply` with both the unchanged template and edited decision file. Python validates the formal contract, exact source quotes/table cells, paper/source identity, candidate record membership, manifest/text hashes, and record/unresolved snapshots under the shared Registry lock.
+6. The applier writes the human decision and evidence to both unresolved and Result Record histories. A confirmed fact may enrich an existing identical context fact; no-association adds no fact; remain-unresolved preserves the open state. Result values, units, Feature/Observation IDs, method, and primary evidence are not changed.
+
+Never hand-edit the JSONL state or the immutable snapshot fields to bypass validation. A stale template must be rebuilt. Unknown resolution states remain export-blocking.
+
 ### Phase 5 — Global cross-paper reconciliation
 
 1. Build bounded pair-review tasks with source-backed Observation excerpts and relevant visual evidence.
