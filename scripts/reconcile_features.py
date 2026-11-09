@@ -386,6 +386,8 @@ def add_observation(
         str(candidate.get("reported_method") or ""),
         str(candidate.get("result_type") or ""),
         str(candidate.get("variable_role") or ""),
+        str(candidate.get("author_emphasis") or "not_assessable"),
+        str(candidate.get("selection_rationale") or ""),
         json.dumps(evidence_refs if (evidence_refs := candidate.get("evidence_refs") or []) else [], sort_keys=True, ensure_ascii=False),
     )
     existing_observation = next(
@@ -421,6 +423,8 @@ def add_observation(
         "reported_method": candidate.get("reported_method"),
         "result_type": candidate.get("result_type", "uncertain"),
         "variable_role": variable_role,
+        "author_emphasis": candidate.get("author_emphasis", "not_assessable"),
+        "selection_rationale": candidate.get("selection_rationale"),
         "evidence_refs": evidence_refs,
         "origin_task_id": task["task_id"],
         "origin_worker": "source_discovery" if role == "source_discovery" else "feature_audit",

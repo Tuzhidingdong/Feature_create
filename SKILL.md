@@ -1,18 +1,26 @@
 ---
 name: Feature_create
-description: Discover and extract result features and reported values from scientific papers and supplementary information using two independent free OpenCode Go workers, a thin Antigravity Supervisor, and deterministic local validation.
+description: Select representative scientific result features from preprocessed papers using author-discussion evidence, lightweight semantic deduplication, and deterministic validation.
 ---
 
 # Feature_create
 
 ## Mission
 
-Discover the broadest defensible set of result features actually reported in the supplied scientific papers and supplementary information (SI), extract their reported values with source evidence and dynamically associated context, reconcile feature identities across papers, and export exactly two formal TXT files:
+Select a **representative, scientifically meaningful set of Result Features** from the supplied preprocessed papers and supplementary information.
 
-1. `result_feature_records.txt`
-2. `result_feature_list.txt`
+Feature_create is deliberately narrow:
+- discover candidate outcome/result concepts;
+- give strong weight to what authors substantively discuss in the main text;
+- remove synonyms and redundant concepts while preserving genuinely different quantities;
+- select a manageable set representing important result dimensions without requiring exhaustive coverage;
+- export selected Feature definitions and their selection rationale.
 
-Do not perform feature selection, hypothesis testing, causal inference, interaction analysis, performance ranking, or machine-learning modelling. This Skill performs feature discovery, evidence-backed extraction, normalization, and auditing only.
+Feature_create does **not** extract individual reported values, sample identities, experimental conditions, protocols, or value-to-condition associations. A separate downstream project fills those fields for the selected Features.
+
+The formal scientific deliverable is `result_feature_list.txt`. Internal manifests, candidate observations, evidence references, and selection decisions support this deliverable; they are not additional scientific datasets.
+
+A representative set is the goal, not complete coverage. Do not force a fixed number or percentage of Features, and do not select every item that appears in a figure, table, or SI.
 
 ## Core model architecture
 
@@ -59,15 +67,13 @@ The Supervisor:
 
 Do not perform Worker A or Worker B's literature interpretation in the Supervisor.
 
-### OpenCode Worker A — Source-centric Discovery
+### OpenCode Worker A — Result Feature Discovery
 
-Worker A reviews one assigned evidence chunk at a time. It discovers raw result features, extracts individual result values, dynamically associates sample/context facts, and cites precise chunk/unit and original source locations.
+Worker A identifies scientifically meaningful result concepts and records author-emphasis labels supported by exact main-text passages. It does not extract result values or conditions.
 
-### OpenCode Worker B — Feature-centric Discovery and Audit
+### OpenCode Worker B — Independent Feature Review
 
-Worker B independently reviews the same assigned chunk without seeing Worker A's first-pass output. It independently discovers the feature inventory, checks assigned figures/tables/SI for omissions, detects semantic distinctions, and submits evidence-backed omission candidates.
-
-The two workers must run on different verified free models. The task contracts in `worker_prompts/` and `contracts/` are normative.
+Worker B independently checks for overlooked important concepts, especially results substantively discussed in the main text but easy to miss when attention is limited to figures/tables. It does not duplicate value extraction; its review is an accuracy check on the Feature inventory.
 
 ### Local deterministic Python layer
 
@@ -148,71 +154,28 @@ The internal `source_manifest.json` is a logical-source index derived from the C
 - If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
 - Worker A and Worker B must each return exactly one coverage entry for every assigned `scope_id`, preserving the corresponding `source_id`. Repeated `source_id` values with different units require separate entries. A source is counted fully reviewed only when every one of its scopes across every chunk has the worker's successful status. A completed task/chunk cannot mark other scopes of that source complete.
 
-### Phase 2 — Independent discovery and extraction
+### Phase 2 — Candidate Feature discovery
 
-For each bounded evidence chunk (Worker A and Worker B receive independent copies of the same chunk):
-
-- Worker A returns raw feature observations, individual result-value candidates, context facts, evidence references, coverage, and unresolved items.
-- Worker B independently returns feature observations, coverage audits, omission candidates, semantic distinctions, and unresolved items.
-- Neither worker receives the other's first-pass output.
-- Existing schema entries may be used only as a post-discovery mapping reference; they must never become the discovery boundary.
-- Run the two tasks with different free model IDs.
-
-Do not collapse multiple samples, conditions, time points, cycles, or series into one result record. Keep each separately represented.
+For each assigned evidence chunk:
+- Worker A identifies candidate result/outcome concepts, definitions, source evidence, and the strongest author-emphasis signal.
+- Worker B independently checks for missed important concepts and semantic distinctions.
+- Main-text Abstract, Results, Discussion, and Conclusion are the primary importance evidence. Figures/tables/SI are supporting discovery sources.
+- Worker outputs must not contain reported values or sample/condition/protocol records. Worker A keeps the legacy `result_records` field empty for contract compatibility.
+- Existing schema entries are mapping references only; they must not restrict discovery.
 
 ### Phase 3 — Deterministic validation
 
-Python validates:
-- payload structure and required fields;
-- source, chunk, and assigned unit identity;
-- quoted text within the exact assigned text range, not merely elsewhere in the same source;
-- table values against exact original row/column/cell or oversized-cell character fragment, and confirmation that the cited row/cell belongs to the assigned unit;
-- numeric parseability without changing the original reported string;
-- units and context association;
-- duplicate candidate records;
-- actual model identity and cost metadata where exposed;
-- unsupported or contradictory claims.
+Python validates worker payload structure, assigned source/chunk/unit identity, exact text quotes, original table/figure locators, evidence supporting each candidate's name/meaning, main-text evidence for substantive author-emphasis labels, candidate IDs, and result-vs-condition classification.
 
-A model agreement is not evidence. Every accepted result value must have a traceable source. Values that cannot be reliably read from figures must not be represented as exact numbers.
+Numerical-value parsing, figure digitization, sample/condition association, and Result Record validation are not part of the active Feature_create workflow.
 
-### Phase 4 — Global Registry ingestion
+### Phase 4 — Candidate Registry ingestion
 
-1. Preserve raw observations from Worker A and Worker B.
-2. Ingest each source observation into the persistent Registry with a stable Python ID.
-3. Ingest Worker A's individual result-value records separately, including dynamic sample/context facts.
-4. Preserve Worker B's omission candidates and within-paper semantic distinctions as review items.
-5. Build candidate Feature pairs using permissive lexical, alias, acronym, unit, and definition signals. These signals only retrieve candidates; they never merge them.
-6. Keep all new Canonical Features provisional until the global review stage resolves the candidate pairs.
-
-### Phase 4A — Targeted cross-chunk context review
-
-After Worker A/B first-pass outputs have been validated and ingested, resolve only those value-specific missing-context items that identify a concrete remote target unit.
-
-1. Worker A may nominate at most eight target units in an unresolved item's `cross_chunk_target`. Each target must carry its exact `chunk_id`, `unit_id`, and `source_id`, plus a context role, relation basis, and short rationale.
-2. Python verifies every nomination against the paper-wide `unit_navigation` index. For `adjacent_text_boundary` and `same_original_table_row`, it also verifies the exact cross-chunk navigation relation. A target from another paper, the current chunk, or an unindexed unit is blocked.
-3. Build a minimal context-review queue containing only the current result evidence, the selected target evidence, and the existing result record's identifying/context fields. Do not attach the full paper or any Worker A/B output.
-4. Route the task to the already-configured Worker B free model. Worker B receives a dedicated context-review prompt and must return exactly one of: `association_confirmed`, `no_association`, `insufficient_evidence`, or `conflicting_evidence`.
-5. A confirmed context fact must cite both CURRENT and TARGET evidence, using exact assigned unit/chunk IDs and locally verifiable text or table-cell values. Target descriptors are navigation requests, never evidence.
-6. `no_association` and `conflicting_evidence` also require verified text/table evidence from both sides. If either side cannot be verified, Worker B must return `insufficient_evidence`; lack of a citation is not proof that no association exists.
-7. Run the evidence validator against the two-sided evidence manifest. Reject a fact if its quote/cell is outside the assigned range, its side/source/chunk/unit identity is wrong, or the exact content cannot be verified. The validation report records the SHA-256 of the exact worker response file; the applier refuses to apply a response that changed after validation.
-8. The context applier may append only sample identity, condition, time/cycle, protocol, statistical-scope, or other context facts. It must not change the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, or first-pass evidence references.
-9. When an identical context fact already exists, merge newly verified evidence references into that fact rather than duplicate the sample/condition entry. Repeated application of the same task is idempotent.
-10. `no_association` closes that one investigated question without adding a fact. `insufficient_evidence` and `conflicting_evidence` remain unresolved for human review. All decisions and citations are retained in the unresolved item and linked result record history.
-
-This stage reuses Worker B; it is not a third worker or a repeated full-paper discovery pass. The context queue skips already reviewed/resolved items by default; only inconclusive items may be explicitly retried with the retry-inconclusive switch. Confirmed/no-association items stay closed. Each explicit retry increments review_attempt and gets a fresh task ID, preventing an earlier completed session from being mistaken for a new review. Task IDs are also fingerprinted from the unresolved question, exact current/target content and locators, visual assets, model ID, and dedicated prompt; changed inputs cannot silently reuse a stale completed response. Response SHA-256 must still match the evidence-validation report at apply time. The source manifest, every assigned preprocessed text snapshot, two-sided evidence manifest, bundle, prompt, and every visual attachment are also SHA-256-bound at validation and rechecked before apply; an unregistered attachment or changed input blocks the update. The linked Result Record and unresolved item are separately snapshot-hashed at queue construction; if either changes before apply, the old context decision is rejected and must be reviewed against a rebuilt queue. A no_association decision requires positive counter-evidence and cannot be based only on a missing mention. Items without a linked result record and exact remote target remain in the unresolved queue.
-
-### Phase 4B — Human adjudication of unresolved context links
-
-Use `scripts/adjudicate_unresolved.py` when a targeted Worker B review remains inconclusive, a cross-chunk target cannot be built, or a person needs to make the final record-to-context decision.
-
-1. Run `--prepare` to create a separate template containing the unresolved item, candidate Result Records, and immutable hashes for the unresolved item, candidate records, source manifest, and all extracted text files for the paper.
-2. Keep that template unchanged. Copy it to a separate decision JSONL and select exactly one `record_id`; when an Observation has multiple result values, the choice must be explicit.
-3. A human may choose `association_confirmed`, `no_association`, or `remain_unresolved`. Provide a concrete rationale; no-association additionally requires a positive counter-evidence basis.
-4. For a confirmed association, provide one or more context facts. Every fact must cite exact, locally verifiable text/table evidence from both current and target sides. No-association also needs verified current+target evidence. Unverified or visual-only citations cannot close an association.
-5. Run `--apply` with both the unchanged template and edited decision file. Python validates the formal contract, exact source quotes/table cells, paper/source identity, candidate record membership, manifest/text hashes, and record/unresolved snapshots under the shared Registry lock.
-6. The applier writes the human decision and evidence to both unresolved and Result Record histories. A confirmed fact may enrich an existing identical context fact; no-association adds no fact; remain-unresolved preserves the open state. Result values, units, Feature/Observation IDs, method, and primary evidence are not changed.
-
-Never hand-edit the JSONL state or the immutable snapshot fields to bypass validation. A stale template must be rebuilt. Unknown resolution states remain export-blocking.
+1. Preserve source Feature observations from both workers with author-emphasis labels.
+2. Assign stable Observation and provisional Feature IDs in Python.
+3. Keep source references and selection rationale with each Observation.
+4. Build semantic candidate pairs using name/alias/definition signals; these retrieve candidates but never automatically merge them.
+5. Do not create or populate per-paper Result Records. The downstream project owns value and condition extraction.
 
 ### Phase 5 — Global cross-paper reconciliation
 
@@ -238,49 +201,35 @@ Worker B supplies semantic recommendations. Python validates source provenance, 
 6. When there is no match, preserve the new Registry Feature ID. When evidence is insufficient or candidates conflict, do not force a mapping.
 7. Record the source schema hash and every mapping/no-mapping decision in the Registry decision log.
 
-### Phase 7 — Final global audit and export
+### Phase 7 — Representative Feature selection and export
 
-Audit cross-paper consistency, feature coverage, evidence integrity, record completeness, unresolved cases, and paid-cost compliance.
+After cross-paper reconciliation, make one global selection pass over active canonical Features. Use `worker_prompts/feature_selection.md` and `contracts/feature-selection.schema.json`.
 
-Export exactly two formal TXT files:
-- `result_feature_records.txt`
-- `result_feature_list.txt`
+Selection priorities:
+1. **Author emphasis:** principal conclusions, mechanistic interpretation, comparisons, and substantive Results/Discussion passages.
+2. **Scientific value and distinctiveness:** whether the Feature expresses an important outcome or distinct research dimension.
+3. **Cross-paper recurrence:** supporting evidence, but not a substitute for scientific importance.
+4. **Coverage contribution:** retain low-frequency Features representing an important otherwise-missing dimension.
+5. **Redundancy:** avoid synonyms, near-duplicates, trivial variants, and unnecessary fine-grained splits.
 
-The records file may contain paper identifiers, raw names, mapped feature IDs, reported values and units, result types, sample/context facts, protocols, evidence locators, extraction states, and unresolved questions.
+A figure/table-only Feature may be selected when it adds a distinct scientific dimension. Frequency alone must never determine selection. Use `review` when evidence is ambiguous; do not force a yes/no decision.
 
-Every result record must also state `CONTEXT_ASSOCIATION_STATUS` and list `OPEN_CONTEXT_UNRESOLVED_ITEMS`. A missing-context link is treated as resolved only after an explicit `association_confirmed` or `no_association` decision. Pending, insufficient, and conflicting associations block the default formal export. An explicit `--allow-unresolved-context` override is permitted only for a clearly provisional package; the unresolved state and issue IDs must remain visible in the records file. Unknown resolution states always block export.
+Every decision cites supporting Observation IDs and gives a concise reason. The Supervisor reviews the shortlist and borderline decisions, not every underlying value.
 
-The Feature-list file contains one entry per canonical result feature, with ID, canonical name, aliases, definition, result type, units/dimension, measurement/calculation methods, and standardization/comparability notes. It must not contain concrete values, Record_IDs, samples, conditions, paper coverage, or conclusions.
-
-
-Before export, run the global bidirectional integrity audit:
+Export only Features marked `select`:
 
 ```powershell
-python scripts/audit_global_integrity.py `
+python scripts/export_feature_list.py `
   --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+  --decisions "E:\\Zinc_batters_datas\\runs\\Feature_create\\feature_selection_decisions.json" `
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\output\\result_feature_list.txt"
 ```
 
-This is a read-only graph audit, not a repair step. It verifies Record → Observation → Feature links, Feature → Observation backlinks, Observation and Record source evidence, merge redirects, and append-only exclusion/split/merge decision chains. Resolve errors through existing deterministic reconciliation and human-adjudication workflows; never patch IDs or history to make the audit pass. Observation-without-Record findings are warnings by default and become blocking with `--strict-observation-records`. The final exporter runs the same hard checks internally under the canonical Registry/Record lock and refuses to write either TXT file when integrity errors remain. It must reject output/audit path aliases with inputs and include input plus final TXT SHA-256 fingerprints in its internal export audit. The integrity audit also rejects Records linked to non-result/excluded Observations, unsupported event types, merge redirects without matching direct transition events, transition evidence that does not cover each Feature subject, and exclusion events without their exact Observation evidence. See `docs/global_integrity_audit.md`.
+The export contains Feature definitions and Feature-level metadata only. It must not contain reported values, paper-specific samples, experimental conditions, or protocols.
 
 ### Phase 8 — Report
 
-Report counts calculated from local audit data:
-- sources found, accessible, reviewed, partially reviewed, and inaccessible;
-- papers and SI packages actually reviewed;
-- result records extracted and evidence-verified;
-- canonical features confirmed;
-- unresolved records and feature candidates;
-- unresolved context items, targeted cross-chunk context decisions, and unresolved context links remaining;
-- human context-adjudication decisions (confirmed/no-association/retained unresolved), context facts added/enriched, and records reviewed by a person;
-- figure-only and unreadable sources;
-- exact Worker A/B model IDs;
-- free-price verification timestamp/source;
-- usage/cost metadata where exposed, and explicit unknowns otherwise.
-
-Never let a model invent these counts.
+Report concise counts: papers/chunks reviewed, candidate Features found, selected/excluded/review-needed Features, author-emphasis distribution, source-coverage warnings, worker model IDs, and usage/cost information where exposed. Never let a model invent counts.
 
 ## Registry and worker contracts
 
@@ -301,14 +250,6 @@ Stop or pause when:
 
 Preserve partial work and report exactly what remains incomplete.
 
-
-## Global integrity finding remediation
-
-After `audit_global_integrity.py`, use `scripts/build_integrity_review_queue.py` to create the evidence-linked human review queue. The queue must expose the implicated Feature, Observation, Record, source evidence locator, and related decision history wherever available. It must not dispatch a model or attempt a best-effort repair.
-
-A human may mark a finding `repair_required`, `defer`, or—only for an actual warning with explicit review evidence—`accepted_warning`. Validate and append these decisions to the separate `integrity_review_decision_ledger.jsonl` ledger using `scripts/apply_integrity_review_decisions.py`. The apply command must verify the bundle manifest and all artifact hashes, confirm every template row carries the current full queue fingerprint, reject any path alias that could overwrite scientific inputs, then acquire the canonical Registry lock followed by the separate ledger lock and re-check Registry/Records/Manifest plus editable-decision hashes immediately before append. Queue publication must stage all output files and publish the bundle manifest last; apply rejects a partial or mismatched bundle. Rebuilding an existing review round requires `--force --archive-existing` so the prior editable decisions are preserved. Never write review outcomes into the Registry `decision_log` as if they were scientific transitions.
-
-Perform actual corrections only through existing source-evidence and Feature/Record reconciliation workflows. Preserve old decisions and append evidence-backed correcting events where the Registry state changes. Rebuild the audit queue with `--review-ledger` after corrections; report a finding as cleared only when the new audit no longer emits it. A human review status never overrides the exporter integrity gate. Full procedure: `docs/integrity_review_workflow.md`.
 
 ## Optional post-run diagnostic: Feature discovery marginal yield
 

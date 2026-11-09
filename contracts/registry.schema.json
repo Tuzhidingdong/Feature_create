@@ -208,6 +208,23 @@
             "null"
           ],
           "format": "date-time"
+        },
+        "author_emphasis": {
+          "enum": [
+            "core_conclusion",
+            "mechanistic_interpretation",
+            "comparative_discussion",
+            "explicit_results_discussion",
+            "figure_table_only",
+            "incidental_mention",
+            "not_assessable"
+          ]
+        },
+        "selection_rationale": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

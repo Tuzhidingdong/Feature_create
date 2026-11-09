@@ -221,6 +221,25 @@
           "items": {
             "$ref": "#/$defs/evidenceReference"
           }
+        },
+        "author_emphasis": {
+          "enum": [
+            "core_conclusion",
+            "mechanistic_interpretation",
+            "comparative_discussion",
+            "explicit_results_discussion",
+            "figure_table_only",
+            "incidental_mention",
+            "not_assessable"
+          ],
+          "description": "Strongest source-supported level of author attention; prefer main-text Results/Discussion/Conclusion."
+        },
+        "selection_rationale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Brief source-grounded reason this Feature may be representative or redundant."
         }
       }
     },
@@ -477,9 +496,18 @@
                   "source_id"
                 ],
                 "properties": {
-                  "chunk_id": {"type": "string", "minLength": 1},
-                  "unit_id": {"type": "string", "minLength": 1},
-                  "source_id": {"type": "string", "minLength": 1}
+                  "chunk_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "unit_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               }
             },
