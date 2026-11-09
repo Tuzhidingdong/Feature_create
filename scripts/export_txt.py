@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Iterable
-
-from feature_create.integrity import audit_integrity
 
 try:
     from jsonschema import Draft202012Validator
@@ -25,6 +24,10 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from feature_create.integrity import audit_integrity
+from scripts.reconcile_features import RegistryIngestionError, exclusive_lock, registry_lock_path
+
 REGISTRY_SCHEMA = ROOT / "contracts" / "registry.schema.json"
 
 RECORD_HEADERS = [
@@ -107,20 +110,70 @@ def json_cell(value: Any) -> str:
 def atomic_write_tsv(path: Path, headers: list[str], rows: Iterable[list[Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    with temporary.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(
-            handle,
-            delimiter="\t",
-            quotechar='"',
-            quoting=csv.QUOTE_MINIMAL,
-            lineterminator="\n",
-        )
-        writer.writerow(headers)
-        for row in rows:
-            writer.writerow(["" if value is None else value for value in row])
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    try:
+        with temporary.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(
+                handle,
+                delimiter="\t",
+                quotechar='"',
+                quoting=csv.QUOTE_MINIMAL,
+                lineterminator="\n",
+            )
+            writer.writerow(headers)
+            for row in rows:
+                writer.writerow(["" if value is None else value for value in row])
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def ensure_distinct_paths(roles: dict[str, Path | None]) -> None:
+    seen: list[tuple[str, Path]] = []
+    for role, candidate in roles.items():
+        if candidate is None:
+            continue
+        path = candidate.expanduser().resolve()
+        for previous_role, previous_path in seen:
+            same_file = path == previous_path
+            if not same_file and path.is_file() and previous_path.is_file():
+                try:
+                    same_file = os.path.samefile(path, previous_path)
+                except OSError:
+                    same_file = False
+            if same_file:
+                raise ExportError(
+                    f"Unsafe export path collision: {role} and {previous_role} refer to the same file ({path})."
+                )
+        seen.append((role, path))
+
+
+def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def validate_registry(registry: dict[str, Any]) -> list[str]:
@@ -506,7 +559,7 @@ def build_record_rows(
     return rows, errors
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main_unlocked(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export exactly the two formal Feature_create TXT files.")
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--records", type=Path, required=True)
@@ -523,15 +576,49 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    registry_path = args.registry.resolve()
+    registry_path = args.registry.expanduser().resolve()
+    records_input_path = args.records.expanduser().resolve()
+    review_queue_path = args.review_queue.expanduser().resolve()
+    existing_schema_path = args.existing_schema.expanduser().resolve() if args.existing_schema else None
+    source_manifest_path = args.source_manifest.expanduser().resolve() if args.source_manifest else None
+    output_dir = args.output_dir.expanduser().resolve()
+    records_output_path = output_dir / "result_feature_records.txt"
+    features_output_path = output_dir / "result_feature_list.txt"
+    audit_path = (
+        args.audit_report.expanduser().resolve()
+        if args.audit_report
+        else output_dir.parent / f"{output_dir.name}_export_audit.json"
+    )
+    ensure_distinct_paths({
+        "registry": registry_path,
+        "records": records_input_path,
+        "review_queue": review_queue_path,
+        "existing_schema": existing_schema_path,
+        "source_manifest": source_manifest_path,
+        "records_output": records_output_path,
+        "features_output": features_output_path,
+        "audit_report": audit_path,
+    })
+
+    input_paths = {
+        "registry": registry_path,
+        "records": records_input_path,
+        "review_queue": review_queue_path,
+    }
+    if existing_schema_path is not None:
+        input_paths["existing_schema"] = existing_schema_path
+    if source_manifest_path is not None:
+        input_paths["source_manifest"] = source_manifest_path
+    input_fingerprints = {name: sha256_file(path) for name, path in input_paths.items()}
+
     registry = read_json(registry_path)
     schema_errors = validate_registry(registry)
-    review_rows = read_jsonl(args.review_queue.resolve())
-    records = read_jsonl(args.records.resolve())
-    source_manifest = read_json(args.source_manifest.resolve()) if args.source_manifest else None
+    review_rows = read_jsonl(review_queue_path)
+    records = read_jsonl(records_input_path)
+    source_manifest = read_json(source_manifest_path) if source_manifest_path else None
     integrity_report = audit_integrity(registry, records, source_manifest, strict_observation_records=args.strict_observation_records)
     integrity_errors = [item for item in integrity_report["issues"] if item["severity"] == "error"]
-    existing_schema = read_json(args.existing_schema.resolve()) if args.existing_schema else None
+    existing_schema = read_json(existing_schema_path) if existing_schema_path else None
     if existing_schema and existing_schema.get("contract_version") != "0.1":
         raise ExportError("Existing schema must be normalized with import_existing_schema.py.")
 
@@ -611,22 +698,20 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
+    for role, path in input_paths.items():
+        if sha256_file(path) != input_fingerprints[role]:
+            raise ExportError(f"{role} input changed during export; the package was not published.")
+    report["input_fingerprints"] = input_fingerprints
+
     if errors:
-        output_dir = args.output_dir.expanduser().resolve()
-        audit_path = (
-            args.audit_report.resolve()
-            if args.audit_report
-            else output_dir.parent / f"{output_dir.name}_export_audit.json"
-        )
-        audit_path.parent.mkdir(parents=True, exist_ok=True)
-        audit_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+        report["formal_output_sha256"] = {}
+        atomic_write_json(audit_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 2
 
-    output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    records_path = output_dir / "result_feature_records.txt"
-    features_path = output_dir / "result_feature_list.txt"
+    records_path = records_output_path
+    features_path = features_output_path
     atomic_write_tsv(records_path, RECORD_HEADERS, record_rows)
     atomic_write_tsv(features_path, FEATURE_HEADERS, feature_rows)
 
@@ -640,14 +725,34 @@ def main(argv: list[str] | None = None) -> int:
         "result_feature_list": str(features_path),
         "formal_output_files": [records_path.name, features_path.name],
     })
-    if args.audit_report:
-        audit_path = args.audit_report.resolve()
-    else:
-        audit_path = output_dir.parent / f"{output_dir.name}_export_audit.json"
-    audit_path.parent.mkdir(parents=True, exist_ok=True)
-    audit_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    report["input_fingerprints"] = input_fingerprints
+    report["formal_output_sha256"] = {
+        records_path.name: sha256_file(records_path),
+        features_path.name: sha256_file(features_path),
+    }
+    atomic_write_json(audit_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if "-h" in arguments or "--help" in arguments:
+        return _main_unlocked(arguments)
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--registry", type=Path, required=True)
+    args, _unknown = parser.parse_known_args(arguments)
+    registry_path = args.registry.expanduser().resolve()
+    try:
+        # Registry and Result Record mutation stages use this same lock. Keep it
+        # through audit, validation, and final TXT/report publication so export
+        # cannot combine two different Registry/Records snapshots.
+        with exclusive_lock(registry_lock_path(registry_path)):
+            return _main_unlocked(arguments)
+    except (OSError, ValueError, ExportError, RegistryIngestionError) as exc:
+        print(f"BLOCKED: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
