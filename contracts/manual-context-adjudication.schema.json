@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/manual-context-adjudication.schema.json",
+  "title": "Feature_create human context adjudication",
+  "description": "Schema for a completed human-edited adjudication row copied from the immutable template produced by adjudicate_unresolved.py --prepare.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "template_version",
+    "decision_id",
+    "unresolved_id",
+    "paper_id",
+    "record_id",
+    "unresolved_snapshot_sha256",
+    "source_manifest_sha256",
+    "candidate_record_snapshot_sha256",
+    "paper_source_text_sha256",
+    "decision",
+    "rationale",
+    "review_evidence_refs",
+    "context_facts"
+  ],
+  "properties": {
+    "template_version": {
+      "const": "0.1"
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unresolved_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unresolved_snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_record_snapshot_sha256": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "paper_source_text_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "decision": {
+      "enum": [
+        "association_confirmed",
+        "no_association",
+        "remain_unresolved"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 12
+    },
+    "counterevidence_basis": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "explicit_other_sample_mapping",
+        "explicit_scope_exclusion",
+        "explicit_contradictory_identifier",
+        "other_positive_counterevidence",
+        null
+      ]
+    },
+    "review_evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceReference"
+      }
+    },
+    "context_facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contextFact"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "association_confirmed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "context_facts": {
+            "minItems": 1
+          }
+        },
+        "not": {
+          "required": [
+            "counterevidence_basis"
+          ],
+          "properties": {
+            "counterevidence_basis": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "no_association"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "counterevidence_basis": {
+            "enum": [
+              "explicit_other_sample_mapping",
+              "explicit_scope_exclusion",
+              "explicit_contradictory_identifier",
+              "other_positive_counterevidence"
+            ]
+          }
+        },
+        "required": [
+          "counterevidence_basis"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "remain_unresolved"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "context_facts": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "evidence_side",
+        "source_id",
+        "locator",
+        "quote_or_cell_value",
+        "evidence_status"
+      ],
+      "properties": {
+        "evidence_side": {
+          "enum": [
+            "current",
+            "target"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "quote_or_cell_value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_status": {
+          "enum": [
+            "verified_text",
+            "verified_table_cell"
+          ]
+        }
+      }
+    },
+    "contextFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_role",
+        "raw_label",
+        "raw_value",
+        "evidence_refs"
+      ],
+      "properties": {
+        "context_role": {
+          "enum": [
+            "sample_identity",
+            "condition",
+            "time_or_cycle",
+            "protocol",
+            "statistical_scope",
+            "other"
+          ]
+        },
+        "raw_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      }
+    }
+  }
+}
