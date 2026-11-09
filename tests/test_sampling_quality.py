@@ -148,5 +148,32 @@ class SamplingQualityTests(unittest.TestCase):
                 )
 
 
+
+    def test_conflicting_optional_metadata_is_reported_and_ineligible_papers_are_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rows = make_rows(20)
+            duplicate = dict(rows[0])
+            duplicate["abstract"] = "conflicting abstract value"
+            rows.append(duplicate)
+            rows[1]["preprocessing_status"] = "FAILED"
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, rows)
+            result = create_corpus_sample(
+                source, root / "sampling", fraction="0.25",
+                seed="metadata-conflict", stratify_by=(),
+            )
+            report = build_sampling_quality_report(
+                source, Path(result["sampling_manifest"]), root / "report",
+                dimensions=("abstract",),
+            )
+            self.assertEqual(1, report["sample"]["ineligible_paper_count"])
+            dimension = report["dimensions"][0]
+            self.assertEqual(1, dimension["population_metadata_conflict_paper_count"])
+            conflict = [item for item in dimension["categories"] if item["category"] == "(conflict)"]
+            self.assertEqual(1, len(conflict))
+            self.assertEqual(1, conflict[0]["population_paper_count"])
+
+
 if __name__ == "__main__":
     unittest.main()
