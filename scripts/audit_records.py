@@ -141,9 +141,8 @@ def context_issue_count(record: dict[str, Any]) -> int:
             for token in ("context", "sample identity", "condition", "not reported", "unknown")
         ):
             count += 1
-    context_notes = record.get("context_notes")
-    if isinstance(context_notes, str) and context_notes.strip():
-        count += 1
+    # Free-text notes are reported separately; they are not counted as explicit
+    # unresolved items because they may be descriptive rather than open questions.
     return count
 
 
