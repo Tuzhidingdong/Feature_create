@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Any, Iterator
 
 try:
+    from jsonschema import Draft202012Validator
+except ImportError:
+    Draft202012Validator = None  # type: ignore[assignment]
+
+try:
     from .validate_evidence import (
         load_manifest,
         verify_quote,
@@ -30,6 +35,9 @@ except ImportError:  # Executed as: python scripts/adjudicate_unresolved.py
         verify_quote,
         verify_table_cell,
     )
+
+
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "contracts" / "manual-context-adjudication.schema.json"
 
 
 RESOLVED = {"association_confirmed", "no_association"}
@@ -707,6 +715,10 @@ def main(argv: list[str] | None = None) -> int:
             raise AdjudicationError("Decision file is still identical to the prepared template; make a separate human-edited copy.")
         if not registry_path.is_file():
             raise AdjudicationError(f"Registry lock target does not exist: {registry_path}")
+        if Draft202012Validator is None:
+            raise AdjudicationError("Install jsonschema from requirements.txt.")
+        schema = read_json(SCHEMA_PATH)
+        validator = Draft202012Validator(schema)
 
         lock_path = registry_path.with_suffix(registry_path.suffix + ".lock")
         with exclusive_lock(lock_path):
@@ -743,6 +755,86 @@ def main(argv: list[str] | None = None) -> int:
                 prepared_template = templates_by_id.get(unresolved_id)
                 if not prepared_template:
                     errors.append(f"No prepared template for unresolved_id {unresolved_id}.")
+                    continue
+                schema_errors = sorted(
+                    validator.iter_errors(item),
+                    key=lambda error: list(error.absolute_path),
+                )
+                if schema_errors:
+                    errors.append(
+                        f"{decision_id}: contract validation failed: "
+                        + "; ".join(
+                            f"{'/'.join(str(part) for part in error.absolute_path) or '                    "template_version", "decision_id", "paper_id", "worker_task_id",
+                    "candidate_record_snapshot_sha256", "unresolved_snapshot_sha256",
+                    "source_manifest_sha256", "paper_source_text_sha256",
+                    "candidate_records", "related_candidate_record_id",
+                    "related_candidate_observation_id",
+                )
+                if any(item.get(field) != prepared_template.get(field) for field in immutable_fields):
+                    errors.append(f"{decision_id}: prepared template metadata was modified; restore it from the unchanged template file.")
+                    continue
+                ok, note, result = validate_decision(
+                    item, templates_by_id, records_map, unresolved_map,
+                    manifest_hash, manifest, output_root,
+                )
+                if not ok or result is None:
+                    errors.append(note)
+                else:
+                    validated.append(result)
+
+            if errors:
+                report = {
+                    "adjudication_version": "0.1",
+                    "mode": "apply",
+                    "applied_at": utc_now(),
+                    "decision_count": len(decisions),
+                    "validated_count": len(validated),
+                    "applied_count": 0,
+                    "status": "blocked",
+                    "errors": errors,
+                }
+                atomic_write_json(args.report.resolve(), report)
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                return 2
+
+            records_working = copy.deepcopy(records_map)
+            unresolved_working = copy.deepcopy(unresolved_map)
+            applied = []
+            for item in validated:
+                record = records_working[item["record_id"]]
+                unresolved = unresolved_working[item["unresolved_id"]]
+                applied.append(apply_one(record, unresolved, item))
+
+            # Keep stable JSONL order from the source files.
+            new_records = [records_working[str(row.get("record_id"))] for row in records_original]
+            new_unresolved = [unresolved_working[str(row.get("unresolved_id"))] for row in unresolved_original]
+            atomic_write_jsonl(records_path, new_records)
+            atomic_write_jsonl(unresolved_path, new_unresolved)
+
+        report = {
+            "adjudication_version": "0.1",
+            "mode": "apply",
+            "applied_at": utc_now(),
+            "decision_count": len(decisions),
+            "validated_count": len(validated),
+            "applied_count": len(applied),
+            "decisions": applied,
+            "status": "applied",
+        }
+        atomic_write_json(args.report.resolve(), report)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    except (AdjudicationError, OSError, KeyError, TypeError, ValueError) as exc:
+        print(f"BLOCKED: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+}: {error.message}"
+                            for error in schema_errors
+                        )
+                    )
                     continue
                 immutable_fields = (
                     "template_version", "decision_id", "paper_id", "worker_task_id",
