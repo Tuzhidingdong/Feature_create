@@ -321,6 +321,7 @@ def create_corpus_sample(
                 "check algorithm version, source CSV, seed, and strata."
             )
 
+    eligible = [item for item in candidates if item["eligible"]]
     previous_keys = previous["selected_keys"] if previous else set()
     newly_selected_keys = selected_keys - previous_keys
     selected_rows = [row for row in rows if paper_identity_key(row) in selected_keys]
@@ -412,7 +413,7 @@ def create_corpus_sample(
         raise
 
     return {
-        "status": "complete",
+        "status": "complete" if newly_selected_keys else "no_new_papers",
         "source_paper_count": len(candidates),
         "eligible_paper_count": len(eligible),
         "ineligible_paper_count": len(candidates) - len(eligible),
