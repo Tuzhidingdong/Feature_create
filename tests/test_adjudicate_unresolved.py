@@ -163,6 +163,10 @@ class HumanContextAdjudicationTests(unittest.TestCase):
         self.assertEqual(len(template["unresolved_snapshot_sha256"]), 64)
         self.assertEqual(len(template["source_manifest_sha256"]), 64)
         self.assertEqual(len(template["paper_source_text_sha256"]["SRC-MAIN"]), 64)
+        self.assertEqual(template["unresolved_evidence_refs"], [])
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        import hashlib
+        self.assertEqual(report["template_sha256"], hashlib.sha256(self.template_path.read_bytes()).hexdigest())
 
     def test_confirmed_decision_adds_verified_context_and_closes_issue(self) -> None:
         template = self._prepare()
@@ -190,6 +194,10 @@ class HumanContextAdjudicationTests(unittest.TestCase):
         self.assertEqual(unresolved["resolution_actor"], "human")
         self.assertEqual(unresolved["manual_review_history"][0]["actor"], "human")
         self.assertEqual(record["unresolved_issues"][0]["resolution_status"], "association_confirmed")
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        self.assertEqual(report["status"], "applied")
+        self.assertEqual(len(report["template_sha256"]), 64)
+        self.assertEqual(len(report["decision_sha256"]), 64)
 
     def test_no_association_requires_positive_counterevidence_basis(self) -> None:
         template = self._prepare()
@@ -225,6 +233,22 @@ class HumanContextAdjudicationTests(unittest.TestCase):
         changed = self._read_jsonl(self.records_path)[0]
         changed["raw_value"] = "151"
         self._write_jsonl(self.records_path, [changed])
+        before_records = self.records_path.read_bytes()
+        before_unresolved = self.unresolved_path.read_bytes()
+        code = self._apply(template, "association_confirmed", context_facts=[{
+            "context_role": "sample_identity",
+            "raw_label": "S-01",
+            "raw_value": "Electrolyte containing 0.2 M additive X",
+            "evidence_refs": self._valid_both_sides(),
+        }])
+        self.assertEqual(code, 2)
+        self.assertEqual(self.records_path.read_bytes(), before_records)
+        self.assertEqual(self.unresolved_path.read_bytes(), before_unresolved)
+
+    def test_source_text_changed_after_template_blocks_resolution(self) -> None:
+        template = self._prepare()
+        changed_text = self.root / "prepared" / "text" / "main.txt"
+        changed_text.write_text("Modified unrelated source text.", encoding="utf-8")
         before_records = self.records_path.read_bytes()
         before_unresolved = self.unresolved_path.read_bytes()
         code = self._apply(template, "association_confirmed", context_facts=[{
