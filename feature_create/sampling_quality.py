@@ -327,7 +327,7 @@ def render_sampling_quality_markdown(report: dict[str, Any]) -> str:
             f"- Total variation distance: **{dimension['total_variation_distance_percent']:.2f}%**",
             f"- Largest absolute category-share difference: **{dimension['max_absolute_share_difference_percentage_points']:.2f} percentage points**",
             f"- Categories absent from sample: **{len(dimension['categories_absent_from_sample'])}** "
-            f"(representing {dimension['absent_category_population_papers']} eligible papers)",
+            f"(representing {dimension['absent_category_population_paper_count']} eligible papers)",
             f"- Papers with conflicting values for this dimension: **{dimension['population_metadata_conflict_paper_count']}**",
             "",
             "| Category | Population n | Sample n | Population % | Sample % | Difference (pp) | Representation ratio |",
