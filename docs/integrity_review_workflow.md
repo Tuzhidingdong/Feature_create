@@ -11,7 +11,7 @@ It deliberately does **not**:
 - claim that a review decision has repaired a finding;
 - invoke a model or dispatch a Worker.
 
-Human triage decisions are stored in a separate append-only `integrity_review_decisions.jsonl` ledger. Actual scientific changes must use the existing evidence/reconciliation workflows. A fresh integrity audit is the only way to confirm that a finding is no longer present.
+Human triage decisions are stored in a separate append-only `integrity_review_decision_ledger.jsonl` ledger. Actual scientific changes must use the existing evidence/reconciliation workflows. A fresh integrity audit is the only way to confirm that a finding is no longer present.
 
 ## 1. Build the queue
 
@@ -25,7 +25,7 @@ python scripts/build_integrity_review_queue.py`
   --registry (Join-Path $run "global_feature_registry.json")`
   --records (Join-Path $run "worker_runs\\result_records.jsonl")`
   --manifest (Join-Path $run "prepared\\source_manifest.json")`
-  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl")`
+  --review-ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --output-dir $review
 ```
 
@@ -77,7 +77,7 @@ python scripts/apply_integrity_review_decisions.py`
   --registry (Join-Path $run "global_feature_registry.json")`
   --records (Join-Path $run "worker_runs\\result_records.jsonl")`
   --manifest (Join-Path $run "prepared\\source_manifest.json")`
-  --ledger (Join-Path $review "integrity_review_decisions.jsonl")`
+  --ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --report (Join-Path $review "integrity_review_apply_report.json")
 ```
 
@@ -106,7 +106,7 @@ python scripts/build_integrity_review_queue.py`
   --registry (Join-Path $run "global_feature_registry.json")`
   --records (Join-Path $run "worker_runs\\result_records.jsonl")`
   --manifest (Join-Path $run "prepared\\source_manifest.json")`
-  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl")`
+  --review-ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --output-dir $review`
   --force
 ```
