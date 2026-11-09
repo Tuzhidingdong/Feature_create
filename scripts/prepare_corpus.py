@@ -149,6 +149,46 @@ def load_sampling_provenance(
         raise CorpusError("Sampling manifest selected_paper_count does not match the sampled CSV.")
     if sampling.get("selected_row_count") != len(rows):
         raise CorpusError("Sampling manifest selected_row_count does not match the sampled CSV row count.")
+
+    # Validate the manifest's complete paper-decision ledger, not only its selected-key list.
+    decisions = sampling.get("paper_decisions")
+    if not isinstance(decisions, list):
+        raise CorpusError("Sampling manifest paper_decisions must be an array.")
+    decision_keys = [str(item.get("paper_key") or "") for item in decisions if isinstance(item, dict)]
+    if len(decisions) != sampling.get("source_paper_count") or len(decision_keys) != len(decisions):
+        raise CorpusError("Sampling manifest paper_decisions count or item shape is invalid.")
+    if len(decision_keys) != len(set(decision_keys)) or any(not key for key in decision_keys):
+        raise CorpusError("Sampling manifest paper_decisions contains missing or duplicate paper keys.")
+    selected_decision_keys = sorted(
+        str(item["paper_key"]) for item in decisions if item.get("selected") is True
+    )
+    if selected_decision_keys != sorted(str(item) for item in selected_keys):
+        raise CorpusError("Sampling manifest selected flags do not match selected_paper_keys.")
+    if any(item.get("selected") and not item.get("eligible") for item in decisions):
+        raise CorpusError("Sampling manifest selects an ineligible paper.")
+    eligible_count = sum(1 for item in decisions if item.get("eligible") is True)
+    ineligible_count = sum(1 for item in decisions if item.get("eligible") is False)
+    if eligible_count != sampling.get("eligible_paper_count"):
+        raise CorpusError("Sampling manifest eligible_paper_count does not match paper_decisions.")
+    if ineligible_count != sampling.get("ineligible_paper_count"):
+        raise CorpusError("Sampling manifest ineligible_paper_count does not match paper_decisions.")
+    if eligible_count + ineligible_count != sampling.get("source_paper_count"):
+        raise CorpusError("Sampling manifest source/eligible/ineligible paper counts are inconsistent.")
+    if sampling.get("target_selected_paper_count") != selected_count:
+        raise CorpusError("Sampling manifest target_selected_paper_count does not match selected_paper_count.")
+    if sum(int(item.get("row_count", 0)) for item in decisions) != sampling.get("source_row_count"):
+        raise CorpusError("Sampling manifest paper row counts do not sum to source_row_count.")
+    if sum(int(item.get("row_count", 0)) for item in decisions if item.get("selected")) != len(rows):
+        raise CorpusError("Sampling manifest selected paper row counts do not match sampled CSV rows.")
+
+    strata = sampling.get("stratum_summary")
+    if not isinstance(strata, list):
+        raise CorpusError("Sampling manifest stratum_summary must be an array.")
+    if sum(int(item.get("eligible_paper_count", 0)) for item in strata) != eligible_count:
+        raise CorpusError("Sampling manifest stratum eligible counts do not match paper_decisions.")
+    if sum(int(item.get("selected_paper_count", 0)) for item in strata) != selected_count:
+        raise CorpusError("Sampling manifest stratum selected quotas do not match selected_paper_count.")
+
     source_hash = str(sampling.get("source_csv_sha256") or "").lower()
     if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
         raise CorpusError("Sampling manifest has an invalid source_csv_sha256.")
