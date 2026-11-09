@@ -185,6 +185,46 @@ class CorpusSamplingTests(unittest.TestCase):
                 set(selected_dois(Path(second["sampled_csv"]))),
             )
 
+    def test_duplicate_paper_with_conflicting_year_is_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            rows = make_rows(20)
+            duplicate = dict(rows[0])
+            duplicate["year"] = "1999"
+            rows.append(duplicate)
+            write_csv(source, rows)
+
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.1", seed="metadata-conflict", stratify_by=("year",),
+            )
+            manifest = __import__("json").loads(Path(result["sampling_manifest"]).read_text(encoding="utf-8"))
+            decision = next(item for item in manifest["paper_decisions"] if item["doi"] == "10.1234/paper-0000")
+            self.assertFalse(decision["eligible"])
+            self.assertIn("conflicting_stratification_metadata:year", decision["exclusion_reasons"])
+            self.assertEqual(19, result["eligible_paper_count"])
+            self.assertEqual(2, result["selected_paper_count"])
+
+    def test_duplicate_paper_with_conflicting_preprocessing_path_is_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            rows = make_rows(20)
+            duplicate = dict(rows[0])
+            duplicate["preprocessing_path"] = "preprocessed/duplicate-package"
+            rows.append(duplicate)
+            write_csv(source, rows)
+
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.1", seed="package-conflict", stratify_by=(),
+            )
+            manifest = __import__("json").loads(Path(result["sampling_manifest"]).read_text(encoding="utf-8"))
+            decision = next(item for item in manifest["paper_decisions"] if item["doi"] == "10.1234/paper-0000")
+            self.assertFalse(decision["eligible"])
+            self.assertIn("conflicting_preprocessing_paths", decision["exclusion_reasons"])
+            self.assertEqual(19, result["eligible_paper_count"])
+            self.assertEqual(2, result["selected_paper_count"])
+
     def test_existing_sample_outputs_are_not_silently_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
