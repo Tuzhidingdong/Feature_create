@@ -71,6 +71,26 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def ensure_distinct_paths(roles: dict[str, Path | None]) -> None:
+    seen: list[tuple[str, Path]] = []
+    for role, candidate in roles.items():
+        if candidate is None:
+            continue
+        path = candidate.expanduser().resolve()
+        for previous_role, previous_path in seen:
+            same_file = path == previous_path
+            if not same_file and path.is_file() and previous_path.is_file():
+                try:
+                    same_file = os.path.samefile(path, previous_path)
+                except OSError:
+                    same_file = False
+            if same_file:
+                raise ReviewApplyError(
+                    f"Unsafe path collision: {role} and {previous_role} refer to the same file ({path})."
+                )
+        seen.append((role, path))
+
+
 def validate_bundle(
     bundle_path: Path,
     queue_path: Path,
@@ -200,6 +220,19 @@ def main(argv: list[str] | None = None) -> int:
         records_path = args.records.expanduser().resolve()
         manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
         bundle_path = args.bundle.expanduser().resolve() if args.bundle else queue_path.parent / "integrity_review_bundle.json"
+        ledger_path = args.ledger.expanduser().resolve()
+        report_path = args.report.expanduser().resolve()
+        ensure_distinct_paths({
+            "queue": queue_path,
+            "template": template_path,
+            "decisions": decisions_path,
+            "registry": registry_path,
+            "records": records_path,
+            "manifest": manifest_path,
+            "bundle": bundle_path,
+            "ledger": ledger_path,
+            "report": report_path,
+        })
 
         queue = read_object(queue_path)
         template_rows = read_jsonl(template_path)
@@ -236,7 +269,6 @@ def main(argv: list[str] | None = None) -> int:
         validated = validate_review_rows(queue, template_rows, decision_rows)
         new_entries = make_ledger_entries(validated)
 
-        ledger_path = args.ledger.expanduser().resolve()
         ledger_lock_path = ledger_path.with_name(ledger_path.name + ".lock")
         registry_lock = registry_lock_path(registry_path)
 
@@ -297,7 +329,6 @@ def main(argv: list[str] | None = None) -> int:
                 "After a correction through the existing workflow, rebuild the queue to confirm clearance."
             ),
         }
-        report_path = args.report.expanduser().resolve()
         atomic_write_json(report_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
