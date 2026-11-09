@@ -144,6 +144,9 @@
               "explicit_contradictory_identifier",
               "other_positive_counterevidence"
             ]
+          },
+          "context_facts": {
+            "maxItems": 0
           }
         },
         "required": [
