@@ -168,3 +168,9 @@ python scripts/audit_global_integrity.py `
 
 Eligible Observations without a Result Record are warnings by default because a source may identify a variable without supplying an exportable value. Add `--strict-observation-records` when complete Observation-to-Record materialization is required. See [docs/global_integrity_audit.md](docs/global_integrity_audit.md).
 
+
+
+## Integrity review and remediation queue
+
+Build a source-linked human review queue from the global audit, then record triage separately from the Registry. The queue never changes scientific records or decision history; corrections must use the existing evidence/reconciliation workflows and be confirmed by a new audit. See [docs/integrity_review_workflow.md](docs/integrity_review_workflow.md) for the prepare → review → append-only ledger → correct → re-audit process.
+
