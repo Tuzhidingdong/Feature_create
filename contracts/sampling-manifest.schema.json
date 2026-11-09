@@ -11,6 +11,7 @@
     "algorithm",
     "seed",
     "requested_fraction",
+    "min_papers",
     "stratify_by",
     "source_csv_path",
     "source_csv_sha256",
@@ -192,6 +193,10 @@
           }
         }
       }
+    },
+    "min_papers": {
+      "type": "integer",
+      "minimum": 1
     }
   }
 }
