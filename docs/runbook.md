@@ -466,6 +466,6 @@ Do not treat this version as production-ready until the local smoke test and a m
 
 ## 19. Integrity finding review and remediation
 
-After the global audit, build the human review queue with `scripts/build_integrity_review_queue.py`. It enriches each issue with related Features, Observations, Result Records, source references, and decision history. Copy and edit its JSONL decision template, then validate and append the human triage to a separate `integrity_review_decisions.jsonl` ledger with `scripts/apply_integrity_review_decisions.py`.
+After the global audit, build the human review queue with `scripts/build_integrity_review_queue.py`. It enriches each issue with related Features, Observations, Result Records, source references, and decision history. Copy and edit its JSONL decision template, then validate and append the human triage to a separate `integrity_review_decision_ledger.jsonl` ledger with `scripts/apply_integrity_review_decisions.py`.
 
 The apply step is snapshot-bound: it refuses decisions if Registry, Records, or Manifest bytes have changed since queue preparation. It does not edit scientific data or the Registry decision log. `repair_required` is not a repair; complete the correction through the existing reconciliation / evidence workflow, then rebuild the queue with `--review-ledger` to verify that the finding is absent. Hard errors cannot be reclassified as accepted warnings, and accepted warnings never bypass the final export gate. See [integrity_review_workflow.md](integrity_review_workflow.md) for the full PowerShell procedure.
