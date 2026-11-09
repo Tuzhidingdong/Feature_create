@@ -704,6 +704,10 @@ def _main_unlocked(argv: list[str] | None = None) -> int:
     report["input_fingerprints"] = input_fingerprints
 
     if errors:
+        report["formal_outputs_written"] = False
+        report["stale_formal_output_files"] = [
+            path.name for path in (records_output_path, features_output_path) if path.is_file()
+        ]
         report["formal_output_sha256"] = {}
         atomic_write_json(audit_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -726,6 +730,8 @@ def _main_unlocked(argv: list[str] | None = None) -> int:
         "formal_output_files": [records_path.name, features_path.name],
     })
     report["input_fingerprints"] = input_fingerprints
+    report["formal_outputs_written"] = True
+    report["stale_formal_output_files"] = []
     report["formal_output_sha256"] = {
         records_path.name: sha256_file(records_path),
         features_path.name: sha256_file(features_path),
