@@ -116,43 +116,89 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _expected_dhondt_selection(
+    decisions: list[dict[str, Any]], target_count: int,
+) -> tuple[set[str], dict[str, int]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in decisions:
+        if item.get("eligible") is True:
+            groups[str(item["stratum"])].append(item)
+    quotas = {name: 0 for name in groups}
+    for _ in range(target_count):
+        available = [name for name in sorted(groups) if quotas[name] < len(groups[name])]
+        if not available:
+            raise CorpusError("Sampling manifest D'Hondt allocation exceeds the eligible papers.")
+        winner = max(
+            available,
+            key=lambda name: (Fraction(len(groups[name]), quotas[name] + 1), name),
+        )
+        quotas[winner] += 1
+    selected = set()
+    for name, members in groups.items():
+        ranked = sorted(members, key=lambda item: (str(item["score"]), str(item["paper_key"])))
+        selected.update(str(item["paper_key"]) for item in ranked[:quotas[name]])
+    return selected, quotas
+
+
 def load_sampling_provenance(
     path: Path, paired_csv: Path, rows: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Verify the sample manifest is bound to the exact CSV used for preparation."""
+    """Verify either the cumulative sample CSV or its newly-selected incremental CSV."""
     sampling = read_json(path)
-    if sampling.get("sampling_manifest_version") != "0.1":
+    if sampling.get("sampling_manifest_version") != "0.2":
         raise CorpusError(
             f"Unsupported sampling_manifest_version: {sampling.get('sampling_manifest_version')!r}"
         )
-    expected_hash = str(sampling.get("sampled_csv_sha256") or "").lower()
+    if sampling.get("algorithm") != "sha256_rank_within_strata_dhondt_v2":
+        raise CorpusError("Sampling manifest uses an unsupported sampling algorithm.")
+
     actual_hash = sha256_file(paired_csv)
-    if not expected_hash or expected_hash != actual_hash:
+    cumulative_hash = str(sampling.get("sampled_csv_sha256") or "").lower()
+    incremental_hash = str(sampling.get("incremental_csv_sha256") or "").lower()
+    if actual_hash == cumulative_hash:
+        applied_view = "cumulative"
+        applied_keys = sampling.get("selected_paper_keys")
+        applied_row_count = sampling.get("selected_row_count")
+    elif actual_hash == incremental_hash:
+        applied_view = "incremental"
+        applied_keys = sampling.get("newly_selected_paper_keys")
+        applied_row_count = sampling.get("newly_selected_row_count")
+    else:
         raise CorpusError(
-            "Sampling manifest does not match the selected paired CSV SHA-256; "
-            "the sample may have been edited or replaced."
+            "Sampling manifest does not match either the cumulative sampled CSV "
+            "or the newly-selected incremental CSV SHA-256."
         )
-    integer_fields = (
-        "source_row_count", "source_paper_count", "eligible_paper_count",
-        "ineligible_paper_count", "target_selected_paper_count",
-        "selected_paper_count", "selected_row_count", "min_papers",
-    )
-    for field in integer_fields:
+
+    integer_fields = {
+        "source_row_count": 1, "source_paper_count": 1, "eligible_paper_count": 1,
+        "ineligible_paper_count": 0, "target_selected_paper_count": 1,
+        "selected_paper_count": 1, "selected_row_count": 1, "min_papers": 1,
+        "previous_selected_paper_count": 0, "newly_selected_paper_count": 0,
+        "newly_selected_row_count": 0,
+    }
+    for field, minimum in integer_fields.items():
         value = sampling.get(field)
-        minimum = 1 if field in {"source_row_count", "source_paper_count", "eligible_paper_count", "target_selected_paper_count", "selected_paper_count", "selected_row_count", "min_papers"} else 0
         if type(value) is not int or value < minimum:
             raise CorpusError(f"Sampling manifest has an invalid {field}.")
 
     selected_keys = sampling.get("selected_paper_keys")
     selected_count = sampling["selected_paper_count"]
+    newly_selected_keys = sampling.get("newly_selected_paper_keys")
+    newly_count = sampling["newly_selected_paper_count"]
     if not isinstance(selected_keys, list) or len(selected_keys) != selected_count:
         raise CorpusError("Sampling manifest has an invalid selected_paper_keys inventory.")
-    if any(not isinstance(item, str) or not item for item in selected_keys):
-        raise CorpusError("Sampling manifest selected_paper_keys contains an invalid key.")
-    if len(selected_keys) != len(set(selected_keys)):
-        raise CorpusError("Sampling manifest contains duplicate selected paper keys.")
-    if sampling.get("algorithm") != "sha256_rank_within_strata_v1":
-        raise CorpusError("Sampling manifest uses an unsupported sampling algorithm.")
+    if not isinstance(newly_selected_keys, list) or len(newly_selected_keys) != newly_count:
+        raise CorpusError("Sampling manifest has an invalid newly_selected_paper_keys inventory.")
+    for label, keys in (("selected", selected_keys), ("newly selected", newly_selected_keys)):
+        if any(not isinstance(item, str) or not item for item in keys):
+            raise CorpusError(f"Sampling manifest {label} paper keys contain invalid values.")
+        if len(keys) != len(set(keys)):
+            raise CorpusError(f"Sampling manifest {label} paper keys contain duplicates.")
+    if not set(newly_selected_keys).issubset(set(selected_keys)):
+        raise CorpusError("Newly selected paper keys are not a subset of the cumulative sample.")
+    if selected_count != sampling["previous_selected_paper_count"] + newly_count:
+        raise CorpusError("Cumulative, previous, and newly selected paper counts are inconsistent.")
+
     if not isinstance(sampling.get("seed"), str) or not sampling["seed"].strip():
         raise CorpusError("Sampling manifest has an empty or invalid seed.")
     stratify_by = sampling.get("stratify_by")
@@ -165,17 +211,58 @@ def load_sampling_provenance(
     if not fraction.is_finite() or fraction <= 0 or fraction > 1:
         raise CorpusError("Sampling manifest requested_fraction must be greater than 0 and at most 1.")
 
+    previous_path_value = sampling.get("previous_manifest_path")
+    previous_hash_value = sampling.get("previous_manifest_sha256")
+    previous_count = sampling["previous_selected_paper_count"]
+    if previous_count == 0:
+        if previous_path_value is not None or previous_hash_value is not None:
+            raise CorpusError("First-round sample must not contain previous-manifest references.")
+        if sorted(newly_selected_keys) != sorted(selected_keys):
+            raise CorpusError("First-round newly-selected keys must equal the cumulative sample.")
+    else:
+        if not isinstance(previous_path_value, str) or not isinstance(previous_hash_value, str):
+            raise CorpusError("Incremental sample is missing its previous-manifest provenance.")
+        previous_path = Path(previous_path_value).expanduser()
+        if not previous_path.is_file() or sha256_file(previous_path) != previous_hash_value:
+            raise CorpusError("Previous sampling manifest is missing or its SHA-256 has changed.")
+        previous = read_json(previous_path)
+        if previous.get("sampling_manifest_version") != "0.2" or previous.get("algorithm") != sampling["algorithm"]:
+            raise CorpusError("Previous sampling manifest version/algorithm is incompatible.")
+        if previous.get("source_csv_sha256") != sampling.get("source_csv_sha256"):
+            raise CorpusError("Previous and current samples do not share the same source CSV.")
+        if previous.get("seed") != sampling["seed"] or previous.get("stratify_by") != stratify_by:
+            raise CorpusError("Previous and current samples use different seed/stratification settings.")
+        if not isinstance(previous.get("selected_paper_keys"), list):
+            raise CorpusError("Previous sampling manifest selected_paper_keys is invalid.")
+        previous_keys = set(previous["selected_paper_keys"])
+        if len(previous_keys) != previous_count or not previous_keys.issubset(set(selected_keys)):
+            raise CorpusError("Previous selected paper keys are inconsistent with the cumulative sample.")
+        if set(selected_keys) - previous_keys != set(newly_selected_keys):
+            raise CorpusError("Newly selected keys do not equal the cumulative sample minus the previous sample.")
+        try:
+            previous_fraction = Decimal(str(previous.get("requested_fraction")))
+        except InvalidOperation as exc:
+            raise CorpusError("Previous sample fraction is invalid.") from exc
+        if not previous_fraction.is_finite() or previous_fraction >= fraction or previous_fraction <= 0:
+            raise CorpusError("The new sample fraction must exceed the previous sample fraction.")
+        previous_csv = Path(str(previous.get("sampled_csv_path") or "")).expanduser()
+        if (
+            not previous_csv.is_file()
+            or sha256_file(previous_csv) != previous.get("sampled_csv_sha256")
+        ):
+            raise CorpusError("Previous sampled CSV is missing or no longer matches its recorded hash.")
+
     rows = rows if rows is not None else load_paired_csv(paired_csv)
+    if not rows:
+        raise CorpusError("The supplied sampling view contains no new papers; do not run corpus preparation.")
     try:
         actual_keys = sorted({paper_identity_key(row) for row in rows})
     except SamplingError as exc:
         raise CorpusError(f"Cannot verify sampled paper identities: {exc}") from exc
-    if actual_keys != sorted(selected_keys):
-        raise CorpusError("Sampling manifest selected paper keys do not match the sampled CSV contents.")
-    if selected_count != len(actual_keys):
-        raise CorpusError("Sampling manifest selected_paper_count does not match the sampled CSV.")
-    if sampling["selected_row_count"] != len(rows):
-        raise CorpusError("Sampling manifest selected_row_count does not match the sampled CSV row count.")
+    if actual_keys != sorted(str(item) for item in applied_keys):
+        raise CorpusError(f"Sampling manifest {applied_view} paper keys do not match the supplied CSV.")
+    if applied_row_count != len(rows):
+        raise CorpusError(f"Sampling manifest {applied_view} row count does not match the supplied CSV.")
 
     decisions = sampling.get("paper_decisions")
     if not isinstance(decisions, list) or len(decisions) != sampling["source_paper_count"]:
@@ -199,12 +286,17 @@ def load_sampling_provenance(
             raise CorpusError(f"Sampling manifest has an invalid stratum for {key}.")
         if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("score") or "")):
             raise CorpusError(f"Sampling manifest has an invalid deterministic score for {key}.")
+        expected_score = hashlib.sha256(
+            f"{sampling['algorithm']}\0{sampling['seed']}\0{key}".encode("utf-8")
+        ).hexdigest()
+        if item["score"] != expected_score:
+            raise CorpusError(f"Sampling manifest score does not match its algorithm/seed for {key}.")
         decision_by_key[key] = item
 
-    selected_decision_keys = sorted(
+    selected_decision_keys = {
         key for key, item in decision_by_key.items() if item["selected"]
-    )
-    if selected_decision_keys != sorted(selected_keys):
+    }
+    if selected_decision_keys != set(selected_keys):
         raise CorpusError("Sampling manifest selected flags do not match selected_paper_keys.")
     if any(item["selected"] and not item["eligible"] for item in decision_by_key.values()):
         raise CorpusError("Sampling manifest selects an ineligible paper.")
@@ -223,15 +315,35 @@ def load_sampling_provenance(
         raise CorpusError("Sampling manifest target count is inconsistent with its fraction and minimum.")
     if sum(item["row_count"] for item in decision_by_key.values()) != sampling["source_row_count"]:
         raise CorpusError("Sampling manifest paper row counts do not sum to source_row_count.")
-    if sum(item["row_count"] for item in decision_by_key.values() if item["selected"]) != len(rows):
-        raise CorpusError("Sampling manifest selected paper row counts do not match sampled CSV rows.")
+    if sum(item["row_count"] for item in decision_by_key.values() if item["selected"]) != sampling["selected_row_count"]:
+        raise CorpusError("Sampling manifest selected paper row counts do not match cumulative sample rows.")
+    if sum(
+        item["row_count"] for item in decision_by_key.values()
+        if item["paper_key"] if False else False
+    ) < 0:
+        raise CorpusError("Unreachable sampling row-count guard.")
+    if sum(
+        item["row_count"] for item in decision_by_key.values()
+        if item["selected"] and item["paper_key"] in set(newly_selected_keys)
+    ) != sampling["newly_selected_row_count"]:
+        raise CorpusError("Sampling manifest newly-selected paper row counts do not match incremental CSV rows.")
 
-    strata_expected: dict[str, dict[str, int]] = defaultdict(lambda: {"eligible_paper_count": 0, "selected_paper_count": 0})
+    expected_keys, expected_quotas = _expected_dhondt_selection(
+        decisions, sampling["target_selected_paper_count"]
+    )
+    if expected_keys != set(selected_keys):
+        raise CorpusError("Selected keys do not match deterministic D'Hondt + per-stratum SHA-256 ranking.")
+    strata_expected: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"eligible_paper_count": 0, "selected_paper_count": 0, "newly_selected_paper_count": 0}
+    )
     for item in decision_by_key.values():
         if item["eligible"]:
-            strata_expected[item["stratum"]]["eligible_paper_count"] += 1
+            name = item["stratum"]
+            strata_expected[name]["eligible_paper_count"] += 1
             if item["selected"]:
-                strata_expected[item["stratum"]]["selected_paper_count"] += 1
+                strata_expected[name]["selected_paper_count"] += 1
+            if item["paper_key"] in set(newly_selected_keys):
+                strata_expected[name]["newly_selected_paper_count"] += 1
     strata = sampling.get("stratum_summary")
     if not isinstance(strata, list):
         raise CorpusError("Sampling manifest stratum_summary must be an array.")
@@ -242,16 +354,19 @@ def load_sampling_provenance(
         name = item["stratum"]
         if name in strata_actual:
             raise CorpusError("Sampling manifest contains duplicate stratum summary entries.")
-        for count_field in ("eligible_paper_count", "selected_paper_count"):
+        row = {}
+        for count_field in ("eligible_paper_count", "selected_paper_count", "newly_selected_paper_count"):
             value = item.get(count_field)
             if type(value) is not int or value < 0:
                 raise CorpusError(f"Sampling manifest has an invalid stratum {count_field}.")
-        strata_actual[name] = {
-            "eligible_paper_count": item["eligible_paper_count"],
-            "selected_paper_count": item["selected_paper_count"],
-        }
+            row[count_field] = value
+        strata_actual[name] = row
     if strata_actual != dict(strata_expected):
         raise CorpusError("Sampling manifest stratum quotas/counts do not match paper_decisions.")
+    if expected_quotas != {
+        name: item["selected_paper_count"] for name, item in strata_actual.items()
+    }:
+        raise CorpusError("Sampling manifest per-stratum selected counts do not match the D'Hondt allocation.")
 
     source_hash = str(sampling.get("source_csv_sha256") or "").lower()
     if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
@@ -272,11 +387,20 @@ def load_sampling_provenance(
         "selected_row_count": sampling["selected_row_count"],
         "sampled_csv_path": str(paired_csv.resolve()),
         "sampled_csv_sha256": actual_hash,
-        "selected_paper_keys": sorted(str(item) for item in selected_keys),
+        "selected_paper_keys": sorted(str(item) for item in applied_keys),
+        "cumulative_selected_paper_keys": sorted(str(item) for item in selected_keys),
+        "newly_selected_paper_keys": sorted(str(item) for item in newly_selected_keys),
+        "previous_selected_paper_count": sampling["previous_selected_paper_count"],
+        "newly_selected_paper_count": sampling["newly_selected_paper_count"],
+        "newly_selected_row_count": sampling["newly_selected_row_count"],
+        "applied_view": applied_view,
+        "applied_paper_count": len(actual_keys),
+        "applied_row_count": len(rows),
+        "previous_manifest_path": previous_path_value,
+        "previous_manifest_sha256": previous_hash_value,
         "sampling_manifest_path": str(path.resolve()),
         "sampling_manifest_sha256": sha256_file(path),
     }
-
 
 def load_paired_csv(path: Path) -> list[dict[str, str]]:
     required = {
