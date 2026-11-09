@@ -88,46 +88,46 @@ Feature_create consumes this CSV and the already-generated preprocessing package
 For a corpus with thousands of preprocessed papers, optionally sample 10% before indexing. The sampler selects unique papers (not CSV rows), defaults to proportional stratification by year, and preserves every row belonging to each selected paper. It reads CSV metadata only; PDFs, SI, and preprocessing packages are not opened at this stage.
 
 ~~~powershell
-python scripts/sample_corpus.py \`
-  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" \`
-  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10" \`
-  --fraction 0.1 \`
-  --seed "feature-create-v1" \`
+python scripts/sample_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10" `
+  --fraction 0.1 `
+  --seed "feature-create-v1" `
   --stratify-by year
 ~~~
 
 The output contains:
-- \`sampled_research_corpus_paired.csv\` — cumulative selected papers;
-- \`newly_selected_research_corpus_paired.csv\` — only papers newly selected in this round (the same as the cumulative file for the first round);
-- \`sampling_manifest.json\` — source/sample hashes, paper-level decisions and scores, exclusions, quotas, and lineage.
+- `sampled_research_corpus_paired.csv` — cumulative selected papers;
+- `newly_selected_research_corpus_paired.csv` — only papers newly selected in this round (the same as the cumulative file for the first round);
+- `sampling_manifest.json` — source/sample hashes, paper-level decisions and scores, exclusions, quotas, and lineage.
 
 Stratum quotas use the D'Hondt divisor method. For an unchanged source CSV, increasing the sample fraction cannot reduce any stratum's quota, so larger samples are guaranteed to contain the earlier sample. To expand 10% to 20%, preserve the first round's artifacts and run:
 
 ~~~powershell
-python scripts/sample_corpus.py \`
-  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" \`
-  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20" \`
-  --fraction 0.2 \`
-  --seed "feature-create-v1" \`
-  --stratify-by year \`
+python scripts/sample_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20" `
+  --fraction 0.2 `
+  --seed "feature-create-v1" `
+  --stratify-by year `
   --previous-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10\sampling_manifest.json"
 ~~~
 
-The second round emits a cumulative 20% CSV plus an incremental CSV containing only the additional papers. Expansion requires the exact same source CSV bytes, seed, strata, and \`min_papers\`; the new fraction must be greater. The previous manifest and previous cumulative CSV must still exist and match their recorded hashes. If rounding produces no new whole papers, the command reports \`no_new_papers\` and the empty incremental CSV must not be dispatched.
+The second round emits a cumulative 20% CSV plus an incremental CSV containing only the additional papers. Expansion requires the exact same source CSV bytes, seed, strata, and `min_papers`; the new fraction must be greater. The previous manifest and previous cumulative CSV must still exist and match their recorded hashes. If rounding produces no new whole papers, the command reports `no_new_papers` and the empty incremental CSV must not be dispatched.
 
 Prepare the first-round or incremental-only CSV with the matching manifest. This example prepares the new papers from round 20 in a fresh output directory:
 
 ~~~powershell
-python scripts/prepare_corpus.py \`
-  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\newly_selected_research_corpus_paired.csv" \`
-  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\sampling_manifest.json" \`
-  --corpus-root "E:\Zinc_batters_datas\chem-literature" \`
+python scripts/prepare_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\newly_selected_research_corpus_paired.csv" `
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\sampling_manifest.json" `
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
   --output "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental"
 ~~~
 
-Preparation identifies whether the supplied CSV is the cumulative or incremental view, verifies the corresponding hash and paper keys, and records both cumulative and applied-run provenance. For incremental expansion, keep the same persistent Registry and Result Record paths in the later reconciliation stage; create a fresh prepared/dispatch directory for the new batch. Do not dispatch the cumulative CSV again, or previous papers will be scheduled again. To process the full corpus, skip sampling and use the original CSV without \`--sampling-manifest\`.
+Preparation identifies whether the supplied CSV is the cumulative or incremental view, verifies the corresponding hash and paper keys, and records both cumulative and applied-run provenance. For incremental expansion, keep the same persistent Registry and Result Record paths in the later reconciliation stage; create a fresh prepared/dispatch directory for the new batch. Do not dispatch the cumulative CSV again, or previous papers will be scheduled again. To process the full corpus, skip sampling and use the original CSV without `--sampling-manifest`.
 
-This creates \`source_manifest.json\`, exact staging copies of upstream-parsed text/table content, and exact copies of each selected paper's upstream \`evidence_index.json\`. No PDF/SI parsing is performed by Feature_create.
+This creates `source_manifest.json`, exact staging copies of upstream-parsed text/table content, and exact copies of each selected paper's upstream `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
 Build the bounded Worker A/B chunk queue:
 
 ```powershell
