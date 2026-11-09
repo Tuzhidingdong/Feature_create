@@ -203,6 +203,34 @@ class IntegrityReviewQueueTests(unittest.TestCase):
         }])])[0]["decision_id"]
         self.assertEqual(len({first, changed_action, changed_evidence}), 3)
 
+    def test_decision_template_is_bound_to_the_complete_queue_snapshot(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        first_queue, first_template = build_review_queue(
+            report, registry, records, manifest, fingerprints,
+        )
+        changed_fingerprints = dict(fingerprints, registry_sha256="d" * 64)
+        second_queue, second_template = build_review_queue(
+            report, registry, records, manifest, changed_fingerprints,
+        )
+        self.assertNotEqual(first_queue["queue_fingerprint"], second_queue["queue_fingerprint"])
+        self.assertEqual(first_template[0]["queue_fingerprint"], first_queue["queue_fingerprint"])
+        self.assertEqual(second_template[0]["queue_fingerprint"], second_queue["queue_fingerprint"])
+        stale_decision = [dict(
+            first_template[0], review_decision="defer", action="none",
+            rationale="Wait for a complete source review before changing this item.",
+        )]
+        with self.assertRaisesRegex(ValueError, "immutable field queue_fingerprint"):
+            validate_review_rows(second_queue, second_template, stale_decision)
+
+    def test_template_queue_fingerprint_must_match_queue_even_without_edited_changes(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        forged = [dict(template[0], queue_fingerprint="f" * 64)]
+        edited = [dict(forged[0], review_decision="defer", action="none",
+                       rationale="Defer this item until its source evidence is checked.")]
+        with self.assertRaisesRegex(ValueError, "template queue fingerprint does not match"):
+            validate_review_rows(queue, forged, edited)
+
     def test_review_evidence_must_exist_in_supplied_manifest(self):
         report, registry, records, manifest, fingerprints = fixture()
         queue, template = build_review_queue(report, registry, records, manifest, fingerprints)

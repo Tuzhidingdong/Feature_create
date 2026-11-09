@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import hashlib
+import json
+import os
 import sys
+import uuid
+from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +16,25 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from feature_create.integrity import audit_integrity
-from feature_create.integrity_review import build_review_queue
+from feature_create.integrity_review import build_review_queue, sha256_value
+from scripts.reconcile_features import RegistryIngestionError, exclusive_lock, registry_lock_path
 
 
 class QueueInputError(RuntimeError):
     pass
+
+
+ARTIFACT_NAMES = (
+    "global_integrity_audit.json",
+    "integrity_review_queue.json",
+    "integrity_review_decisions.template.jsonl",
+    "integrity_review_bundle.json",
+)
+WORKFLOW_STATE_NAMES = (
+    *ARTIFACT_NAMES,
+    "integrity_review_decisions.jsonl",
+    "integrity_review_apply_report.json",
+)
 
 
 def read_object(path: Path) -> dict[str, Any]:
@@ -58,16 +76,98 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+def ensure_distinct_paths(roles: dict[str, Path | None]) -> None:
+    seen: list[tuple[str, Path]] = []
+    for role, candidate in roles.items():
+        if candidate is None:
+            continue
+        path = candidate.expanduser().resolve()
+        for previous_role, previous_path in seen:
+            same_file = path == previous_path
+            if not same_file and path.is_file() and previous_path.is_file():
+                try:
+                    same_file = os.path.samefile(path, previous_path)
+                except OSError:
+                    same_file = False
+            if same_file:
+                raise QueueInputError(
+                    f"Unsafe path collision: {role} and {previous_role} refer to the same file ({path})."
+                )
+        seen.append((role, path))
 
 
-def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+def json_bytes(value: Any) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
+    return "".join(
+        json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n"
+        for row in rows
+    ).encode("utf-8")
+
+
+def archive_existing_workflow(output_dir: Path) -> Path | None:
+    existing = [output_dir / name for name in WORKFLOW_STATE_NAMES if (output_dir / name).exists()]
+    if not existing:
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_dir = output_dir / f"integrity_review_archive_{stamp}_{os.getpid()}"
+    suffix = 1
+    while archive_dir.exists():
+        archive_dir = output_dir / f"integrity_review_archive_{stamp}_{os.getpid()}_{suffix}"
+        suffix += 1
+    archive_dir.mkdir(parents=True, exist_ok=False)
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for source in existing:
+            target = archive_dir / source.name
+            os.replace(source, target)
+            moved.append((source, target))
+    except OSError:
+        # Restore every item already moved; never leave a half-archived active workflow.
+        for source, target in reversed(moved):
+            if target.exists():
+                os.replace(target, source)
+        try:
+            archive_dir.rmdir()
+        except OSError:
+            pass
+        raise
+    return archive_dir
+
+
+def commit_artifacts(output_dir: Path, payloads: dict[str, bytes]) -> None:
+    """Stage all files, replace payloads, and publish the bundle manifest last.
+
+    The manifest is the commit marker. If any replace fails part-way through, the
+    previous marker will no longer match the mixed artifact set and apply will fail
+    closed instead of consuming a partially published review bundle.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, Path] = {}
+    try:
+        for name, payload in payloads.items():
+            target = output_dir / name
+            temporary = output_dir / f".{name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+            staged[name] = temporary
+            with temporary.open("xb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        for name in (
+            "global_integrity_audit.json",
+            "integrity_review_queue.json",
+            "integrity_review_decisions.template.jsonl",
+            "integrity_review_bundle.json",
+        ):
+            os.replace(staged[name], output_dir / name)
+    finally:
+        for temporary in staged.values():
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,57 +178,126 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--review-ledger", type=Path, help="Optional prior append-only integrity review ledger.")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--strict-observation-records", action="store_true")
-    parser.add_argument("--force", action="store_true", help="Allow replacing an existing editable decision template.")
+    parser.add_argument("--force", action="store_true", help="Allow rebuilding an existing review bundle.")
+    parser.add_argument(
+        "--archive-existing",
+        action="store_true",
+        help="Move the previous queue/template/edited decisions/apply report into a timestamped archive before rebuilding.",
+    )
     args = parser.parse_args(argv)
 
     try:
+        if args.archive_existing and not args.force:
+            raise QueueInputError("--archive-existing requires --force.")
         registry_path = args.registry.expanduser().resolve()
         records_path = args.records.expanduser().resolve()
         manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
-        registry = read_object(registry_path)
-        records = read_jsonl(records_path)
-        manifest = read_object(manifest_path) if manifest_path else None
-        ledger = read_jsonl(args.review_ledger.expanduser().resolve()) if args.review_ledger else []
-
-        fingerprints = {
-            "registry_sha256": sha256_file(registry_path),
-            "records_sha256": sha256_file(records_path),
-            "manifest_sha256": sha256_file(manifest_path) if manifest_path else None,
-            "strict_observation_records": bool(args.strict_observation_records),
-        }
-        audit_report = audit_integrity(
-            registry, records, manifest,
-            strict_observation_records=args.strict_observation_records,
-        )
-        queue, template_rows = build_review_queue(
-            audit_report, registry, records, manifest, fingerprints, ledger,
-        )
-
+        ledger_path = args.review_ledger.expanduser().resolve() if args.review_ledger else None
         output_dir = args.output_dir.expanduser().resolve()
-        template_path = output_dir / "integrity_review_decisions.template.jsonl"
-        if template_path.exists() and not args.force:
-            raise QueueInputError(
-                f"Editable template already exists: {template_path}. "
-                "Copy it to a decisions file before rebuilding, or pass --force to replace it."
-            )
+        output_paths = {
+            "audit_report": output_dir / "global_integrity_audit.json",
+            "queue": output_dir / "integrity_review_queue.json",
+            "template": output_dir / "integrity_review_decisions.template.jsonl",
+            "bundle": output_dir / "integrity_review_bundle.json",
+        }
+        ensure_distinct_paths({
+            "registry": registry_path,
+            "records": records_path,
+            "manifest": manifest_path,
+            "review_ledger": ledger_path,
+            **output_paths,
+        })
 
-        write_json(output_dir / "global_integrity_audit.json", audit_report)
-        write_json(output_dir / "integrity_review_queue.json", queue)
-        write_jsonl(template_path, template_rows)
+        # Serialize queue builders targeting the same output directory. Lock order:
+        # output directory -> Registry -> review ledger. Apply never locks output_dir,
+        # so this order cannot form a cycle with its Registry -> ledger lock order.
+        with exclusive_lock(output_dir / ".integrity_review_build.lock"):
+            existing_state = [output_dir / name for name in WORKFLOW_STATE_NAMES if (output_dir / name).exists()]
+            if existing_state and not args.force:
+                names = ", ".join(path.name for path in existing_state)
+                raise QueueInputError(
+                    f"Existing review workflow files detected ({names}). "
+                    "Use --force --archive-existing only after deciding to archive and rebuild this review round."
+                )
+            if existing_state and not args.archive_existing:
+                raise QueueInputError(
+                    "Refusing to overwrite an existing review round. Pass both --force and --archive-existing "
+                    "to preserve the previous queue, editable decisions, and apply report in an archive."
+                )
+
+            # Hold the shared Registry/Record lock from snapshot read through bundle
+            # publication so this output is not stale at the moment it is committed.
+            with ExitStack() as locks:
+                locks.enter_context(exclusive_lock(registry_lock_path(registry_path)))
+                if ledger_path is not None:
+                    ledger_file_lock = ledger_path.with_name(ledger_path.name + ".lock")
+                    locks.enter_context(exclusive_lock(ledger_file_lock))
+
+                registry = read_object(registry_path)
+                records = read_jsonl(records_path)
+                manifest_before = sha256_file(manifest_path) if manifest_path else None
+                manifest = read_object(manifest_path) if manifest_path else None
+                manifest_after = sha256_file(manifest_path) if manifest_path else None
+                if manifest_before != manifest_after:
+                    raise QueueInputError("Source manifest changed while being read; retry queue preparation.")
+                ledger = read_jsonl(ledger_path) if ledger_path else []
+
+                fingerprints = {
+                    "registry_sha256": sha256_file(registry_path),
+                    "records_sha256": sha256_file(records_path),
+                    "manifest_sha256": manifest_after,
+                    "strict_observation_records": bool(args.strict_observation_records),
+                }
+                audit_report = audit_integrity(
+                    registry, records, manifest,
+                    strict_observation_records=args.strict_observation_records,
+                )
+                queue, template_rows = build_review_queue(
+                    audit_report, registry, records, manifest, fingerprints, ledger,
+                )
+
+                payloads = {
+                    "global_integrity_audit.json": json_bytes(audit_report),
+                    "integrity_review_queue.json": json_bytes(queue),
+                    "integrity_review_decisions.template.jsonl": jsonl_bytes(template_rows),
+                }
+                artifact_hashes = {
+                    name: hashlib.sha256(payload).hexdigest()
+                    for name, payload in payloads.items()
+                }
+                bundle_core = {
+                    "bundle_version": "1.0",
+                    "queue_fingerprint": queue.get("queue_fingerprint"),
+                    "artifact_sha256": artifact_hashes,
+                }
+                bundle = {
+                    **bundle_core,
+                    "bundle_fingerprint": sha256_value(bundle_core),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "commit_protocol": "bundle_manifest_published_last",
+                }
+                payloads["integrity_review_bundle.json"] = json_bytes(bundle)
+
+                output_dir.mkdir(parents=True, exist_ok=True)
+                archive_dir = archive_existing_workflow(output_dir) if args.archive_existing else None
+                commit_artifacts(output_dir, payloads)
 
         print(json.dumps({
             "audit_status": audit_report["status"],
             "audit_summary": audit_report["summary"],
             "queue_summary": queue["summary"],
+            "bundle_fingerprint": bundle["bundle_fingerprint"],
+            "archive_dir": str(archive_dir) if archive_dir else None,
             "outputs": {
                 "audit_report": str(output_dir / "global_integrity_audit.json"),
                 "review_queue": str(output_dir / "integrity_review_queue.json"),
-                "decision_template": str(template_path),
+                "decision_template": str(output_dir / "integrity_review_decisions.template.jsonl"),
+                "bundle_manifest": str(output_dir / "integrity_review_bundle.json"),
             },
             "note": "The Registry, Result Records, source files, and Registry decision_log were not modified.",
         }, ensure_ascii=False, indent=2))
         return 0
-    except (QueueInputError, ValueError) as exc:
+    except (OSError, ValueError, QueueInputError, RegistryIngestionError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": [
     "template_version",
+    "queue_fingerprint",
     "audit_fingerprint",
     "finding_id",
     "finding_fingerprint",
@@ -20,23 +21,56 @@
     "follow_up_reference"
   ],
   "properties": {
-    "template_version": { "const": "1.0" },
-    "audit_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "finding_id": { "type": "string", "pattern": "^IRF-[A-F0-9]{20}$" },
-    "finding_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "severity": { "enum": ["error", "warning"] },
-    "code": { "type": "string", "minLength": 1 },
+    "template_version": {
+      "const": "1.0"
+    },
+    "audit_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "finding_id": {
+      "type": "string",
+      "pattern": "^IRF-[A-F0-9]{20}$"
+    },
+    "finding_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "severity": {
+      "enum": [
+        "error",
+        "warning"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
     "primary_object": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["object_type", "object_id"],
+      "required": [
+        "object_type",
+        "object_id"
+      ],
       "properties": {
-        "object_type": { "type": "string", "minLength": 1 },
-        "object_id": { "type": "string", "minLength": 1 }
+        "object_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_id": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "review_decision": {
-      "enum": ["", "repair_required", "accepted_warning", "defer"]
+      "enum": [
+        "",
+        "repair_required",
+        "accepted_warning",
+        "defer"
+      ]
     },
     "action": {
       "enum": [
@@ -49,26 +83,59 @@
         "none"
       ]
     },
-    "rationale": { "type": "string" },
+    "rationale": {
+      "type": "string"
+    },
     "review_evidence_refs": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["source_id", "locator"],
+        "required": [
+          "source_id",
+          "locator"
+        ],
         "properties": {
-          "source_id": { "type": "string", "minLength": 1 },
-          "locator": { "type": "object", "minProperties": 1 },
-          "quote_or_cell_value": { "type": ["string", "null"] },
-          "evidence_status": { "type": ["string", "null"] }
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locator": {
+            "type": "object",
+            "minProperties": 1
+          },
+          "quote_or_cell_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     },
-    "follow_up_reference": { "type": "string" }
+    "follow_up_reference": {
+      "type": "string"
+    },
+    "queue_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
   },
   "allOf": [
     {
-      "if": { "properties": { "review_decision": { "const": "repair_required" } } },
+      "if": {
+        "properties": {
+          "review_decision": {
+            "const": "repair_required"
+          }
+        }
+      },
       "then": {
         "properties": {
           "action": {
@@ -80,27 +147,53 @@
               "manual_review"
             ]
           },
-          "rationale": { "minLength": 12 }
+          "rationale": {
+            "minLength": 12
+          }
         }
       }
     },
     {
-      "if": { "properties": { "review_decision": { "const": "accepted_warning" } } },
+      "if": {
+        "properties": {
+          "review_decision": {
+            "const": "accepted_warning"
+          }
+        }
+      },
       "then": {
         "properties": {
-          "severity": { "const": "warning" },
-          "action": { "const": "none" },
-          "rationale": { "minLength": 12 },
-          "review_evidence_refs": { "minItems": 1 }
+          "severity": {
+            "const": "warning"
+          },
+          "action": {
+            "const": "none"
+          },
+          "rationale": {
+            "minLength": 12
+          },
+          "review_evidence_refs": {
+            "minItems": 1
+          }
         }
       }
     },
     {
-      "if": { "properties": { "review_decision": { "const": "defer" } } },
+      "if": {
+        "properties": {
+          "review_decision": {
+            "const": "defer"
+          }
+        }
+      },
       "then": {
         "properties": {
-          "action": { "const": "none" },
-          "rationale": { "minLength": 12 }
+          "action": {
+            "const": "none"
+          },
+          "rationale": {
+            "minLength": 12
+          }
         }
       }
     }

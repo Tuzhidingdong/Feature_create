@@ -24,9 +24,9 @@ except ImportError:
     Draft202012Validator = None  # type: ignore[assignment]
 
 try:
-    from .reconcile_features import build_feature_pair_queue, exclusive_lock
+    from .reconcile_features import build_feature_pair_queue, exclusive_lock, registry_lock_path
 except ImportError:
-    from reconcile_features import build_feature_pair_queue, exclusive_lock
+    from reconcile_features import build_feature_pair_queue, exclusive_lock, registry_lock_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -676,7 +676,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--registry", type=Path, required=True)
     args, _unknown = parser.parse_known_args(arguments)
     registry_path = args.registry.expanduser().resolve()
-    with exclusive_lock(registry_path):
+    with exclusive_lock(registry_lock_path(registry_path)):
         return _main_unlocked(arguments)
 
 

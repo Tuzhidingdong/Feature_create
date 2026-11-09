@@ -108,6 +108,11 @@ def atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     os.replace(temp, path)
 
 
+def registry_lock_path(registry_path: Path) -> Path:
+    """Return the canonical lock path shared by every Registry/Record writer."""
+    return registry_path.with_suffix(registry_path.suffix + ".lock")
+
+
 @contextmanager
 def exclusive_lock(path: Path, timeout_seconds: float = 30.0) -> Iterator[None]:
     """Portable exclusive-create lock for Windows and POSIX filesystems."""
@@ -748,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
     records_path = args.records.resolve()
     review_queue_path = args.review_queue.resolve()
     report_path = args.run_report.resolve()
-    lock_path = registry_path.with_suffix(registry_path.suffix + ".lock")
+    lock_path = registry_lock_path(registry_path)
 
     if Draft202012Validator is None:
         print("BLOCKED: install jsonschema from requirements.txt.", file=sys.stderr)

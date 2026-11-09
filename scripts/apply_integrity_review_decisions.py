@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import hashlib
+import json
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +23,11 @@ from feature_create.integrity_review import (
     make_ledger_entries,
     sha256_value,
     validate_review_rows,
+)
+from scripts.reconcile_features import (
+    RegistryIngestionError,
+    exclusive_lock,
+    registry_lock_path,
 )
 
 
@@ -67,31 +71,60 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def exclusive_lock(path: Path, timeout_seconds: float = 30.0):
-    class Lock:
-        def __enter__(self):
-            self.path = path
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            deadline = time.monotonic() + timeout_seconds
-            self.fd = None
-            while self.fd is None:
+def ensure_distinct_paths(roles: dict[str, Path | None]) -> None:
+    seen: list[tuple[str, Path]] = []
+    for role, candidate in roles.items():
+        if candidate is None:
+            continue
+        path = candidate.expanduser().resolve()
+        for previous_role, previous_path in seen:
+            same_file = path == previous_path
+            if not same_file and path.is_file() and previous_path.is_file():
                 try:
-                    self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                    os.write(self.fd, f"pid={os.getpid()}".encode("utf-8"))
-                except FileExistsError:
-                    if time.monotonic() >= deadline:
-                        raise ReviewApplyError(f"Timed out waiting for review-ledger lock: {self.path}")
-                    time.sleep(0.2)
-            return self
+                    same_file = os.path.samefile(path, previous_path)
+                except OSError:
+                    same_file = False
+            if same_file:
+                raise ReviewApplyError(
+                    f"Unsafe path collision: {role} and {previous_role} refer to the same file ({path})."
+                )
+        seen.append((role, path))
 
-        def __exit__(self, exc_type, exc, tb):
-            if self.fd is not None:
-                os.close(self.fd)
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                pass
-    return Lock()
+
+def validate_bundle(
+    bundle_path: Path,
+    queue_path: Path,
+    template_path: Path,
+    queue: dict[str, Any],
+) -> dict[str, Any]:
+    bundle = read_object(bundle_path)
+    artifacts = bundle.get("artifact_sha256")
+    if not isinstance(artifacts, dict):
+        raise ReviewApplyError("Review bundle manifest has no artifact_sha256 map; rebuild the queue.")
+    audit_path = queue_path.parent / "global_integrity_audit.json"
+    required = {
+        "global_integrity_audit.json": audit_path,
+        "integrity_review_queue.json": queue_path,
+        "integrity_review_decisions.template.jsonl": template_path,
+    }
+    for name, path in required.items():
+        expected_hash = artifacts.get(name)
+        if not isinstance(expected_hash, str) or not path.is_file():
+            raise ReviewApplyError(f"Review bundle is incomplete: missing or untracked artifact {name}.")
+        if sha256_file(path) != expected_hash:
+            raise ReviewApplyError(
+                f"Review bundle artifact changed after preparation: {name}. Rebuild the queue."
+            )
+    if bundle.get("queue_fingerprint") != queue.get("queue_fingerprint"):
+        raise ReviewApplyError("Review bundle and queue fingerprints disagree; rebuild the queue.")
+    bundle_core = {
+        "bundle_version": bundle.get("bundle_version"),
+        "queue_fingerprint": bundle.get("queue_fingerprint"),
+        "artifact_sha256": artifacts,
+    }
+    if sha256_value(bundle_core) != bundle.get("bundle_fingerprint"):
+        raise ReviewApplyError("Review bundle fingerprint is invalid; rebuild the queue.")
+    return bundle
 
 
 def validate_decision_contracts(rows: list[dict[str, Any]]) -> None:
@@ -109,7 +142,9 @@ def validate_decision_contracts(rows: list[dict[str, Any]]) -> None:
         if errors:
             error = errors[0]
             location = "/".join(str(part) for part in error.absolute_path) or "$"
-            raise ReviewApplyError(f"Decision row {index} violates integrity-review schema at {location}: {error.message}")
+            raise ReviewApplyError(
+                f"Decision row {index} violates integrity-review schema at {location}: {error.message}"
+            )
 
 
 def append_jsonl(path: Path, rows: list[dict[str, Any]]) -> int:
@@ -124,6 +159,46 @@ def append_jsonl(path: Path, rows: list[dict[str, Any]]) -> int:
     return count
 
 
+def atomic_write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def verify_input_snapshot(
+    expected: dict[str, Any],
+    registry_path: Path,
+    records_path: Path,
+    manifest_path: Path | None,
+) -> None:
+    expected_manifest_hash = expected.get("manifest_sha256")
+    if expected_manifest_hash is not None and manifest_path is None:
+        raise ReviewApplyError("The queue was built with a source manifest; pass the same --manifest path.")
+    if expected_manifest_hash is None and manifest_path is not None:
+        raise ReviewApplyError("The queue was built without a source manifest; do not pass --manifest.")
+    actual = {
+        "registry_sha256": sha256_file(registry_path),
+        "records_sha256": sha256_file(records_path),
+        "manifest_sha256": sha256_file(manifest_path) if manifest_path else None,
+        "strict_observation_records": expected.get("strict_observation_records"),
+    }
+    if actual != expected:
+        raise ReviewApplyError(
+            "The Registry, Result Records, or manifest changed after queue preparation. "
+            "Rebuild the audit queue and review the new template before applying decisions."
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--queue", type=Path, required=True)
@@ -132,15 +207,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--registry", type=Path, required=True, help="Used only to verify the queue input snapshot.")
     parser.add_argument("--records", type=Path, required=True, help="Used only to verify the queue input snapshot.")
     parser.add_argument("--manifest", type=Path, help="Required when the queue was built with a source manifest.")
+    parser.add_argument("--bundle", type=Path, help="Review bundle manifest; defaults beside --queue.")
     parser.add_argument("--ledger", type=Path, required=True, help="Separate append-only review ledger; never the Registry decision_log.")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
 
     try:
         queue_path = args.queue.expanduser().resolve()
+        template_path = args.template.expanduser().resolve()
+        decisions_path = args.decisions.expanduser().resolve()
+        registry_path = args.registry.expanduser().resolve()
+        records_path = args.records.expanduser().resolve()
+        manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
+        bundle_path = args.bundle.expanduser().resolve() if args.bundle else queue_path.parent / "integrity_review_bundle.json"
+        ledger_path = args.ledger.expanduser().resolve()
+        report_path = args.report.expanduser().resolve()
+        ensure_distinct_paths({
+            "queue": queue_path,
+            "template": template_path,
+            "decisions": decisions_path,
+            "registry": registry_path,
+            "records": records_path,
+            "manifest": manifest_path,
+            "bundle": bundle_path,
+            "ledger": ledger_path,
+            "report": report_path,
+        })
+
         queue = read_object(queue_path)
-        template_rows = read_jsonl(args.template.expanduser().resolve())
-        decision_rows = read_jsonl(args.decisions.expanduser().resolve())
+        template_rows = read_jsonl(template_path)
+        decision_file_hash = sha256_file(decisions_path)
+        decision_rows = read_jsonl(decisions_path)
+        if sha256_file(decisions_path) != decision_file_hash:
+            raise ReviewApplyError("The editable decisions file changed while being read; retry after saving it.")
+        validate_bundle(bundle_path, queue_path, template_path, queue)
 
         expected = queue.get("input_fingerprints") or {}
         queue_core = {
@@ -154,18 +254,6 @@ def main(argv: list[str] | None = None) -> int:
         }
         if sha256_value(queue_core) != queue.get("queue_fingerprint"):
             raise ReviewApplyError("Queue fingerprint is invalid; rebuild the review queue.")
-        actual_manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
-        actual = {
-            "registry_sha256": sha256_file(args.registry.expanduser().resolve()),
-            "records_sha256": sha256_file(args.records.expanduser().resolve()),
-            "manifest_sha256": sha256_file(actual_manifest_path) if actual_manifest_path else None,
-            "strict_observation_records": expected.get("strict_observation_records"),
-        }
-        if actual != expected:
-            raise ReviewApplyError(
-                "The Registry, Result Records, or manifest changed after queue preparation. "
-                "Rebuild the audit queue and review the new template before applying decisions."
-            )
 
         findings = {item.get("finding_id"): item for item in queue.get("findings", [])}
         for row in template_rows:
@@ -180,28 +268,40 @@ def main(argv: list[str] | None = None) -> int:
         validate_decision_contracts(decision_rows)
         validated = validate_review_rows(queue, template_rows, decision_rows)
         new_entries = make_ledger_entries(validated)
-        ledger_path = args.ledger.expanduser().resolve()
-        lock_path = ledger_path.with_name(ledger_path.name + ".lock")
-        with exclusive_lock(lock_path):
-            existing = read_jsonl(ledger_path)
-            existing_ids = {str(item.get("decision_id")) for item in existing}
-            existing_snapshots = {
-                (str(item.get("finding_id")), str(item.get("audit_fingerprint")))
-                for item in existing
-            }
-            to_append = []
-            for entry in new_entries:
-                if entry["decision_id"] in existing_ids:
-                    continue
-                snapshot_key = (entry["finding_id"], entry["audit_fingerprint"])
-                if snapshot_key in existing_snapshots:
-                    raise ReviewApplyError(
-                        f"{entry['finding_id']}: a decision already exists for this exact audit snapshot."
-                    )
-                to_append.append(entry)
-                existing_ids.add(entry["decision_id"])
-                existing_snapshots.add(snapshot_key)
-            appended = append_jsonl(ledger_path, to_append) if to_append else 0
+
+        ledger_lock_path = ledger_path.with_name(ledger_path.name + ".lock")
+        registry_lock = registry_lock_path(registry_path)
+
+        # Lock order is fixed across this workflow: Registry first, review ledger second.
+        # Every current Registry/Record mutation stage uses the same Registry lock path.
+        # Re-check both the scientific-data snapshot and editable decision bytes while
+        # holding those locks, then append before releasing either lock.
+        with exclusive_lock(registry_lock):
+            with exclusive_lock(ledger_lock_path):
+                verify_input_snapshot(expected, registry_path, records_path, manifest_path)
+                if sha256_file(decisions_path) != decision_file_hash:
+                    raise ReviewApplyError("The editable decisions file changed during validation; no decisions were applied.")
+                validate_bundle(bundle_path, queue_path, template_path, queue)
+
+                existing = read_jsonl(ledger_path)
+                existing_ids = {str(item.get("decision_id")) for item in existing}
+                existing_snapshots = {
+                    (str(item.get("finding_id")), str(item.get("audit_fingerprint")))
+                    for item in existing
+                }
+                to_append = []
+                for entry in new_entries:
+                    if entry["decision_id"] in existing_ids:
+                        continue
+                    snapshot_key = (entry["finding_id"], entry["audit_fingerprint"])
+                    if snapshot_key in existing_snapshots:
+                        raise ReviewApplyError(
+                            f"{entry['finding_id']}: a decision already exists for this exact audit snapshot."
+                        )
+                    to_append.append(entry)
+                    existing_ids.add(entry["decision_id"])
+                    existing_snapshots.add(snapshot_key)
+                appended = append_jsonl(ledger_path, to_append) if to_append else 0
 
         decision_counts: dict[str, int] = {}
         action_counts: dict[str, int] = {}
@@ -229,12 +329,10 @@ def main(argv: list[str] | None = None) -> int:
                 "After a correction through the existing workflow, rebuild the queue to confirm clearance."
             ),
         }
-        report_path = args.report.expanduser().resolve()
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        atomic_write_json(report_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
-    except (OSError, ValueError, ReviewApplyError) as exc:
+    except (OSError, ValueError, ReviewApplyError, RegistryIngestionError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

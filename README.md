@@ -172,5 +172,5 @@ Eligible Observations without a Result Record are warnings by default because a 
 
 ## Integrity review and remediation queue
 
-Build a source-linked human review queue from the global audit, then record triage separately from the Registry. The queue never changes scientific records or decision history; corrections must use the existing evidence/reconciliation workflows and be confirmed by a new audit. See [docs/integrity_review_workflow.md](docs/integrity_review_workflow.md) for the prepare → review → append-only ledger → correct → re-audit process.
+Build a source-linked human review queue from the global audit, then record triage separately from the Registry. Queue artifacts are snapshot-bound by a bundle manifest, and human decisions are tied to the complete queue fingerprint. The builder and apply step coordinate through the shared Registry lock; incomplete or stale bundles fail closed. The queue never changes scientific records or decision history; corrections must use the existing evidence/reconciliation workflows and be confirmed by a new audit. See [docs/integrity_review_workflow.md](docs/integrity_review_workflow.md) for the prepare → review → append-only ledger → correct → re-audit process.
 
