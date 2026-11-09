@@ -73,6 +73,75 @@ class IntegrityAuditTests(unittest.TestCase):
         self.assertIn("invalid_feature_merge_redirect", self.codes(report))
         self.assertIn("merged_feature_without_decision", self.codes(report))
 
+    def test_record_cannot_point_to_condition_only_observation(self):
+        data = registry()
+        data["observations"][0]["variable_role"] = "condition_only"
+        report = audit_integrity(data, [record()])
+        self.assertIn("record_observation_not_result_feature", self.codes(report))
+
+    def test_record_cannot_point_to_excluded_observation(self):
+        data = registry()
+        data["observations"][0]["discovery_status"] = "excluded"
+        report = audit_integrity(data, [record()])
+        self.assertIn("record_linked_to_excluded_observation", self.codes(report))
+
+    def test_merge_event_must_match_retired_feature_redirect(self):
+        data = registry()
+        data["canonical_features"].append({
+            "registry_feature_id": "F-OLD", "canonical_name": "Old CE",
+            "feature_status": "retired_merged", "redirect_to": "F-OTHER",
+            "observation_ids": ["OBS-1"],
+        })
+        data["canonical_features"].append({
+            "registry_feature_id": "F-OTHER", "canonical_name": "Other CE",
+            "feature_status": "confirmed", "observation_ids": [],
+        })
+        data["decision_log"] = [{
+            "event_id": "EV-MERGE-WRONG", "event_type": "feature_merged",
+            "subject_ids": ["F-1", "F-OLD"], "decision": "merge_as_same_feature",
+            "rationale": "The definitions and statistic scope are equivalent.",
+            "evidence_observation_ids": ["OBS-1"],
+        }]
+        report = audit_integrity(data, [record()])
+        self.assertIn("merge_event_redirect_mismatch", self.codes(report))
+
+    def test_merge_event_evidence_must_cover_each_feature_subject(self):
+        data = registry()
+        data["observations"].append({
+            "observation_id": "OBS-2", "paper_id": "P-2", "source_id": "SRC-2",
+            "raw_feature_name": "Old CE", "variable_role": "result_feature",
+            "result_type": "measured", "discovery_status": "evidence_verified",
+            "linked_registry_feature_id": "F-1",
+            "evidence_refs": [{"source_id": "SRC-2", "source_type": "main_text",
+                               "locator": {"page": 2}, "evidence_status": "verified_text"}],
+        })
+        data["canonical_features"].append({
+            "registry_feature_id": "F-OLD", "canonical_name": "Old CE",
+            "feature_status": "retired_merged", "redirect_to": "F-1",
+            "observation_ids": ["OBS-2"],
+        })
+        data["decision_log"] = [{
+            "event_id": "EV-MERGE-ONE-SIDED", "event_type": "feature_merged",
+            "subject_ids": ["F-1", "F-OLD"], "decision": "merge_as_same_feature",
+            "rationale": "The definitions and statistic scope are equivalent.",
+            "evidence_observation_ids": ["OBS-1"],
+        }]
+        report = audit_integrity(data, [record()])
+        self.assertIn("decision_transition_evidence_not_linked_to_feature", self.codes(report))
+
+    def test_exclusion_event_must_cite_the_excluded_observation(self):
+        data = registry()
+        data["observations"][0]["discovery_status"] = "excluded"
+        data["decision_log"] = [{
+            "event_id": "EV-EXCLUDE", "event_type": "feature_excluded",
+            "subject_ids": ["OBS-1"], "decision": "exclude_not_a_result_feature",
+            "rationale": "The source indicates this variable is a test condition.",
+            "evidence_observation_ids": [],
+        }]
+        report = audit_integrity(data, [])
+        self.assertIn("decision_event_without_evidence_chain", self.codes(report))
+        self.assertIn("excluded_decision_missing_subject_evidence", self.codes(report))
+
     def test_valid_merge_preserves_historical_observation_link(self):
         data = registry()
         data["canonical_features"].append({
