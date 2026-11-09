@@ -47,34 +47,37 @@ The CSV is the complete paper-selection authority. Feature_create does not scan 
 For a corpus with thousands of preprocessed papers, the optional sampler can reduce the workload before indexing. The default selects 10% of eligible unique papers, proportionally stratified by year. It uses CSV metadata only and does not touch PDF/SI or upstream package contents.
 
 ~~~powershell
-python scripts/sample_corpus.py \`
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
-  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling" \`
-  --fraction 0.1 \`
-  --seed "feature-create-v1" \`
+python scripts/sample_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling" `
+  --fraction 0.1 `
+  --seed "feature-create-v1" `
   --stratify-by year
 ~~~
 
-Inspect \`sampling_manifest.json\` and the selected CSV. The selection is repeatable for unchanged source CSV + seed + options. Papers without \`preprocessing_path\` or with unsupported preprocessing status are excluded and listed with reasons. Duplicate DOI rows stay together. Use \`--stratify-by none\` for global sampling. To prepare the sample, replace the full CSV path in the preparation command with \`sampling\\sampled_research_corpus_paired.csv\` and add:
+Inspect `sampling_manifest.json` and the selected CSV. The selection is repeatable for unchanged source CSV + seed + options. Papers without `preprocessing_path` or with unsupported preprocessing status are excluded and listed with reasons. Duplicate DOI rows stay together. Use `--stratify-by none` for global sampling. To prepare the sample, replace the full CSV path in the preparation command with `sampling\sampled_research_corpus_paired.csv` and add:
 
 ~~~powershell
---sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampling_manifest.json"
+--sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json"
 ~~~
 
-Preparation verifies that the manifest's SHA-256 matches the exact selected CSV and copies the sampling provenance into \`source_manifest.json\`. Existing full-corpus runs remain unchanged when the sampler is omitted.
+Preparation verifies that the manifest's SHA-256 matches the exact selected CSV and copies the sampling provenance into `source_manifest.json`. Existing full-corpus runs remain unchanged when the sampler is omitted.
 
 The current chem-literature workflow writes relative paths against the directory from which `run_workflow.py` was executed. For example, when it is run from:
 
-`E:\\Zinc_batters_datas\\chem-literature`
+`E:\Zinc_batters_datas\chem-literature`
 
-index the upstream packages:
+index the selected sample:
 
 ~~~powershell
 python scripts/prepare_corpus.py `
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
 ~~~
+
+To process the full corpus instead, skip sampling, use the original chem-literature CSV path, and omit `--sampling-manifest`.
 
 The preparation adapter:
 - reads only rows from `research_corpus_paired.csv`;
@@ -98,7 +101,7 @@ Outputs:
 ## 3. Build isolated Worker tasks
 
 ~~~powershell
-python scripts/build_task_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch"
+python scripts/build_task_queue.py --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" --output "E:\Zinc_batters_datas\runs\Feature_create\dispatch"
 ~~~
 
 One independent Worker A task and one independent Worker B task are created for every deterministic chunk of an eligible paper. Each task has:
@@ -130,7 +133,7 @@ Input, output, and cached-read must be Free/$0. Cached-write must be absent/dash
 First use dry-run:
 
 ```powershell
-python scripts/run_workers.py --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" --dry-run
+python scripts/run_workers.py --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs" --dry-run
 ```
 
 Dry-run verifies the model pair and task-to-model assignments but does not make inference calls.
@@ -138,7 +141,7 @@ Dry-run verifies the model pair and task-to-model assignments but does not make 
 ## 5. Dispatch workers
 
 ```powershell
-python scripts/run_workers.py --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+python scripts/run_workers.py --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
 Default concurrency is four model calls (four chunk tasks across the corpus; each chunk has separate A/B tasks). It is configurable using `--max-workers`, but is capped at four by default. On 429/rate-limit errors, the scheduler lowers concurrency for later batches. Retries retain the same explicitly pinned model.
@@ -159,7 +162,7 @@ The runner does not delete OpenCode sessions automatically. This preserves the e
 ## 6. Validate evidence
 
 ```powershell
-python scripts/validate_evidence.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+python scripts/validate_evidence.py --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
 This validates schema shape, task/paper identity, source IDs, the task's exact `chunk_id` and assigned `unit_id`, non-empty original locators, quoted text within the exact assigned text range, table values against original row/column/cell or cell-fragment offsets, digitization artifact references, and the prohibition on exact numeric values for `visual_only` data. A reference to another chunk or an unassigned row/cell is rejected.
@@ -172,12 +175,12 @@ After the evidence report exists, ingest Worker A/B candidates into the persiste
 
 ```powershell
 python scripts/reconcile_features.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
-  --run-report "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\registry_ingestion.json"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --review-queue "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\feature_pair_review_queue.jsonl" `
+  --run-report "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\registry_ingestion.json"
 ```
 
 This step creates immutable raw Feature Observations and provisional canonical Feature candidates. Worker A result values are stored as per-value JSONL records. Worker B omissions and semantic distinctions are stored separately. Python does not automatically merge similar feature names.
@@ -190,11 +193,11 @@ Build the context-review queue:
 
 ~~~powershell
 python scripts/build_context_review_queue.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch" `
   --max-context-chars 60000 `
   --max-attachments 8
 ~~~
@@ -210,8 +213,8 @@ Run the free-model preflight without inference:
 
 ~~~powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch\context_review_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\context_review_runs" `
   --dry-run
 ~~~
 
@@ -219,29 +222,29 @@ Dispatch only after the regular current free-model price gate passes:
 
 ~~~powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch\context_review_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\context_review_runs"
 ~~~
 
 Validate both CURRENT and TARGET citations against their assigned unit, original source offsets/table cells, and exact quotes:
 
 ~~~powershell
 python scripts/validate_evidence.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch\context_review_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\context_review_runs"
 ~~~
 
 Apply only the context decision after evidence validation passes:
 
 ~~~powershell
 python scripts/apply_context_reviews.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_runs\\application_report.json"
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch\context_review_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\context_review_runs" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\context_review_runs\application_report.json"
 ~~~
 
 A confirmed fact is appended only to its matching context category (sample_identity, condition_facts, time_cycle_facts, protocol_facts, or other_context_facts). When the same fact already exists from Worker A, the applier enriches that single fact with the additional verified evidence references rather than duplicating it. The applier protects the original result value, numeric value, Feature/Observation IDs, raw feature name, unit, result type, method, source ID, first-pass evidence references, and other result metadata. It also checks that the current response.json SHA-256 still matches the exact response file hash recorded by evidence_validation.json. The validation report additionally binds the source manifest, each assigned preprocessed text snapshot, context evidence manifest, exact bundle, Worker B prompt, and all visual attachments by SHA-256; the applier rechecks every one of them and the attachment inventory before changing records. A changed or unregistered input is not applied. The applier takes the same Registry lock as reconcile_features.py and reloads both JSONL files only after acquiring it, preventing a stale read from overwriting concurrent ingestion. Each queued task also snapshots the linked Result Record and unresolved item; if either was changed by another review or manual edit after queue construction, the old decision is rejected and the queue must be rebuilt against the new state. no_association and conflicting_evidence require verified text/table evidence on both sides; no_association specifically requires positive counter-evidence (for example, an explicit mapping to another sample/series or an explicit scope exclusion), not merely the absence of a matching statement. If either side cannot be verified or the target simply omits the necessary link, Worker B must return insufficient_evidence. no_association closes that specific question without adding a fact. insufficient_evidence and conflicting_evidence remain open for human review. Every decision and its two-sided citations are retained in the unresolved item and the linked result record's context-review history.
@@ -250,10 +253,10 @@ A confirmed fact is appended only to its matching context category (sample_ident
 
 ```powershell
 python scripts/build_reconciliation_queue.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --review-queue "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\feature_pair_review_queue.jsonl" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_dispatch"
 ```
 
 Worker B reviews each candidate pair using source-backed definitions, units, methods, formulas, normalization bases, statistics, temporal scope, and evidence excerpts. It is the same Worker B model and is not a third model worker. Its first-pass per-paper audit remains independent from Worker A.
@@ -262,8 +265,8 @@ Run a no-inference preflight:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_dispatch\reconciliation_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_runs" `
   --dry-run
 ```
 
@@ -271,19 +274,19 @@ Then dispatch after the free-model price gate passes:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs"
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_dispatch\reconciliation_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_runs"
 ```
 
 ## 10. Apply semantic decisions conservatively
 
 ```powershell
 python scripts/apply_feature_reconciliation.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
-  --reconciliation-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_runs\\application_report.json"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --review-queue "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\feature_pair_review_queue.jsonl" `
+  --reconciliation-queue "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_dispatch\reconciliation_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_runs" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_runs\application_report.json"
 ```
 
 Python applies a merge only when the Worker B recommendation is SAME_FEATURE and every explicit equivalence flag passes, both features have locally verified source evidence, definitions exist, units are conservatively compatible, existing IDs do not conflict, and the decision cites observations from both sides. Otherwise, the pair remains under review or is explicitly resolved as distinct.
@@ -296,8 +299,8 @@ Use the existing authoritative feature dictionary as a mapping reference. For th
 
 ```powershell
 python scripts/import_existing_schema.py `
-  --input "E:\\Zinc_batters_datas\\preprocessed\\result_feature_list.txt" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json"
+  --input "E:\Zinc_batters_datas\preprocessed\result_feature_list.txt" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\existing_feature_schema.json"
 ```
 
 The importer supports TSV, JSON, and common key/value text blocks. It preserves existing FEATURE_ID values and records the source file hash. If the local legacy file uses an unsupported layout, the importer stops and reports the parse issue; do not manually fabricate a schema.
@@ -306,10 +309,10 @@ The importer supports TSV, JSON, and common key/value text blocks. It preserves 
 
 ```powershell
 python scripts/build_schema_mapping_queue.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --existing-schema "E:\Zinc_batters_datas\runs\Feature_create\existing_feature_schema.json" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_dispatch"
 ```
 
 Worker B compares every confirmed Registry Feature with the imported legacy Feature candidates. The legacy schema is not used to filter discovery. The mapping decisions are separate from Feature-to-Feature merges.
@@ -318,8 +321,8 @@ Run the no-inference preflight:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_dispatch\existing_schema_mapping_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_runs" `
   --dry-run
 ```
 
@@ -327,19 +330,19 @@ Then dispatch using the same verified-free Worker B model:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs"
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_dispatch\existing_schema_mapping_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_runs"
 ```
 
 Apply mapping decisions:
 
 ```powershell
 python scripts/apply_existing_feature_mapping.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
-  --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_runs\\mapping_report.json"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --existing-schema "E:\Zinc_batters_datas\runs\Feature_create\existing_feature_schema.json" `
+  --mapping-queue "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_dispatch\existing_schema_mapping_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_runs" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_runs\mapping_report.json"
 ```
 
 A mapping is applied only when Worker B selects one exact old FEATURE_ID, all seven compatibility checks are affirmative, definitions and source evidence exist, unit strings are conservatively compatible, and that old ID is not already assigned to another active Registry Feature. Otherwise the Registry Feature keeps its new Registry ID.
@@ -353,20 +356,20 @@ First build a review template. This reads the existing prepared evidence package
 ```powershell
 python scripts/adjudicate_unresolved.py `
   --prepare `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
-  --output-template "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_prepare_report.json"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" `
+  --output-template "E:\Zinc_batters_datas\runs\Feature_create\manual_context_template.jsonl" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\manual_context_prepare_report.json"
 ```
 
 Keep `manual_context_template.jsonl` unchanged and copy it to a separate file for editing:
 
 ```powershell
 Copy-Item `
-  "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
-  "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_decisions.jsonl"
+  "E:\Zinc_batters_datas\runs\Feature_create\manual_context_template.jsonl" `
+  "E:\Zinc_batters_datas\runs\Feature_create\manual_context_decisions.jsonl"
 ```
 
 Edit only the decision fields in the copy:
@@ -383,13 +386,13 @@ Apply the edited decisions while retaining the unchanged template:
 ```powershell
 python scripts/adjudicate_unresolved.py `
   --apply `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
-  --template "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
-  --decisions "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_decisions.jsonl" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_application_report.json"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" `
+  --template "E:\Zinc_batters_datas\runs\Feature_create\manual_context_template.jsonl" `
+  --decisions "E:\Zinc_batters_datas\runs\Feature_create\manual_context_decisions.jsonl" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\manual_context_application_report.json"
 ```
 
 The applier uses the same Registry lock as ingestion/context application. It checks the unchanged template, selected record and unresolved snapshots, the source-manifest hash, every extracted text hash for the paper, and every cited quote/table cell. A stale or invalid decision blocks the entire batch without changing either JSONL file. A confirmed fact is merged into its existing context entry when identical; a no-association decision closes only that question; a retained-unresolved decision appends human history but preserves its open resolution state. The original result value, unit, Feature/Observation IDs and primary evidence are protected. Human actions are recorded in both the unresolved item's `manual_review_history` and the result record's `context_review_history`.
@@ -403,11 +406,11 @@ Only after all active Features are confirmed and all candidate pairs are resolve
 
 ```powershell
 python scripts/export_txt.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
-  --existing-schema "E:\\Zinc_batters_datas\\runs\\Feature_create\\existing_feature_schema.json" `
-  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_output"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --review-queue "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\feature_pair_review_queue.jsonl" `
+  --existing-schema "E:\Zinc_batters_datas\runs\Feature_create\existing_feature_schema.json" `
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\final_output"
 ```
 
 The exporter creates exactly two formal TXT files:
@@ -426,16 +429,16 @@ After mapping and reconciliation, calculate the corpus/source/extraction totals 
 
 ```powershell
 python scripts/audit_records.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\feature_pair_review_queue.jsonl" `
-  --reconciliation-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\reconciliation_dispatch\\reconciliation_task_queue.json" `
-  --mapping-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\schema_mapping_dispatch\\existing_schema_mapping_queue.json" `
-  --context-review-queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch\\context_review_task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_audit.json"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --review-queue "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\feature_pair_review_queue.jsonl" `
+  --reconciliation-queue "E:\Zinc_batters_datas\runs\Feature_create\reconciliation_dispatch\reconciliation_task_queue.json" `
+  --mapping-queue "E:\Zinc_batters_datas\runs\Feature_create\schema_mapping_dispatch\existing_schema_mapping_queue.json" `
+  --context-review-queue "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch\context_review_task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\final_audit.json"
 ```
 
 The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, Worker B context-review decisions, human context-adjudication decisions/facts/retained-open questions, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
@@ -459,10 +462,10 @@ Run this after reconciliation and human adjudication, and before final export:
 
 ```powershell
 python scripts/audit_global_integrity.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\global_integrity_audit.json"
 ```
 
 The audit is read-only and must not repair the Registry. It verifies every Record's Observation and Feature links; Feature ↔ Observation backlinks; Observation and Record source evidence with non-empty locators; source-ID existence when a manifest is supplied; and decision chains for excluded Observations, merged Features, split-pending Features, and merge/split/reassignment events.
