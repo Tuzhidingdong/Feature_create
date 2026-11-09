@@ -252,9 +252,9 @@ def _build_batch_metrics(
             resolved = _resolve_feature_id(str(linked), feature_by_id)
             current_feature_ids.add(resolved)
 
-        for feature_id in current_feature_ids:
-            status_counts[str(feature_by_id[feature_id].get("feature_status") or "unknown")] += 1
         new_feature_ids = current_feature_ids - seen_feature_ids
+        for feature_id in new_feature_ids:
+            status_counts[str(feature_by_id[feature_id].get("feature_status") or "unknown")] += 1
         seen_feature_ids.update(current_feature_ids)
 
         batch_paper_observation_ids = {
