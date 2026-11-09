@@ -14,6 +14,7 @@ import re
 import shutil
 import sys
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from fractions import Fraction
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -317,11 +318,6 @@ def load_sampling_provenance(
         raise CorpusError("Sampling manifest paper row counts do not sum to source_row_count.")
     if sum(item["row_count"] for item in decision_by_key.values() if item["selected"]) != sampling["selected_row_count"]:
         raise CorpusError("Sampling manifest selected paper row counts do not match cumulative sample rows.")
-    if sum(
-        item["row_count"] for item in decision_by_key.values()
-        if item["paper_key"] if False else False
-    ) < 0:
-        raise CorpusError("Unreachable sampling row-count guard.")
     if sum(
         item["row_count"] for item in decision_by_key.values()
         if item["selected"] and item["paper_key"] in set(newly_selected_keys)
@@ -895,6 +891,9 @@ def main(argv: list[str] | None = None) -> int:
                 "source_paper_count": manifest["sampling"]["source_paper_count"],
                 "requested_fraction": manifest["sampling"]["requested_fraction"],
                 "sampled_csv_sha256": manifest["sampling"]["sampled_csv_sha256"],
+                "applied_view": manifest["sampling"]["applied_view"],
+                "applied_paper_count": manifest["sampling"]["applied_paper_count"],
+                "newly_selected_paper_count": manifest["sampling"]["newly_selected_paper_count"],
             } if manifest.get("sampling") else None,
         }
         (output / "prepare_summary.json").write_text(
