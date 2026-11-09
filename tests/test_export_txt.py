@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
+import scripts.export_txt as export_module
 from scripts.export_txt import main
+from scripts.reconcile_features import registry_lock_path
 
 
 class ExportTxtTests(unittest.TestCase):
@@ -112,6 +117,7 @@ class ExportTxtTests(unittest.TestCase):
         record: dict,
         review_rows: list[dict],
         allow_unresolved_context: bool = False,
+        audit_report: Path | None = None,
     ) -> int:
         registry_path = root / "registry.json"
         records_path = root / "records.jsonl"
@@ -129,13 +135,28 @@ class ExportTxtTests(unittest.TestCase):
                 ["--allow-unresolved-context"]
                 if allow_unresolved_context else []
             ),
+            *(
+                ["--audit-report", str(audit_report)]
+                if audit_report is not None else []
+            ),
         ])
 
     def test_exports_exactly_two_tsv_txt_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            status = self.invoke_export(root, self.make_registry(), self.make_record(), [])
+            acquired_locks = []
+            real_lock = export_module.exclusive_lock
+
+            @contextmanager
+            def observed_lock(path, timeout_seconds=30.0):
+                acquired_locks.append(Path(path))
+                with real_lock(path, timeout_seconds=timeout_seconds):
+                    yield
+
+            with patch.object(export_module, "exclusive_lock", observed_lock):
+                status = self.invoke_export(root, self.make_registry(), self.make_record(), [])
             self.assertEqual(status, 0)
+            self.assertEqual(acquired_locks, [registry_lock_path(root / "registry.json")])
             output = root / "formal"
             self.assertTrue((output / "result_feature_records.txt").is_file())
             self.assertTrue((output / "result_feature_list.txt").is_file())
@@ -153,11 +174,68 @@ class ExportTxtTests(unittest.TestCase):
             self.assertEqual(json.loads(records[0]["CONDITION_FACTS"])[0]["raw_label"], "Current density")
             self.assertEqual(len(features), 1)
             self.assertEqual(features[0]["CANONICAL_NAME"], "Coulombic efficiency")
+            export_report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(export_report["formal_output_sha256"]), {
+                "result_feature_records.txt", "result_feature_list.txt",
+            })
+            self.assertEqual(
+                export_report["formal_output_sha256"]["result_feature_records.txt"],
+                hashlib.sha256((output / "result_feature_records.txt").read_bytes()).hexdigest(),
+            )
             self.assertNotIn("99.1", (output / "result_feature_list.txt").read_text(encoding="utf-8"))
             self.assertEqual(
                 sorted(path.name for path in output.glob("*.txt")),
                 ["result_feature_list.txt", "result_feature_records.txt"],
             )
+
+    def test_blocked_reexport_marks_previous_txt_files_as_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertEqual(
+                self.invoke_export(root, self.make_registry(), self.make_record(), []),
+                0,
+            )
+            output = root / "formal"
+            old_records = (output / "result_feature_records.txt").read_bytes()
+            old_features = (output / "result_feature_list.txt").read_bytes()
+
+            status = self.invoke_export(
+                root,
+                self.make_registry(status="under_review"),
+                self.make_record(),
+                [{"candidate_pair_id": "PAIR-1", "decision_status": "under_review"}],
+            )
+            self.assertEqual(status, 2)
+            self.assertEqual((output / "result_feature_records.txt").read_bytes(), old_records)
+            self.assertEqual((output / "result_feature_list.txt").read_bytes(), old_features)
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "blocked")
+            self.assertFalse(report["formal_outputs_written"])
+            self.assertEqual(set(report["stale_formal_output_files"]), {
+                "result_feature_records.txt", "result_feature_list.txt",
+            })
+
+    def test_audit_report_cannot_overwrite_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            registry_path = root / "registry.json"
+            registry = self.make_registry()
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            original = registry_path.read_bytes()
+            records_path = root / "records.jsonl"
+            records_path.write_text(json.dumps(self.make_record()) + "\n", encoding="utf-8")
+            review_path = root / "pairs.jsonl"
+            review_path.write_text("", encoding="utf-8")
+            status = main([
+                "--registry", str(registry_path),
+                "--records", str(records_path),
+                "--review-queue", str(review_path),
+                "--output-dir", str(root / "formal"),
+                "--audit-report", str(registry_path),
+            ])
+            self.assertEqual(status, 2)
+            self.assertEqual(registry_path.read_bytes(), original)
+            self.assertFalse((root / "formal" / "result_feature_records.txt").exists())
 
     def test_blocks_export_when_features_are_not_reconciled(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -184,7 +262,7 @@ class ExportTxtTests(unittest.TestCase):
                 "canonical_name": "CE",
                 "feature_status": "retired_merged",
                 "redirect_to": "RFEAT-1",
-                "observation_ids": [],
+                "observation_ids": ["OBS-1"],
             })
             registry["canonical_features"].append(retired)
             registry["decision_log"].append({

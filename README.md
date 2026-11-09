@@ -156,7 +156,7 @@ More detail: [docs/runbook.md](docs/runbook.md).
 
 ## Global bidirectional integrity audit
 
-Before treating the two TXT files as final, audit the Registry ↔ Observation ↔ Result Record graph. This read-only audit checks both directions of the links, source evidence, merge redirects, and exclusion/split/merge decision history. The final exporter also invokes it; hard integrity errors block both formal TXT outputs.
+Before treating the two TXT files as final, audit the Registry ↔ Observation ↔ Result Record graph. This read-only audit checks both directions of the links, source evidence, merge redirects, eligible Record-to-Observation links, and evidence coverage of exclusion/split/merge decision history. The final exporter also invokes it under the shared Registry lock; hard integrity errors block both formal TXT outputs, and its internal report records input and output SHA-256 fingerprints.
 
 ```powershell
 python scripts/audit_global_integrity.py `

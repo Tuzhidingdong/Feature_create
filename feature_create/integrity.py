@@ -11,6 +11,11 @@ from typing import Any
 
 ACTIVE_FEATURE_STATUSES = {"confirmed", "provisional", "under_review", "split_pending"}
 VERIFIED_EVIDENCE_STATUSES = {"verified_text", "verified_table_cell", "verified_digitization", "visual_only"}
+ALLOWED_DECISION_EVENT_TYPES = {
+    "observation_created", "feature_created", "feature_confirmed", "feature_merged",
+    "feature_split", "feature_mapped", "feature_unmapped", "observation_reassigned",
+    "feature_excluded", "status_changed",
+}
 
 
 def _issue(code: str, severity: str, message: str, **context: Any) -> dict[str, Any]:
@@ -143,6 +148,19 @@ def audit_integrity(
         if observation is None:
             issues.append(_issue("record_without_valid_observation", "error", f"Result Record {record_id} has no valid Observation link.", record_id=record_id, observation_id=observation_id))
             continue
+        if observation.get("variable_role") != "result_feature":
+            issues.append(_issue(
+                "record_observation_not_result_feature", "error",
+                f"Result Record {record_id} is linked to Observation {observation_id}, which is not classified as a result_feature.",
+                record_id=record_id, observation_id=observation_id,
+                observation_variable_role=observation.get("variable_role"),
+            ))
+        if observation.get("discovery_status") == "excluded":
+            issues.append(_issue(
+                "record_linked_to_excluded_observation", "error",
+                f"Result Record {record_id} is linked to excluded Observation {observation_id}.",
+                record_id=record_id, observation_id=observation_id,
+            ))
         observation_to_records[str(observation_id)].append(record_id)
         if not record.get("source_id"):
             issues.append(_issue("record_without_source_id", "error", f"Result Record {record_id} has no source_id.", record_id=record_id))
@@ -202,17 +220,62 @@ def audit_integrity(
         evidence_observation_ids = event.get("evidence_observation_ids") or []
         if event.get("event_type") in {"feature_merged", "feature_split", "feature_excluded", "observation_reassigned"} and not evidence_observation_ids:
             issues.append(_issue("decision_event_without_evidence_chain", "error", f"Decision event {event_id or index} has no evidence Observation references.", event_id=event_id))
-        if event.get("event_type") in {"feature_merged", "feature_split"}:
-            feature_subjects = [subject for subject in subjects if str(subject) in features]
+        event_type = str(event.get("event_type") or "")
+        if event_type not in ALLOWED_DECISION_EVENT_TYPES:
+            issues.append(_issue(
+                "unknown_decision_event_type", "error",
+                f"Decision event {event_id or index} has unsupported event_type {event_type!r}.",
+                event_id=event_id, event_type=event_type,
+            ))
+        feature_subjects = [str(subject) for subject in subjects if str(subject) in features]
+        if event_type in {"feature_merged", "feature_split"}:
             if len(set(feature_subjects)) < 2:
-                issues.append(_issue("incomplete_feature_transition_subjects", "error", f"Decision event {event_id or index} does not identify at least two Feature objects for its merge/split transition.", event_id=event_id))
+                issues.append(_issue(
+                    "incomplete_feature_transition_subjects", "error",
+                    f"Decision event {event_id or index} does not identify at least two Feature objects for its merge/split transition.",
+                    event_id=event_id,
+                ))
+            evidence_set = {str(value) for value in evidence_observation_ids}
+            for feature_subject_id in sorted(set(feature_subjects)):
+                related_observations = set(features[feature_subject_id].get("observation_ids") or [])
+                if not (evidence_set & related_observations):
+                    issues.append(_issue(
+                        "decision_transition_evidence_not_linked_to_feature", "error",
+                        f"Decision event {event_id or index} has no evidence Observation linked to Feature {feature_subject_id}.",
+                        event_id=event_id, feature_id=feature_subject_id,
+                    ))
+        if event_type == "feature_merged" and len(set(feature_subjects)) != 2:
+            issues.append(_issue(
+                "invalid_feature_merge_event_subjects", "error",
+                f"Merge event {event_id or index} must identify exactly two Feature objects.",
+                event_id=event_id, feature_ids=sorted(set(feature_subjects)),
+            ))
+        if event_type == "feature_excluded":
+            evidence_set = {str(value) for value in evidence_observation_ids}
+            for subject in subjects:
+                subject_id = str(subject)
+                if subject_id in observations and subject_id not in evidence_set:
+                    issues.append(_issue(
+                        "excluded_decision_missing_subject_evidence", "error",
+                        f"Exclusion event {event_id or index} does not cite its excluded Observation {subject_id} as evidence.",
+                        event_id=event_id, observation_id=subject_id,
+                    ))
         for observation_id in evidence_observation_ids:
             if observation_id not in observations:
                 issues.append(_issue("decision_evidence_observation_missing", "error", f"Decision event {event_id or index} references missing evidence Observation {observation_id}.", event_id=event_id, observation_id=observation_id))
 
     for observation_id, observation in observations.items():
-        if observation.get("discovery_status") == "excluded" and not event_types_by_subject.get(("feature_excluded", observation_id)):
-            issues.append(_issue("excluded_observation_without_decision", "error", f"Excluded Observation {observation_id} has no feature_excluded decision event.", observation_id=observation_id))
+        if observation.get("discovery_status") == "excluded":
+            exclusion_events = event_types_by_subject.get(("feature_excluded", observation_id), [])
+            if not exclusion_events:
+                issues.append(_issue("excluded_observation_without_decision", "error", f"Excluded Observation {observation_id} has no feature_excluded decision event.", observation_id=observation_id))
+            elif not any(observation_id in {str(value) for value in (event.get("evidence_observation_ids") or [])} for event in exclusion_events):
+                issues.append(_issue(
+                    "excluded_decision_missing_subject_evidence", "error",
+                    f"Excluded Observation {observation_id} has no exclusion event that cites the same Observation as evidence.",
+                    observation_id=observation_id,
+                    event_ids=[event.get("event_id") for event in exclusion_events],
+                ))
 
     for feature_id, feature in features.items():
         if feature.get("feature_status") == "retired_merged":
@@ -220,8 +283,19 @@ def audit_integrity(
             resolved, error = _resolve_feature_id(feature_id, features)
             if not target or error or resolved == feature_id:
                 issues.append(_issue("invalid_feature_merge_redirect", "error", f"Retired Feature {feature_id} has an invalid merge redirect.", feature_id=feature_id, redirect_to=target))
-            if not event_types_by_subject.get(("feature_merged", feature_id)):
+            merge_events = event_types_by_subject.get(("feature_merged", feature_id), [])
+            if not merge_events:
                 issues.append(_issue("merged_feature_without_decision", "error", f"Retired Feature {feature_id} has no feature_merged decision event.", feature_id=feature_id))
+            elif not any(
+                str(target or "") in {str(subject) for subject in (event.get("subject_ids") or [])}
+                for event in merge_events
+            ):
+                issues.append(_issue(
+                    "merge_event_redirect_mismatch", "error",
+                    f"Retired Feature {feature_id} has no merge event that identifies its direct redirect target {target}.",
+                    feature_id=feature_id, redirect_to=target,
+                    event_ids=[event.get("event_id") for event in merge_events],
+                ))
         if feature.get("feature_status") == "split_pending" and not event_types_by_subject.get(("feature_split", feature_id)):
             issues.append(_issue("split_pending_without_decision", "error", f"Split-pending Feature {feature_id} has no feature_split decision event.", feature_id=feature_id))
 

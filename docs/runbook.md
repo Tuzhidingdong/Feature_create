@@ -449,7 +449,7 @@ The audit is read-only and must not repair the Registry. It verifies every Recor
 
 Every eligible Observation is checked for at least one Result Record. Such omissions are warnings by default because a reported visual-only variable may have no exportable value. Use `--strict-observation-records` when all eligible observations must materialize as records. Exit code 2 indicates hard integrity errors. Do not bypass them or modify raw identity fields to silence the report. Correct the originating reconciliation/adjudication decision, preserve the old event, append the correcting event, and rerun the audit.
 
-The final `export_txt.py` command invokes the same integrity engine. It blocks both TXT files for hard errors and records the integrity summary/findings in the separate internal export audit JSON. Pass `--source-manifest` to the exporter for source existence checks. See [global_integrity_audit.md](global_integrity_audit.md) for issue-code semantics.
+The final `export_txt.py` command invokes the same integrity engine while holding the canonical Registry lock shared with ingestion and review stages. It blocks both TXT files for hard errors, rejects audit-report/output paths that alias any input, and records SHA-256 fingerprints for the input snapshot and both formal TXT files in the separate internal export audit JSON. Pass `--source-manifest` to the exporter for source existence checks. See [global_integrity_audit.md](global_integrity_audit.md) for issue-code semantics.
 
 
 - Scanned PDFs are not OCR-processed.
