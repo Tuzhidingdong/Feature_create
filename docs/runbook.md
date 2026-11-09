@@ -44,40 +44,57 @@ Each package must include:
 The CSV is the complete paper-selection authority. Feature_create does not scan the upstream folders, add unlisted files, repeat article screening, or substitute missing PDFs/SI.
 
 
-For a corpus with thousands of preprocessed papers, the optional sampler can reduce the workload before indexing. The default selects 10% of eligible unique papers, proportionally stratified by year. It uses CSV metadata only and does not touch PDF/SI or upstream package contents.
+For a corpus with thousands of preprocessed papers, use the optional sampler to reduce the workload before preparation. It reads CSV metadata only, not PDF/SI or preprocessing package contents. The default is 10% of eligible unique papers, stratified proportionally by year.
+
+First sample 10%:
 
 ~~~powershell
-python scripts/sample_corpus.py `
-  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
-  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling" `
-  --fraction 0.1 `
-  --seed "feature-create-v1" `
+python scripts/sample_corpus.py \`
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" \`
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10" \`
+  --fraction 0.1 \`
+  --seed "feature-create-v1" \`
   --stratify-by year
 ~~~
 
-Inspect `sampling_manifest.json` and the selected CSV. The selection is repeatable for unchanged source CSV + seed + options. Papers without `preprocessing_path` or with unsupported preprocessing status are excluded and listed with reasons. Duplicate DOI rows stay together. Use `--stratify-by none` for global sampling. To prepare the sample, replace the full CSV path in the preparation command with `sampling\sampled_research_corpus_paired.csv` and add:
+It writes a cumulative CSV, an incremental CSV (identical to the cumulative CSV on the first round), and \`sampling_manifest.json\`. The D'Hondt divisor allocation is house-monotone: on the same source CSV, a larger fraction cannot reduce any stratum's quota.
+
+To expand 10% to 20%, keep the same source CSV bytes, seed, strata, and \`min_papers\`, and pass the prior manifest. Use a new output directory and preserve the old sample files:
 
 ~~~powershell
---sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json"
+python scripts/sample_corpus.py \`
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" \`
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20" \`
+  --fraction 0.2 \`
+  --seed "feature-create-v1" \`
+  --stratify-by year \`
+  --previous-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10\sampling_manifest.json"
 ~~~
 
-Preparation verifies that the manifest's SHA-256 matches the exact selected CSV and copies the sampling provenance into `source_manifest.json`. Existing full-corpus runs remain unchanged when the sampler is omitted.
+The round-20 cumulative CSV contains the full 20% sample. The \`newly_selected_research_corpus_paired.csv\` contains only papers added beyond round 10. The tool rejects a different source snapshot, seed, strata, minimum count, or non-increasing fraction. It also verifies that the previous manifest and previous cumulative CSV still match their hashes. If rounding yields no new papers, it reports \`no_new_papers\`; do not dispatch the empty incremental CSV.
 
-The current chem-literature workflow writes relative paths against the directory from which `run_workflow.py` was executed. For example, when it is run from:
-
-`E:\Zinc_batters_datas\chem-literature`
-
-index the selected sample:
+Prepare a new batch from its incremental CSV and matching manifest in a fresh output directory:
 
 ~~~powershell
-python scripts/prepare_corpus.py `
-  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
-  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
-  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
+python scripts/prepare_corpus.py \`
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\newly_selected_research_corpus_paired.csv" \`
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\sampling_manifest.json" \`
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" \`
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental"
+~~~
+
+Preparation detects whether the supplied CSV is cumulative or incremental and records the selected lineage in \`source_manifest.json\`. For incremental runs, reuse the existing persistent Registry and Result Record paths in the later reconciliation stage, but create fresh prepared and dispatch directories. Never dispatch the cumulative sample for an incremental round; that would schedule earlier papers again. For full-corpus processing, omit the sampling step and use the original chem-literature CSV without \`--sampling-manifest\`.
+
+The current chem-literature workflow writes relative paths against the directory from which \`run_workflow.py\` was executed. For example, it is run from:
+
+\`E:\Zinc_batters_datas\chem-literature\`
+
+~~~powershell
+python scripts/prepare_corpus.py \`
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" \`
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" \`
   --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
 ~~~
-
-To process the full corpus instead, skip sampling, use the original chem-literature CSV path, and omit `--sampling-manifest`.
 
 The preparation adapter:
 - reads only rows from `research_corpus_paired.csv`;
