@@ -241,6 +241,7 @@ Report counts calculated from local audit data:
 - canonical features confirmed;
 - unresolved records and feature candidates;
 - unresolved context items, targeted cross-chunk context decisions, and unresolved context links remaining;
+- human context-adjudication decisions (confirmed/no-association/retained unresolved), context facts added/enriched, and records reviewed by a person;
 - figure-only and unreadable sources;
 - exact Worker A/B model IDs;
 - free-price verification timestamp/source;
