@@ -32,16 +32,17 @@ Exit codes: `0` = pass or warnings only; `2` = one or more integrity errors. The
 ## Hard failures
 
 - Missing or duplicate Record, Observation, or canonical Feature IDs.
-- A Record with no valid Observation or Feature ID.
+- A Record with no valid Observation or Feature ID, or a Record linked to an Observation classified as `condition_only`, `sample_descriptor`, `uncertain`, or `excluded`.
 - A Record's Feature disagrees with its Observation's Feature after resolving merge redirects.
 - Record and Observation source IDs disagree.
 - Confirmed Feature with no eligible result-feature Observation or no evidence-verified Observation.
 - Missing, malformed, mismatched, or unknown source evidence references (when a source manifest is supplied).
 - Feature ↔ Observation links that are missing or asymmetric.
 - Excluded Observation without a `feature_excluded` decision event.
-- Retired merged Feature without a valid redirect and `feature_merged` event.
+- Retired merged Feature without a valid redirect and a `feature_merged` event that identifies its direct redirect target.
 - Split-pending Feature without a `feature_split` event.
-- Merge/split/reassignment/exclusion events without evidence Observation references, or merge/split events that fail to identify at least two Feature subjects.
+- Merge/split/reassignment/exclusion events without evidence Observation references; merge/split evidence must be linked to every Feature subject. Merge events must identify exactly two Features, and every retired merge redirect must match its direct transition event. Exclusion events must cite the exact excluded Observation.
+- Decision events with an unsupported event type.
 - Decision events with missing/duplicate IDs, unknown subjects, missing rationale/decision, or dangling evidence Observation IDs.
 
 ## Warnings and strict mode
@@ -52,7 +53,7 @@ The audit does not treat `visual_only` evidence as numeric verification. It does
 
 ## Export integration
 
-`scripts/export_txt.py` runs the same integrity engine before writing either formal TXT file. Any hard integrity error blocks both outputs. The optional `--source-manifest` enables source-ID existence checks, and `--strict-observation-records` enables strict Observation-to-Record completeness at export time. The separate internal export audit JSON records the integrity summary and all findings; it is not added to the formal output directory.
+`scripts/export_txt.py` runs the same integrity engine before writing either formal TXT file. Any hard integrity error blocks both outputs. It acquires the shared Registry/Record lock for the entire read → audit → export operation so the two inputs are not mixed across a concurrent mutation. Input/output path collisions are rejected before writing; the export audit records SHA-256 fingerprints of all inputs and both final TXT files. The optional `--source-manifest` enables source-ID existence checks, and `--strict-observation-records` enables strict Observation-to-Record completeness at export time. The separate internal export audit JSON records the integrity summary and all findings; it is not added to the formal output directory.
 
 ## Non-goals
 
