@@ -33,6 +33,22 @@ The current source package version is `1.1.0`.
 Other CSV fields, including `abstract`, `landing_page_url`, `has_pdf`, and `has_si`, are retained as paper metadata. Feature_create does not re-run literature discovery or article screening.
 
 ## 3. Path resolution
+## 2A. Optional deterministic paper-level sampling
+
+The complete paired CSV remains the authoritative upstream inventory. When it contains thousands of preprocessed papers, \`scripts/sample_corpus.py\` can produce an explicit subset before preparation.
+
+- Default sample fraction: 10% of eligible unique papers, rounded to the nearest whole paper (minimum one by default).
+- Sampling unit: normalized DOI; when DOI is absent, normalized title + year + journal.
+- All CSV rows sharing one paper identity are selected together.
+- Default proportional stratification: \`year\`. Use \`--stratify-by none\` for global sampling or provide comma-separated metadata columns.
+- Rows with missing \`preprocessing_path\` or unsupported/failed preprocessing status are excluded before calculating the sample size and appear in the manifest with reasons.
+- The default seed is \`feature-create-v1\`. Identical input bytes, seed, fraction, and strata reproduce the same selected paper set.
+
+The sampler reads CSV metadata only. It does not open or hash source PDFs, SI, or preprocessing packages. It writes the selected CSV plus \`sampling_manifest.json\`, which records the input/output CSV hashes, per-paper decision/score, stratum quotas, selected paper keys, and exclusion reasons.
+
+Pass the manifest to \`prepare_corpus.py --sampling-manifest\`. Preparation verifies that its selected-CSV SHA-256 matches and records the sampling provenance in \`source_manifest.json\`. Editing or replacing the sampled CSV after selection blocks this verification. Existing full-corpus runs remain valid without a sampling manifest.
+
+
 
 The current chem-literature workflow writes CSV file paths and `preprocessing_path` relative to the working directory from which `run_workflow.py` was executed.
 
