@@ -262,7 +262,7 @@ class ExportTxtTests(unittest.TestCase):
                 "canonical_name": "CE",
                 "feature_status": "retired_merged",
                 "redirect_to": "RFEAT-1",
-                "observation_ids": [],
+                "observation_ids": ["OBS-1"],
             })
             registry["canonical_features"].append(retired)
             registry["decision_log"].append({
