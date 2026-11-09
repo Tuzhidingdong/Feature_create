@@ -50,6 +50,8 @@ Antigravity may be used as the Supervisor control plane, but not as the paper-re
 
 - `SKILL.md` — execution contract and agent instructions.
 - `contracts/` — machine-readable schemas for Registry and worker payloads.
+- `feature_create/sampling.py` + `scripts/sample_corpus.py` — optional deterministic paper-level sampling before evidence indexing and worker dispatch.
+- `contracts/sampling-manifest.schema.json` — auditable sample-selection manifest contract.
 - `docs/architecture.md` — component boundaries and workflow.
 - `docs/upstream_input_contract.md` — the formal chem-literature CSV/file-path boundary.
 - `docs/token_policy.md` — zero-paid-cost policy and provider/model guards.
