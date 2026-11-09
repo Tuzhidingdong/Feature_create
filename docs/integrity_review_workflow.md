@@ -18,13 +18,13 @@ Human triage decisions are stored in a separate append-only `integrity_review_de
 Run from the repository root in PowerShell. The builder runs the audit itself, so the queue and its report always describe the same Registry/Records/Manifest snapshot.
 
 ```
-$run = "E:\\Zinc_batters_datas\\runs\\Feature_create"
+$run = "E:\Zinc_batters_datas\runs\Feature_create"
 $review = Join-Path $run "integrity_review"
 
 python scripts/build_integrity_review_queue.py`
   --registry (Join-Path $run "global_feature_registry.json")`
-  --records (Join-Path $run "worker_runs\\result_records.jsonl")`
-  --manifest (Join-Path $run "prepared\\source_manifest.json")`
+  --records (Join-Path $run "worker_runs\result_records.jsonl")`
+  --manifest (Join-Path $run "prepared\source_manifest.json")`
   --review-ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --output-dir $review
 ```
@@ -33,7 +33,7 @@ Outputs:
 
 - `global_integrity_audit.json`: the exact audit used to build this queue.
 - `integrity_review_queue.json`: findings enriched with connected objects, evidence locators, source-manifest context, and relevant decision events.
-- `integrity_review_decisions.template.jsonl`: immutable finding identity/snapshot fields plus blank human decision fields.
+- `integrity_review_decisions.template.jsonl`: immutable finding identity/snapshot fields plus blank human decision fields. Every row includes the queue fingerprint, so a decisions copy from another input snapshot cannot be reused.
 - `integrity_review_bundle.json`: a commit manifest containing SHA-256 hashes for the three artifacts above. The apply command verifies this manifest before accepting decisions.
 
 The builder acquires the same `global_feature_registry.json.lock` used by Registry/Record mutation stages while it reads Registry and Records; it also locks the optional review ledger. All artifacts are staged and flushed before replacement, and the bundle manifest is published last. If publication fails part-way through, the old or missing bundle will not match the mixed artifact files, so apply fails closed.
@@ -85,7 +85,7 @@ python scripts/apply_integrity_review_decisions.py`
   --report (Join-Path $review "integrity_review_apply_report.json")
 ```
 
-Apply validates the bundle manifest and every prepared artifact hash, the queue and finding fingerprints, the complete template row inventory, and the JSON Schema for each submitted decision. It acquires the canonical Registry lock first and the review-ledger lock second; while both are held it re-checks Registry/Records/Manifest hashes and the edited decision-file hash immediately before appending. This closes the snapshot-check/append race with the existing Registry/Record mutation stages. Repeated application of the same decision is idempotent. A conflicting second decision for the same finding and audit snapshot is rejected.
+Apply validates the bundle manifest and every prepared artifact hash, the queue and finding fingerprints, the complete template row inventory, and the JSON Schema for each submitted decision. It also rejects any path alias that could make the ledger or report overwrite the Registry, Records, Manifest, or prepared review artifacts. It acquires the canonical Registry lock first and the review-ledger lock second; while both are held it re-checks Registry/Records/Manifest hashes and the edited decision-file hash immediately before appending. This closes the snapshot-check/append race with the existing Registry/Record mutation stages. Repeated application of the same decision is idempotent. A conflicting second decision for the same finding and audit snapshot is rejected.
 
 The apply step appends only to the separate review ledger. The Registry, Records, source files, and Registry `decision_log` remain untouched.
 
