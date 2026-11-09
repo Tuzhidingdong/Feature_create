@@ -940,20 +940,20 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                         None,
                     )
-                    records_to_add.append(
-                        make_record(
-                            paper=paper,
-                            task=task,
-                            candidate_record=result,
-                            observation_id=observation_id,
-                            registry_feature_id=registry_feature_id,
-                            raw_feature_name=raw_name,
-                            reported_method=reported_method,
-                            source_map=source_map,
-                            manifest_root=manifest_root,
-                            unresolved_issues=normalized_issues,
-                        )
+                    record_entry = make_record(
+                        paper=paper,
+                        task=task,
+                        candidate_record=result,
+                        observation_id=observation_id,
+                        registry_feature_id=registry_feature_id,
+                        raw_feature_name=raw_name,
+                        reported_method=reported_method,
+                        source_map=source_map,
+                        manifest_root=manifest_root,
+                        unresolved_issues=normalized_issues,
                     )
+                    record_entry["origin_candidate_observation_id"] = candidate_observation_id
+                    records_to_add.append(record_entry)
 
             elif role == "feature_audit":
                 for omission in payload.get("omission_candidates", []):
