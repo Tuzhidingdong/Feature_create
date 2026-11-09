@@ -142,7 +142,24 @@ class AuditRecordsTests(unittest.TestCase):
                 "result_type": "measured",
                 "evidence_status": "verified_text",
                 "context_notes": "Current density was not reported in this section.",
-                "unresolved_issues": [],
+                "unresolved_issues": [{
+                    "unresolved_id": "UNRES-OPEN",
+                    "item_type": "missing_context",
+                    "description": "Sample association remains unclear.",
+                    "resolution_status": "insufficient_evidence",
+                }],
+                "context_review_history": [
+                    {
+                        "decision_id": "MANUAL-1", "actor": "human",
+                        "decision": "association_confirmed", "unresolved_id": "UNRES-CLOSED",
+                        "context_facts_added": 1, "context_facts_enriched": 0,
+                    },
+                    {
+                        "decision_id": "MANUAL-2", "actor": "human",
+                        "decision": "remain_unresolved", "unresolved_id": "UNRES-OPEN",
+                        "context_facts_added": 0, "context_facts_enriched": 0,
+                    },
+                ],
             }
             pairs = []
             paths = {
@@ -176,6 +193,15 @@ class AuditRecordsTests(unittest.TestCase):
             self.assertEqual(report["review_coverage"]["papers_partially_reviewed"], 1)
             self.assertEqual(report["result_extraction"]["result_record_count"], 1)
             self.assertEqual(report["result_extraction"]["records_with_context_notes"], 1)
+
+            self.assertEqual(report["result_extraction"]["explicit_unresolved_context_items"], 1)
+            human = report["cross_chunk_context_review"]["human_adjudication"]
+            self.assertEqual(human["decision_count"], 2)
+            self.assertEqual(human["decision_counts"]["association_confirmed"], 1)
+            self.assertEqual(human["decision_counts"]["remain_unresolved"], 1)
+            self.assertEqual(human["records_with_human_adjudication"], 1)
+            self.assertEqual(human["context_facts_added"], 1)
+            self.assertEqual(human["questions_retained_unresolved"], 1)
             self.assertTrue(report["interpretation"]["missing_usage_or_cost_metadata_is_unknown_not_zero"])
 
 
