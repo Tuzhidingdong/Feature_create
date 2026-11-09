@@ -144,6 +144,10 @@ def audit_integrity(
             issues.append(_issue("record_without_valid_observation", "error", f"Result Record {record_id} has no valid Observation link.", record_id=record_id, observation_id=observation_id))
             continue
         observation_to_records[str(observation_id)].append(record_id)
+        if not record.get("source_id"):
+            issues.append(_issue("record_without_source_id", "error", f"Result Record {record_id} has no source_id.", record_id=record_id))
+        elif observation.get("source_id") and str(record.get("source_id")) != str(observation.get("source_id")):
+            issues.append(_issue("record_observation_source_mismatch", "error", f"Result Record {record_id} and Observation {observation_id} refer to different source IDs.", record_id=record_id, record_source_id=record.get("source_id"), observation_source_id=observation.get("source_id")))
         record_evidence = record.get("evidence_refs") or []
         if not record_evidence:
             issues.append(_issue("record_without_evidence", "error", f"Result Record {record_id} has no source evidence references.", record_id=record_id))
