@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/sampling-manifest.schema.json",
+  "title": "Feature_create Paper Sampling Manifest",
+  "description": "Auditable deterministic paper-level selection from chem-literature's preprocessed paired CSV.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sampling_manifest_version",
+    "created_at",
+    "algorithm",
+    "seed",
+    "requested_fraction",
+    "stratify_by",
+    "source_csv_path",
+    "source_csv_sha256",
+    "source_row_count",
+    "source_paper_count",
+    "eligible_paper_count",
+    "ineligible_paper_count",
+    "target_selected_paper_count",
+    "selected_paper_count",
+    "selected_row_count",
+    "sampled_csv_path",
+    "sampled_csv_sha256",
+    "selected_paper_keys",
+    "stratum_summary",
+    "paper_decisions"
+  ],
+  "properties": {
+    "sampling_manifest_version": {
+      "const": "0.1"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "algorithm": {
+      "const": "sha256_rank_within_strata_v1"
+    },
+    "seed": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_fraction": {
+      "type": "string",
+      "pattern": "^(0?\\.\\d+|1(\\.0+)?)$"
+    },
+    "stratify_by": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_csv_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_csv_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_row_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_paper_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "eligible_paper_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ineligible_paper_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target_selected_paper_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "selected_paper_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "selected_row_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sampled_csv_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sampled_csv_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "selected_paper_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "stratum_summary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "eligible_paper_count",
+          "selected_paper_count"
+        ],
+        "properties": {
+          "stratum": {
+            "type": "string"
+          },
+          "eligible_paper_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "selected_paper_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "paper_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "paper_key",
+          "doi",
+          "title",
+          "year",
+          "journal",
+          "row_count",
+          "eligible",
+          "exclusion_reasons",
+          "stratum",
+          "score",
+          "selected"
+        ],
+        "properties": {
+          "paper_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "doi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "row_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "exclusion_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stratum": {
+            "type": "string"
+          },
+          "score": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
