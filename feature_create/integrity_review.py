@@ -534,7 +534,10 @@ def make_ledger_entries(validated_rows: list[dict[str, Any]]) -> list[dict[str, 
             "finding_id": row["finding_id"],
             "audit_fingerprint": row["audit_fingerprint"],
             "review_decision": row["review_decision"],
+            "action": row["action"],
             "rationale": row["rationale"],
+            "review_evidence_refs": row["review_evidence_refs"],
+            "follow_up_reference": row["follow_up_reference"],
         })[:20].upper()
         entries.append({
             "decision_id": decision_id,
