@@ -340,6 +340,12 @@ def validate_reference(
     locator = reference.get("locator")
     if not isinstance(locator, dict) or not locator:
         return False, f"Evidence reference for {source_id} has no locator."
+    has_location = any(locator.get(key) is not None for key in (
+        "page_number", "page", "table_id", "figure_id", "panel",
+        "row_index_1based", "row_number", "row", "cell_address", "cell",
+    ))
+    if not has_location:
+        return False, f"Evidence reference for {source_id} needs a page, figure, or table-cell locator."
     status = reference.get("evidence_status")
     quote = reference.get("quote_or_cell_value")
     if status not in {"verified_text", "verified_table_cell"}:
@@ -518,6 +524,8 @@ def validate_decision(
 
     facts = item.get("context_facts") or []
     if decision == "association_confirmed":
+        if item.get("counterevidence_basis"):
+            return False, f"{decision_id}: association_confirmed must not set counterevidence_basis.", None
         if not isinstance(facts, list) or not facts:
             return False, f"{decision_id}: association_confirmed requires context_facts.", None
         for index, fact in enumerate(facts):
@@ -666,14 +674,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--records", type=Path, required=True)
     parser.add_argument("--unresolved", type=Path, required=True)
     parser.add_argument("--output-template", type=Path, help="Required with --prepare.")
-    parser.add_argument("--decisions", type=Path, help="Required with --apply.")
+    parser.add_argument("--template", type=Path, help="Immutable prepared template; required with --apply.")
+    parser.add_argument("--decisions", type=Path, help="Human-edited copy of the prepared template; required with --apply.")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
 
     if args.prepare and not args.output_template:
         parser.error("--prepare requires --output-template.")
-    if args.apply and not args.decisions:
-        parser.error("--apply requires --decisions.")
+    if args.apply and (not args.decisions or not args.template):
+        parser.error("--apply requires both --template (kept unchanged) and --decisions (human-edited copy).")
 
     try:
         if args.prepare:
@@ -688,9 +697,14 @@ def main(argv: list[str] | None = None) -> int:
         registry_path = args.registry.resolve()
         records_path = args.records.resolve()
         unresolved_path = args.unresolved.resolve()
+        template_rows = read_jsonl(args.template.resolve())
         decisions = read_jsonl(args.decisions.resolve())
+        if not template_rows:
+            raise AdjudicationError("Prepared template contains no rows.")
         if not decisions:
             raise AdjudicationError("Decision file contains no rows.")
+        if sha256_file(args.template.resolve()) == sha256_file(args.decisions.resolve()):
+            raise AdjudicationError("Decision file is still identical to the prepared template; make a separate human-edited copy.")
         if not registry_path.is_file():
             raise AdjudicationError(f"Registry lock target does not exist: {registry_path}")
 
@@ -705,8 +719,12 @@ def main(argv: list[str] | None = None) -> int:
 
             templates_by_id = {
                 str(item.get("unresolved_id")): item
-                for item in decisions
+                for item in template_rows
             }
+            if len(templates_by_id) != len(template_rows):
+                raise AdjudicationError("Prepared template contains duplicate unresolved IDs.")
+            if {str(item.get("unresolved_id")) for item in decisions} != set(templates_by_id):
+                raise AdjudicationError("Decision file must contain exactly the unresolved IDs in the prepared template.")
             errors: list[str] = []
             validated: list[dict[str, Any]] = []
             seen_unresolved: set[str] = set()
@@ -722,8 +740,20 @@ def main(argv: list[str] | None = None) -> int:
                     errors.append(f"Missing or duplicate decision_id: {decision_id}")
                     continue
                 seen_decision_ids.add(decision_id)
-                # A single row carries its own prepared template. Reconstruct the
-                # immutable template map from the decision row itself.
+                prepared_template = templates_by_id.get(unresolved_id)
+                if not prepared_template:
+                    errors.append(f"No prepared template for unresolved_id {unresolved_id}.")
+                    continue
+                immutable_fields = (
+                    "template_version", "decision_id", "paper_id", "worker_task_id",
+                    "candidate_record_snapshot_sha256", "unresolved_snapshot_sha256",
+                    "source_manifest_sha256", "paper_source_text_sha256",
+                    "candidate_records", "related_candidate_record_id",
+                    "related_candidate_observation_id",
+                )
+                if any(item.get(field) != prepared_template.get(field) for field in immutable_fields):
+                    errors.append(f"{decision_id}: prepared template metadata was modified; restore it from the unchanged template file.")
+                    continue
                 ok, note, result = validate_decision(
                     item, templates_by_id, records_map, unresolved_map,
                     manifest_hash, manifest, output_root,
