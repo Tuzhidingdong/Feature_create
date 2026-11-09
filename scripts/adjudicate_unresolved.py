@@ -764,7 +764,13 @@ def main(argv: list[str] | None = None) -> int:
                     errors.append(
                         f"{decision_id}: contract validation failed: "
                         + "; ".join(
-                            f"{'/'.join(str(part) for part in error.absolute_path) or '                    "template_version", "decision_id", "paper_id", "worker_task_id",
+                            f"{'/'.join(str(part) for part in error.absolute_path) or '$'}: {error.message}"
+                            for error in schema_errors
+                        )
+                    )
+                    continue
+                immutable_fields = (
+                    "template_version", "decision_id", "paper_id", "worker_task_id",
                     "candidate_record_snapshot_sha256", "unresolved_snapshot_sha256",
                     "source_manifest_sha256", "paper_source_text_sha256",
                     "candidate_records", "related_candidate_record_id",
