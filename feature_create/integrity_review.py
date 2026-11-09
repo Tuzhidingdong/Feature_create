@@ -461,6 +461,7 @@ def validate_review_rows(
         raise ValueError("The immutable template does not match the queue finding inventory.")
 
     allowed_source_ids = set(queue.get("known_source_ids") or [])
+    manifest_was_supplied = bool((queue.get("input_fingerprints") or {}).get("manifest_sha256"))
     validated = []
     for original, edited in zip(template_rows, decision_rows):
         if original.get("audit_fingerprint") != expected_audit_fingerprint:
@@ -508,7 +509,7 @@ def validate_review_rows(
                 or not ref.get("locator")
             ):
                 raise ValueError(f"{original['finding_id']}: review_evidence_refs/{ref_index} needs source_id and a non-empty locator.")
-            if allowed_source_ids and str(ref.get("source_id")) not in allowed_source_ids:
+            if manifest_was_supplied and str(ref.get("source_id")) not in allowed_source_ids:
                 raise ValueError(f"{original['finding_id']}: review_evidence_refs/{ref_index} references a source absent from the prepared manifest.")
         validated.append({
             "template_version": TEMPLATE_VERSION,
