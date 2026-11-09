@@ -3,13 +3,49 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
+import scripts.apply_integrity_review_decisions as apply_module
 from scripts.apply_integrity_review_decisions import main as apply_main
 from scripts.build_integrity_review_queue import main as build_main
+from scripts.reconcile_features import registry_lock_path
 
 
 class IntegrityReviewCliTests(unittest.TestCase):
+    def test_builder_refuses_to_replace_active_decisions_without_archiving(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            registry_path = root / "registry.json"
+            records_path = root / "records.jsonl"
+            output_dir = root / "review"
+            registry_path.write_text(json.dumps({
+                "observations": [], "canonical_features": [], "decision_log": [],
+            }), encoding="utf-8")
+            records_path.write_text("", encoding="utf-8")
+            base_args = [
+                "--registry", str(registry_path),
+                "--records", str(records_path),
+                "--output-dir", str(output_dir),
+            ]
+            self.assertEqual(build_main(base_args), 0)
+            decisions_path = output_dir / "integrity_review_decisions.jsonl"
+            decisions_path.write_text('{"human_work":"keep"}\\n', encoding="utf-8")
+            queue_before = (output_dir / "integrity_review_queue.json").read_bytes()
+
+            self.assertEqual(build_main(base_args + ["--force"]), 2)
+            self.assertEqual((output_dir / "integrity_review_queue.json").read_bytes(), queue_before)
+            self.assertEqual(decisions_path.read_text(encoding="utf-8"), '{"human_work":"keep"}\\n')
+
+            self.assertEqual(build_main(base_args + ["--force", "--archive-existing"]), 0)
+            archives = list(output_dir.glob("integrity_review_archive_*"))
+            self.assertEqual(len(archives), 1)
+            self.assertTrue((archives[0] / "integrity_review_decisions.jsonl").is_file())
+            self.assertTrue((archives[0] / "integrity_review_queue.json").is_file())
+            self.assertTrue((output_dir / "integrity_review_bundle.json").is_file())
+            self.assertFalse(decisions_path.exists())
+
     def test_end_to_end_append_only_review_and_stale_snapshot_rejection(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -74,7 +110,19 @@ class IntegrityReviewCliTests(unittest.TestCase):
                 "--ledger", str(ledger_path),
                 "--report", str(report_path),
             ]
-            self.assertEqual(apply_main(args), 0)
+            acquired_locks = []
+            real_lock = apply_module.exclusive_lock
+
+            @contextmanager
+            def observed_lock(path, timeout_seconds=30.0):
+                acquired_locks.append(Path(path))
+                with real_lock(path, timeout_seconds=timeout_seconds):
+                    yield
+
+            with patch.object(apply_module, "exclusive_lock", observed_lock):
+                self.assertEqual(apply_main(args), 0)
+            self.assertEqual(acquired_locks[0], registry_lock_path(registry_path))
+            self.assertEqual(acquired_locks[1], ledger_path.with_name(ledger_path.name + ".lock"))
             ledger_before = ledger_path.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(ledger_before), len(template))
             report = json.loads(report_path.read_text(encoding="utf-8"))
