@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/feature-selection.schema.json",
+  "title": "Representative Feature selection decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "registry_id",
+    "decisions"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "registry_feature_id",
+          "decision",
+          "selection_rationale",
+          "supporting_observation_ids"
+        ],
+        "properties": {
+          "registry_feature_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision": {
+            "enum": [
+              "select",
+              "exclude",
+              "review"
+            ]
+          },
+          "selection_rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supporting_observation_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "primary_category": {
+            "enum": [
+              "performance",
+              "material_property",
+              "structure_composition",
+              "kinetics_mechanism",
+              "stability_durability",
+              "environmental_process",
+              "other",
+              "unclassified"
+            ],
+            "description": "One primary display group for the selected Feature. Choose the closest scientific role; use unclassified when evidence is insufficient."
+          },
+          "category_rationale": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One short reason for assigning the primary category; do not infer beyond the source."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "select"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "required": [
+                "primary_category",
+                "category_rationale"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

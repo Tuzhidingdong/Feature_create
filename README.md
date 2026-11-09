@@ -1,176 +1,56 @@
 # Feature_create
 
-**Feature_create** is a research skill for discovering, extracting, reconciling, and documenting result features reported in scientific papers and their supplementary information.
+**Feature_create selects a representative set of scientific Result Features from preprocessed papers.** It is deliberately single-purpose: discover candidate outcome concepts, identify what authors consider important, remove redundant concepts, and export a manageable Feature list.
 
-The final formal deliverables are exactly:
+It does **not** extract reported values or the sample identities, experimental conditions, and protocols that produced them. A separate downstream project fills those fields for the selected Features.
 
-- `result_feature_records.txt` — one record per reported result value, with source evidence and sample/condition context.
-- `result_feature_list.txt` — a deduplicated dictionary of result features, with definitions, aliases, units, methods, and comparability notes.
+## What makes a Feature worth selecting?
 
-## Model execution architecture
+The main-text Abstract, Results, Discussion, and Conclusion are important. Substantive author discussion is a strong signal:
+- highlighted as a principal finding;
+- used to support a mechanistic interpretation;
+- compared across systems/materials or with prior work;
+- explicitly discussed as an important result.
 
-The intended architecture is:
+Tables, figures, captions, and SI are supporting sources. A figure-only result may still be selected when it adds a distinct scientific dimension, but mere presence in a plot is not enough. Cross-paper recurrence and coverage contribution help; frequency alone does not decide selection.
 
-- **Antigravity Supervisor:** thin orchestration and monitoring layer. It prepares/dispatches tasks, inspects compact progress cards, handles exceptions, and coordinates reconciliation. It must not read every paper in full or perform the bulk extraction itself.
-- **OpenCode Worker A:** source-centric discovery and value extraction, pinned to a verified free OpenCode Go model.
-- **OpenCode Worker B:** independent feature-centric discovery and omission audit, pinned to a second, distinct verified free OpenCode Go model.
-- **Local Python:** deterministic indexing of upstream parsed outputs, task scheduling, provenance/evidence validation, stable IDs, Registry persistence, checkpoints, audits, and TXT export.
+The goal is representative coverage, not exhaustive enumeration. There is no fixed percentage or Feature-count target.
 
-## Zero paid model-token consumption requirement
+## Core workflow
 
-The target is **zero paid inference cost for the OpenCode Worker calls**, not zero model tokens processed in the literal accounting sense and not zero model calls.
+1. Consume parsed text, tables, figure metadata/assets, and QC information produced by [chem-literature](https://github.com/Tuzhidingdong/chem-literature). Do not re-parse PDFs or SI here.
+2. Discover candidate result concepts and cite exact source evidence, especially author-discussion passages.
+3. Independently check for missed important concepts and distinguish genuinely different quantities.
+4. Reconcile synonyms and semantic duplicates across papers.
+5. Make one global selection pass using `worker_prompts/feature_selection.md`.
+6. Export only selected Features with `scripts/export_feature_list.py`.
 
-Workers must use two distinct models whose current OpenCode Go catalog pricing is verified as Free for input, output, and cached reads; cached-write must be unpriced/dash or explicitly zero. The current preferred pair is:
+The formal scientific output is **`result_feature_list.txt`**. Selection decisions remain a small, reviewable JSON artifact. No per-paper values or conditions are exported by this project.
 
-- `opencode-go/crouton-alpha-free`
-- `opencode-go/beam-free`
+## Execution and cost
 
-These are temporary/limited-time free offerings in the current published catalog. The pair must be checked at runtime. Do not assume a model remains free forever.
+Antigravity is a thin coordinator; OpenCode workers perform bounded source review. Use verified free OpenCode Go models and never fall back to paid inference. Python performs indexing, schema checks, evidence validation, stable IDs, deduplication safeguards, and deterministic export.
 
-Every worker invocation must explicitly select its model. Paid fallback is forbidden. If either model is unavailable, no longer free, or cannot be verified as free, pause the task instead of selecting a paid model. The project must also account for any implicit OpenCode model calls (for example, title generation via `small_model`): use deterministic titles and pin any configured helper model to a verified free model.
+## Optional corpus sampling
 
-The OpenCode Go subscription itself is a separate fixed subscription charge. A free model's zero per-token price does not make the subscription free.
+For thousands of preprocessed papers, the deterministic paper-level sampler can start with a smaller corpus. Sampling is optional; full-corpus processing remains supported. Sampling-quality and Feature-discovery marginal-yield reports are also optional diagnostics, not required gates.
 
-Antigravity may be used as the Supervisor control plane, but not as the paper-reading/extraction worker. Its role should stay thin to avoid consuming the more expensive host-model quota on bulk scientific interpretation.
+See `SKILL.md`, `worker_prompts/`, `contracts/`, `docs/architecture.md`, and `docs/output_format.md`.
 
-## Design principles
-
-1. Discover features from source evidence; never constrain discovery to an existing schema.
-2. Preserve raw reported names and definitions before normalization.
-3. Keep result values separate from sample identity, conditions, time points, cycles, and protocols.
-4. Never merge features on name similarity alone.
-5. Keep uncertain candidates separate until sufficient evidence exists.
-6. Treat figures as first-class sources; never convert visual estimates into exact values.
-7. Use Python for IDs, validation, state transitions, audit logs, and deterministic export.
-8. Preserve provenance and decisions so a run can be resumed and audited.
-9. Keep Worker A and Worker B first-pass outputs independent.
-10. Never silently switch a worker to a paid model.
-
-## Repository map
-
-- `SKILL.md` — execution contract and agent instructions.
-- `contracts/` — machine-readable schemas for Registry and worker payloads.
-- `docs/architecture.md` — component boundaries and workflow.
-- `docs/upstream_input_contract.md` — the formal chem-literature CSV/file-path boundary.
-- `docs/token_policy.md` — zero-paid-cost policy and provider/model guards.
-- `docs/opencode_free_model_execution.md` — OpenCode Go invocation, model pinning, and verification.
-- `scripts/adjudicate_unresolved.py` + `contracts/manual-context-adjudication.schema.json` — two-step, evidence-checked human resolution for context links that Worker B cannot close.
-- `worker_prompts/` — isolated Worker A, Worker B, and targeted-review prompts.
-- `config/` — model and extraction policies.
-
-## Status
-
-Architecture/contract baseline: **v0.1**  
-End-to-end implementation: **not yet declared complete**  
-Production readiness: **not yet established**
-
-
-## Local execution quick start (Windows PowerShell)
-
-Install Python dependencies:
+## Optional 10% sampling example (Windows PowerShell)
 
 ```powershell
-python -m pip install -r requirements.txt
-```
-
-### Required upstream input
-
-Run the merged [chem-literature main branch](https://github.com/Tuzhidingdong/chem-literature) first. Its final `research_corpus_paired.csv` must contain:
-- the curated paper rows and original `local_pdf_path` / `local_si_info` provenance;
-- `preprocessing_path`, `preprocessing_status`, and `preprocessing_qc_report`;
-- one `01_preprocessing/` package per paper, including `evidence_index.json`, `PREPROCESSING_QC_REPORT.md`, `main_analysis.md`, `si_analysis.md`, extracted tables, and image assets.
-
-Feature_create consumes this CSV and the already-generated preprocessing packages. It does not parse PDFs, unpack SI archives, re-extract tables, or render PDF pages. It hashes the CSV-listed raw files only to confirm that they still match the upstream package; raw PDFs/SI are provenance and are never attached to Worker A/B. The CSV remains the complete paper-selection boundary.
-
-Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
-
-Index the upstream preprocessing packages:
-
-```powershell
-python scripts/prepare_corpus.py `
+python scripts/sample_corpus.py `
   --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\round-10" `
+  --fraction 0.1 `
+  --seed "feature-create-v1" `
+  --stratify-by year
 ```
 
-This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
-
-Build the bounded Worker A/B chunk queue:
-
-```powershell
-python scripts/build_task_queue.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch" `
-  --max-bundle-chars 120000 `
-  --max-attachments-per-chunk 8
-```
-
-The task builder does not create one unbounded whole-paper prompt. It creates as many deterministic chunks as needed:
-- parsed text is divided on upstream page headings and paragraph/newline boundaries; exact character offsets and page numbers are retained;
-- structured tables are divided by original 1-based row numbers; a single oversized row is split into original row/column cell fragments with exact character offsets;
-- a pre-extracted figure/table image is assigned once to its related evidence unit when the upstream index provides that relationship;
-- adjacent snippets and repeated table-prefix rows are marked context-only and do not count as assigned coverage;
-- `paper_chunk_index.json` exposes a compact `unit_navigation` inventory, `cross_chunk_text_boundaries` for adjacent text ranges split across chunks, and `same_original_table_row_groups` for original table rows/cells split across chunks; each task receives only its `chunk_evidence_index.json` locator slice and assigned content;
-- oversized atomic bundles that still exceed the configured hard limit are blocked explicitly, never truncated silently.
-
-The queue produces one independent Worker A and Worker B task per chunk. Each task contains a coverage checklist with one stable `scope_id` for every `(source_id, unit_id)` assignment, including linked visual assets. Each worker must return one coverage item per scope; when a source spans several units/chunks, coverage is aggregated across every scope before that source can be counted as fully reviewed.
-First perform model-price preflight and command planning without inference:
-
-```powershell
-python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
-  --dry-run
-```
-
-Only after the dry run passes, dispatch the two free workers:
-
-```powershell
-python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
-```
-
-Validate result-value evidence:
-
-```powershell
-python scripts/validate_evidence.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
-```
-
-The first run should be performed on a small paper subset to validate the local OpenCode CLI version, model availability, task bundle size, and JSON event/export format. Do not start a large corpus run until the local smoke test succeeds.
-
-## Targeted cross-chunk context review
-
-After first-pass Worker A/B results are ingested into the Registry, unresolved value-specific context links can be reviewed selectively with the existing Worker B model:
-
-~~~powershell
-python scripts/build_context_review_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch"
-~~~
-
-The queue includes only unresolved items with an explicit remote target unit and a linked result record. It supplies the current result evidence and nominated target evidence, not the full paper. Dispatch it through the normal free-model gate, then run validate_evidence.py on the context queue before applying decisions with apply_context_reviews.py. A confirmed association may add context facts only; original result values and Feature identity are protected. Validation binds the exact source manifest, evidence manifest, prompt, bundle and visual attachments, and apply rechecks those hashes. No-association requires positive counter-evidence, not merely a missing match; insufficient/conflicting evidence remains unresolved. Resolved items are not redispatched; a repeat pass on inconclusive items requires the explicit --retry-inconclusive switch.
-
-More detail: [docs/runbook.md](docs/runbook.md).
-
-## Global bidirectional integrity audit
-
-Before treating the two TXT files as final, audit the Registry ↔ Observation ↔ Result Record graph. This read-only audit checks both directions of the links, source evidence, merge redirects, eligible Record-to-Observation links, and evidence coverage of exclusion/split/merge decision history. The final exporter also invokes it under the shared Registry lock; hard integrity errors block both formal TXT outputs, and its internal report records input and output SHA-256 fingerprints.
-
-```powershell
-python scripts/audit_global_integrity.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
-```
-
-Eligible Observations without a Result Record are warnings by default because a source may identify a variable without supplying an exportable value. Add `--strict-observation-records` when complete Observation-to-Record materialization is required. See [docs/global_integrity_audit.md](docs/global_integrity_audit.md).
+Review the sample and manifest. 10% is an optional cost-control choice, not a scientific coverage guarantee.
 
 
+## Feature categories
 
-## Integrity review and remediation queue
-
-Build a source-linked human review queue from the global audit, then record triage separately from the Registry. Queue artifacts are snapshot-bound by a bundle manifest, and human decisions are tied to the complete queue fingerprint. The builder and apply step coordinate through the shared Registry lock; incomplete or stale bundles fail closed. The queue never changes scientific records or decision history; corrections must use the existing evidence/reconciliation workflows and be confirmed by a new audit. See [docs/integrity_review_workflow.md](docs/integrity_review_workflow.md) for the prepare → review → append-only ledger → correct → re-audit process.
-
+Selected Features are grouped under one evidence-based primary category: performance, material properties, structure/composition, kinetics/mechanism, stability/durability, environmental/process outcomes, other, or unclassified. The exporter uses a fixed order and includes a short category rationale. Each Feature appears once; uncertain assignments remain unclassified.

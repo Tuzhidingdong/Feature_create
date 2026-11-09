@@ -32,6 +32,27 @@ The current source package version is `1.1.0`.
 
 Other CSV fields, including `abstract`, `landing_page_url`, `has_pdf`, and `has_si`, are retained as paper metadata. Feature_create does not re-run literature discovery or article screening.
 
+## 2A. Optional deterministic paper-level sampling
+
+The complete paired CSV remains the authoritative upstream inventory. When it contains thousands of preprocessed papers, `scripts/sample_corpus.py` can produce an explicit subset before preparation.
+
+Incremental expansion is deliberately bound to an immutable source CSV snapshot. Adding/removing papers or editing metadata creates a new source hash and is rejected by `--previous-manifest`; establish a new sampling baseline for a changed corpus rather than pretending the old and new populations are identical.
+
+- Default sample fraction: 10% of eligible unique papers, rounded to the nearest whole paper (minimum one by default).
+- Sampling unit: normalized DOI; when DOI is absent, normalized title + year + journal.
+- All CSV rows sharing one paper identity are selected together.
+- Default proportional stratification: `year`. Use `--stratify-by none` for global sampling or provide comma-separated metadata columns.
+- Stratum quotas use D'Hondt divisor allocation, which is house-monotone: for a fixed source corpus, increasing the fraction cannot reduce a stratum's quota. Combined with fixed per-paper hash ranks, each larger sample is a superset of the smaller sample.
+- Rows with missing `preprocessing_path` or unsupported/failed preprocessing status are excluded before calculating the sample size and appear in the manifest with reasons.
+- The default seed is `feature-create-v1`. Identical input bytes, seed, fraction, and strata reproduce the same selected paper set.
+
+CSV header names are trimmed and matched case-insensitively; values are copied unchanged into the sampled output. Duplicate headers that become identical after trimming/case-folding are rejected.
+
+The sampler reads CSV metadata only. It does not open or hash source PDFs, SI, or preprocessing packages. It writes a cumulative sample CSV, a newly-selected incremental CSV, and `sampling_manifest.json`, which records the source/sample hashes, per-paper decision/score, stratum quotas, parent-manifest fingerprint, previous/current selected keys, and exclusion reasons.
+
+For a later round, use the incremental CSV as the preparation input; use the cumulative CSV only when intentionally rebuilding the entire sample. Preparation detects which view was supplied, verifies its SHA-256 and paper-key set, and records cumulative plus applied-view provenance in `source_manifest.json`. For sample expansion, the source CSV bytes, seed, strata, and `min_papers` must remain unchanged and the fraction must increase. Preserve the previous manifest and cumulative CSV; changed or missing parent artifacts block expansion. Prepare an incremental CSV in a new run directory, then reconcile it into the same persistent Registry/Records. Existing full-corpus runs remain valid without a sampling manifest.
+
+
 ## 3. Path resolution
 
 The current chem-literature workflow writes CSV file paths and `preprocessing_path` relative to the working directory from which `run_workflow.py` was executed.
@@ -45,9 +66,9 @@ Example:
 
 ~~~powershell
 python scripts/prepare_corpus.py `
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
 ~~~
 
 ## 4. What Feature_create validates

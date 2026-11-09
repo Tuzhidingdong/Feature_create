@@ -515,6 +515,62 @@ def validate_cross_chunk_target_nominations(
     return errors
 
 
+SUBSTANTIVE_AUTHOR_EMPHASIS = {
+    "core_conclusion",
+    "mechanistic_interpretation",
+    "comparative_discussion",
+    "explicit_results_discussion",
+}
+
+
+def validate_author_emphasis_evidence(
+    observations: list[dict[str, Any]],
+    sources: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Require exact main-text evidence for substantive author-emphasis labels."""
+    errors: list[str] = []
+    for index, observation in enumerate(observations):
+        label = observation.get("author_emphasis", "not_assessable")
+        if label not in SUBSTANTIVE_AUTHOR_EMPHASIS:
+            continue
+        supported = False
+        for reference in observation.get("evidence_refs", []):
+            source = sources.get(reference.get("source_id"))
+            locator = reference.get("locator") or {}
+            section = str(locator.get("section") or "").casefold()
+            if section and not any(
+                term in section for term in ("abstract", "result", "discussion", "conclusion")
+            ):
+                continue
+            if (
+                source
+                and source.get("source_type") == "main_text"
+                and reference.get("source_type") == "main_text"
+                and reference.get("evidence_status") == "verified_text"
+                and isinstance(reference.get("quote_or_cell_value"), str)
+                and reference["quote_or_cell_value"].strip()
+            ):
+                supported = True
+                break
+        if not supported:
+            errors.append(
+                f"feature_observations/{index}: author_emphasis={label!r} "
+                "requires an exact verified main-text passage from the Abstract, "
+                "Results, Discussion, or Conclusion."
+            )
+    return errors
+
+
+def validate_feature_only_output(payload: dict[str, Any], role: str) -> list[str]:
+    """Keep the active Feature_create discovery contract free of value records."""
+    if role == "source_discovery" and payload.get("result_records"):
+        return [
+            "source_discovery: result_records must be empty; value and condition extraction "
+            "belongs to the downstream project."
+        ]
+    return []
+
+
 def validate_payload(
     payload: dict[str, Any],
     role: str,
@@ -713,6 +769,12 @@ def validate_payload(
                 )
         elif payload.get("context_facts"): 
             errors.append("Non-confirmed context decisions cannot add context_facts.")
+
+    if role in {"source_discovery", "feature_audit"}:
+        errors.extend(
+            validate_author_emphasis_evidence(payload.get("feature_observations", []), sources)
+        )
+    errors.extend(validate_feature_only_output(payload, role))
 
     if role == "source_discovery":
         errors.extend(validate_cross_chunk_target_nominations(payload, task))

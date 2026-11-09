@@ -393,6 +393,12 @@ def add_observation(
         None,
     )
     if existing_observation:
+        incoming_emphasis = candidate.get("author_emphasis", "not_assessable")
+        if incoming_emphasis != "not_assessable":
+            existing_observation["author_emphasis"] = incoming_emphasis
+        incoming_rationale = candidate.get("selection_rationale")
+        if incoming_rationale:
+            existing_observation["selection_rationale"] = incoming_rationale
         return (
             observation_id,
             existing_observation.get("linked_registry_feature_id"),
@@ -421,6 +427,8 @@ def add_observation(
         "reported_method": candidate.get("reported_method"),
         "result_type": candidate.get("result_type", "uncertain"),
         "variable_role": variable_role,
+        "author_emphasis": candidate.get("author_emphasis", "not_assessable"),
+        "selection_rationale": candidate.get("selection_rationale"),
         "evidence_refs": evidence_refs,
         "origin_task_id": task["task_id"],
         "origin_worker": "source_discovery" if role == "source_discovery" else "feature_audit",
