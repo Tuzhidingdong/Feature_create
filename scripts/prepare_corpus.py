@@ -13,6 +13,8 @@ import json
 import re
 import shutil
 import sys
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -130,76 +132,136 @@ def load_sampling_provenance(
             "Sampling manifest does not match the selected paired CSV SHA-256; "
             "the sample may have been edited or replaced."
         )
+    integer_fields = (
+        "source_row_count", "source_paper_count", "eligible_paper_count",
+        "ineligible_paper_count", "target_selected_paper_count",
+        "selected_paper_count", "selected_row_count", "min_papers",
+    )
+    for field in integer_fields:
+        value = sampling.get(field)
+        minimum = 1 if field in {"source_row_count", "source_paper_count", "eligible_paper_count", "target_selected_paper_count", "selected_paper_count", "selected_row_count", "min_papers"} else 0
+        if type(value) is not int or value < minimum:
+            raise CorpusError(f"Sampling manifest has an invalid {field}.")
+
     selected_keys = sampling.get("selected_paper_keys")
-    selected_count = sampling.get("selected_paper_count")
-    if not isinstance(selected_count, int) or not isinstance(selected_keys, list) or len(selected_keys) != selected_count:
+    selected_count = sampling["selected_paper_count"]
+    if not isinstance(selected_keys, list) or len(selected_keys) != selected_count:
         raise CorpusError("Sampling manifest has an invalid selected_paper_keys inventory.")
-    if len(selected_keys) != len(set(str(item) for item in selected_keys)):
+    if any(not isinstance(item, str) or not item for item in selected_keys):
+        raise CorpusError("Sampling manifest selected_paper_keys contains an invalid key.")
+    if len(selected_keys) != len(set(selected_keys)):
         raise CorpusError("Sampling manifest contains duplicate selected paper keys.")
     if sampling.get("algorithm") != "sha256_rank_within_strata_v1":
         raise CorpusError("Sampling manifest uses an unsupported sampling algorithm.")
+    if not isinstance(sampling.get("seed"), str) or not sampling["seed"].strip():
+        raise CorpusError("Sampling manifest has an empty or invalid seed.")
+    stratify_by = sampling.get("stratify_by")
+    if not isinstance(stratify_by, list) or any(not isinstance(item, str) for item in stratify_by):
+        raise CorpusError("Sampling manifest stratify_by must be an array of strings.")
+    try:
+        fraction = Decimal(str(sampling.get("requested_fraction")))
+    except InvalidOperation as exc:
+        raise CorpusError("Sampling manifest requested_fraction is invalid.") from exc
+    if not fraction.is_finite() or fraction <= 0 or fraction > 1:
+        raise CorpusError("Sampling manifest requested_fraction must be greater than 0 and at most 1.")
+
     rows = rows if rows is not None else load_paired_csv(paired_csv)
     try:
         actual_keys = sorted({paper_identity_key(row) for row in rows})
     except SamplingError as exc:
         raise CorpusError(f"Cannot verify sampled paper identities: {exc}") from exc
-    if actual_keys != sorted(str(item) for item in selected_keys):
+    if actual_keys != sorted(selected_keys):
         raise CorpusError("Sampling manifest selected paper keys do not match the sampled CSV contents.")
     if selected_count != len(actual_keys):
         raise CorpusError("Sampling manifest selected_paper_count does not match the sampled CSV.")
-    if sampling.get("selected_row_count") != len(rows):
+    if sampling["selected_row_count"] != len(rows):
         raise CorpusError("Sampling manifest selected_row_count does not match the sampled CSV row count.")
 
-    # Validate the manifest's complete paper-decision ledger, not only its selected-key list.
     decisions = sampling.get("paper_decisions")
-    if not isinstance(decisions, list):
-        raise CorpusError("Sampling manifest paper_decisions must be an array.")
-    decision_keys = [str(item.get("paper_key") or "") for item in decisions if isinstance(item, dict)]
-    if len(decisions) != sampling.get("source_paper_count") or len(decision_keys) != len(decisions):
-        raise CorpusError("Sampling manifest paper_decisions count or item shape is invalid.")
-    if len(decision_keys) != len(set(decision_keys)) or any(not key for key in decision_keys):
-        raise CorpusError("Sampling manifest paper_decisions contains missing or duplicate paper keys.")
+    if not isinstance(decisions, list) or len(decisions) != sampling["source_paper_count"]:
+        raise CorpusError("Sampling manifest paper_decisions count is invalid.")
+    decision_by_key: dict[str, dict[str, Any]] = {}
+    for item in decisions:
+        if not isinstance(item, dict):
+            raise CorpusError("Sampling manifest paper_decisions contains a non-object item.")
+        key = item.get("paper_key")
+        if not isinstance(key, str) or not key or key in decision_by_key:
+            raise CorpusError("Sampling manifest paper_decisions contains a missing or duplicate paper key.")
+        if type(item.get("row_count")) is not int or item["row_count"] < 1:
+            raise CorpusError(f"Sampling manifest has an invalid row_count for {key}.")
+        if type(item.get("eligible")) is not bool or type(item.get("selected")) is not bool:
+            raise CorpusError(f"Sampling manifest has invalid eligibility/selection flags for {key}.")
+        if not isinstance(item.get("exclusion_reasons"), list):
+            raise CorpusError(f"Sampling manifest has invalid exclusion_reasons for {key}.")
+        if item["eligible"] == bool(item["exclusion_reasons"]):
+            raise CorpusError(f"Sampling manifest eligibility conflicts with exclusion reasons for {key}.")
+        if not isinstance(item.get("stratum"), str):
+            raise CorpusError(f"Sampling manifest has an invalid stratum for {key}.")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("score") or "")):
+            raise CorpusError(f"Sampling manifest has an invalid deterministic score for {key}.")
+        decision_by_key[key] = item
+
     selected_decision_keys = sorted(
-        str(item["paper_key"]) for item in decisions if item.get("selected") is True
+        key for key, item in decision_by_key.items() if item["selected"]
     )
-    if selected_decision_keys != sorted(str(item) for item in selected_keys):
+    if selected_decision_keys != sorted(selected_keys):
         raise CorpusError("Sampling manifest selected flags do not match selected_paper_keys.")
-    if any(item.get("selected") and not item.get("eligible") for item in decisions):
+    if any(item["selected"] and not item["eligible"] for item in decision_by_key.values()):
         raise CorpusError("Sampling manifest selects an ineligible paper.")
-    eligible_count = sum(1 for item in decisions if item.get("eligible") is True)
-    ineligible_count = sum(1 for item in decisions if item.get("eligible") is False)
-    if eligible_count != sampling.get("eligible_paper_count"):
-        raise CorpusError("Sampling manifest eligible_paper_count does not match paper_decisions.")
-    if ineligible_count != sampling.get("ineligible_paper_count"):
-        raise CorpusError("Sampling manifest ineligible_paper_count does not match paper_decisions.")
-    if eligible_count + ineligible_count != sampling.get("source_paper_count"):
-        raise CorpusError("Sampling manifest source/eligible/ineligible paper counts are inconsistent.")
-    if sampling.get("target_selected_paper_count") != selected_count:
-        raise CorpusError("Sampling manifest target_selected_paper_count does not match selected_paper_count.")
-    if sum(int(item.get("row_count", 0)) for item in decisions) != sampling.get("source_row_count"):
+
+    eligible_count = sum(1 for item in decision_by_key.values() if item["eligible"])
+    ineligible_count = len(decision_by_key) - eligible_count
+    if eligible_count != sampling["eligible_paper_count"] or ineligible_count != sampling["ineligible_paper_count"]:
+        raise CorpusError("Sampling manifest eligible/ineligible counts do not match paper_decisions.")
+    if eligible_count + ineligible_count != sampling["source_paper_count"]:
+        raise CorpusError("Sampling manifest source/eligible/ineligible counts are inconsistent.")
+    expected_target = int(
+        (Decimal(eligible_count) * fraction).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    expected_target = min(eligible_count, max(sampling["min_papers"], expected_target))
+    if sampling["target_selected_paper_count"] != expected_target or selected_count != expected_target:
+        raise CorpusError("Sampling manifest target count is inconsistent with its fraction and minimum.")
+    if sum(item["row_count"] for item in decision_by_key.values()) != sampling["source_row_count"]:
         raise CorpusError("Sampling manifest paper row counts do not sum to source_row_count.")
-    if sum(int(item.get("row_count", 0)) for item in decisions if item.get("selected")) != len(rows):
+    if sum(item["row_count"] for item in decision_by_key.values() if item["selected"]) != len(rows):
         raise CorpusError("Sampling manifest selected paper row counts do not match sampled CSV rows.")
 
+    strata_expected: dict[str, dict[str, int]] = defaultdict(lambda: {"eligible_paper_count": 0, "selected_paper_count": 0})
+    for item in decision_by_key.values():
+        if item["eligible"]:
+            strata_expected[item["stratum"]]["eligible_paper_count"] += 1
+            if item["selected"]:
+                strata_expected[item["stratum"]]["selected_paper_count"] += 1
     strata = sampling.get("stratum_summary")
     if not isinstance(strata, list):
         raise CorpusError("Sampling manifest stratum_summary must be an array.")
-    if sum(int(item.get("eligible_paper_count", 0)) for item in strata) != eligible_count:
-        raise CorpusError("Sampling manifest stratum eligible counts do not match paper_decisions.")
-    if sum(int(item.get("selected_paper_count", 0)) for item in strata) != selected_count:
-        raise CorpusError("Sampling manifest stratum selected quotas do not match selected_paper_count.")
+    strata_actual: dict[str, dict[str, int]] = {}
+    for item in strata:
+        if not isinstance(item, dict) or not isinstance(item.get("stratum"), str):
+            raise CorpusError("Sampling manifest contains an invalid stratum summary item.")
+        name = item["stratum"]
+        if name in strata_actual:
+            raise CorpusError("Sampling manifest contains duplicate stratum summary entries.")
+        for count_field in ("eligible_paper_count", "selected_paper_count"):
+            value = item.get(count_field)
+            if type(value) is not int or value < 0:
+                raise CorpusError(f"Sampling manifest has an invalid stratum {count_field}.")
+        strata_actual[name] = {
+            "eligible_paper_count": item["eligible_paper_count"],
+            "selected_paper_count": item["selected_paper_count"],
+        }
+    if strata_actual != dict(strata_expected):
+        raise CorpusError("Sampling manifest stratum quotas/counts do not match paper_decisions.")
 
     source_hash = str(sampling.get("source_csv_sha256") or "").lower()
     if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
         raise CorpusError("Sampling manifest has an invalid source_csv_sha256.")
-    for field in ("source_paper_count", "eligible_paper_count", "selected_paper_count", "selected_row_count"):
-        if not isinstance(sampling.get(field), int) or sampling[field] < 0:
-            raise CorpusError(f"Sampling manifest has an invalid {field}.")
     return {
         "sampling_manifest_version": sampling["sampling_manifest_version"],
         "algorithm": sampling.get("algorithm"),
         "seed": sampling.get("seed"),
         "requested_fraction": sampling.get("requested_fraction"),
+        "min_papers": sampling.get("min_papers"),
         "stratify_by": sampling.get("stratify_by", []),
         "source_csv_path": sampling.get("source_csv_path"),
         "source_csv_sha256": source_hash,
