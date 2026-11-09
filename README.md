@@ -82,6 +82,30 @@ Run the merged [chem-literature main branch](https://github.com/Tuzhidingdong/ch
 
 Feature_create consumes this CSV and the already-generated preprocessing packages. It does not parse PDFs, unpack SI archives, re-extract tables, or render PDF pages. It hashes the CSV-listed raw files only to confirm that they still match the upstream package; raw PDFs/SI are provenance and are never attached to Worker A/B. The CSV remains the complete paper-selection boundary.
 
+
+For a corpus with thousands of preprocessed papers, optionally sample 10% before indexing. The sampler selects unique papers (not CSV rows), defaults to proportional stratification by year, keeps all rows belonging to each selected paper, and produces a reproducible selection manifest. Omit this step to process the full corpus.
+
+\`\`\`powershell
+python scripts/sample_corpus.py \`
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
+  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling" \`
+  --fraction 0.1 \`
+  --seed "feature-create-v1" \`
+  --stratify-by year
+\`\`\`
+
+This writes \`sampled_research_corpus_paired.csv\` and \`sampling_manifest.json\`. The manifest records the source/sample hashes, selected and excluded paper identities, per-paper deterministic scores, exclusion reasons, and stratum quotas. Use \`--stratify-by none\` for global sampling or comma-separated columns such as \`year,article_type\`.
+
+When sampling is used, prepare only the sampled CSV and pass its manifest so the exact selection is hash-bound into \`source_manifest.json\`:
+
+\`\`\`powershell
+python scripts/prepare_corpus.py \`
+  --paired-csv "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampled_research_corpus_paired.csv" \`
+  --sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampling_manifest.json" \`
+  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" \`
+  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+\`\`\`
+
 Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
 
 Index the upstream preprocessing packages:
