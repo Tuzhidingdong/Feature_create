@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+from feature_create.integrity import audit_integrity
+
 try:
     from jsonschema import Draft202012Validator
 except ImportError:
@@ -511,6 +513,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--existing-schema", type=Path, help="Optional normalized existing_feature_schema.json for legacy name/definition/alias preservation.")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--audit-report", type=Path, help="Optional separate internal audit JSON path.")
+    parser.add_argument("--source-manifest", type=Path, help="Optional source_manifest.json for source-ID existence checks.")
+    parser.add_argument("--strict-observation-records", action="store_true", help="Block export when an eligible Observation has no Result Record.")
     parser.add_argument(
         "--allow-unresolved-context",
         action="store_true",
@@ -523,6 +527,9 @@ def main(argv: list[str] | None = None) -> int:
     schema_errors = validate_registry(registry)
     review_rows = read_jsonl(args.review_queue.resolve())
     records = read_jsonl(args.records.resolve())
+    source_manifest = read_json(args.source_manifest.resolve()) if args.source_manifest else None
+    integrity_report = audit_integrity(registry, records, source_manifest, strict_observation_records=args.strict_observation_records)
+    integrity_errors = [item for item in integrity_report["issues"] if item["severity"] == "error"]
     existing_schema = read_json(args.existing_schema.resolve()) if args.existing_schema else None
     if existing_schema and existing_schema.get("contract_version") != "0.1":
         raise ExportError("Existing schema must be normalized with import_existing_schema.py.")
@@ -538,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
     context_summary = summarize_context_records(records)
 
     errors = list(schema_errors) + feature_errors + record_errors
+    errors.extend("Global integrity [" + item["code"] + "]: " + item["message"] for item in integrity_errors)
     if existing_schema is None and any(
         feature.get("existing_feature_id")
         for feature in registry.get("canonical_features", [])
@@ -580,6 +588,10 @@ def main(argv: list[str] | None = None) -> int:
         "record_error_count": len(record_errors),
         "feature_error_count": len(feature_errors),
         "schema_error_count": len(schema_errors),
+        "global_integrity_status": integrity_report["status"],
+        "global_integrity_summary": integrity_report["summary"],
+        "global_integrity_warning_count": integrity_report["summary"]["warning_count"],
+        "global_integrity_issues": integrity_report["issues"],
         "context_association_status_counts": context_summary["status_counts"],
         "records_with_open_context": context_summary["records_with_open_context"],
         "open_context_issue_count": context_summary["open_context_issue_count"],
