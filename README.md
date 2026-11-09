@@ -49,3 +49,8 @@ python scripts/sample_corpus.py `
 ```
 
 Review the sample and manifest. 10% is an optional cost-control choice, not a scientific coverage guarantee.
+
+
+## Feature categories
+
+Selected Features are grouped under one evidence-based primary category: performance, material properties, structure/composition, kinetics/mechanism, stability/durability, environmental/process outcomes, other, or unclassified. The exporter uses a fixed order and includes a short category rationale. Each Feature appears once; uncertain assignments remain unclassified.

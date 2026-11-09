@@ -196,6 +196,8 @@ Selection priorities:
 4. **Coverage contribution:** retain low-frequency Features representing an important otherwise-missing dimension.
 5. **Redundancy:** avoid synonyms, near-duplicates, trivial variants, and unnecessary fine-grained splits.
 
+For every selected Feature, assign exactly one category from the controlled list in `worker_prompts/feature_selection.md`, and provide a short `category_rationale`. Use `unclassified` when the scientific role does not fit clearly. Categories organize the final list; they do not rank Features or create an additional scientific ontology.
+
 A figure/table-only Feature may be selected when it adds a distinct scientific dimension. Frequency alone must never determine selection. Use `review` when evidence is ambiguous; do not force a yes/no decision.
 
 Every decision cites supporting Observation IDs and gives a concise reason. The Supervisor reviews only the shortlist and borderline decisions.

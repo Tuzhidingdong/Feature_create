@@ -16,6 +16,8 @@ It is a curated dictionary of selected Result Features, not a table of per-paper
 | `ALIASES` | Confirmed equivalent names and abbreviations |
 | `RESULT_TYPES` | Measured, calculated, derived, simulated, or other supported type |
 | `UNIT_DIMENSIONS` | General dimension metadata when established, not paper-specific values |
+| `CATEGORY` / `CATEGORY_CODE` | One primary thematic group; Features are exported grouped in a fixed category order |
+| `CATEGORY_RATIONALE` | Short reason for the category assignment; uncertain cases use `unclassified` |
 | `AUTHOR_EMPHASIS` | Strongest author-attention signal among cited supporting Observations |
 | `SELECTION_RATIONALE` | Why this Feature is representative and worth carrying downstream |
 
@@ -32,3 +34,17 @@ Do not equate text frequency with scientific importance. Preserve meaningful dis
 ## Deterministic export
 
 `scripts/export_feature_list.py` validates the Registry and selection-decision contract, requires one decision for every active canonical Feature, checks that cited Observation IDs belong to that Feature, and writes selected entries in deterministic name/ID order. It does not modify the Registry.
+
+
+## Allowed primary categories
+
+- `performance`: overall function, capability, efficiency, or application-level performance.
+- `material_property`: physical or chemical properties of a material/system.
+- `structure_composition`: structure, phase, morphology, composition, defects, or chemical-state outcomes.
+- `kinetics_mechanism`: rates, activation behavior, pathways, or mechanistic descriptors.
+- `stability_durability`: degradation, retention, lifetime, cycling durability, or long-term stability.
+- `environmental_process`: removal/degradation outcomes, emissions, resource/energy use, or process-level outcomes.
+- `other`: a clear result that does not fit the groups above.
+- `unclassified`: the primary category cannot be assigned confidently.
+
+Every selected Feature has exactly one primary category and appears only once. The category is a display aid, not an additional scientific classification or ranking. It must not be inferred from the paper topic alone.

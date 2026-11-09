@@ -56,7 +56,7 @@ For every active canonical Feature, produce one decision:
 
 Prioritize Features substantively discussed in the main text, especially those highlighted in conclusions, used in mechanistic interpretation, or compared across systems or literature. Use recurrence as supporting evidence, not as the sole criterion. Preserve important low-frequency Features when they add otherwise-missing coverage. A fixed percentage or target count is not required.
 
-Save the decision object as `feature_selection_decisions.json`. Every decision must cite one or more Observation IDs linked to that Feature and include a concise rationale.
+Save the decision object as `feature_selection_decisions.json`. Every decision must cite one or more Observation IDs linked to that Feature and include a concise rationale. For every selected Feature, assign one primary category using the small controlled list in `worker_prompts/feature_selection.md`; include a short `category_rationale`. Use `unclassified` rather than forcing a doubtful category.
 
 ## 6. Export the one formal deliverable
 
@@ -67,7 +67,7 @@ python scripts/export_feature_list.py `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\output\\result_feature_list.txt"
 ```
 
-The exporter validates that decisions cover every active Feature exactly once, checks that supporting Observation IDs belong to the cited Feature, and writes only selected Feature definitions.
+The exporter validates that decisions cover every active Feature exactly once, checks that supporting Observation IDs belong to the cited Feature, and writes only selected Feature definitions. Selected Features are grouped in a fixed category order, with each entry showing its category code and rationale.
 
 The formal scientific output is `result_feature_list.txt`. The downstream project fills values and the conditions that produced them.
 

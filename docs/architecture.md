@@ -31,7 +31,10 @@ cross-paper semantic deduplication
 representative Feature selection
           |
           v
-result_feature_list.txt
+single primary category assignment
+          |
+          v
+result_feature_list.txt (grouped in fixed category order)
           |
           v
 separate downstream project: fill values + conditions
@@ -54,3 +57,8 @@ separate downstream project: fill values + conditions
 - Python handles stable IDs, source locators, schema/evidence validation, safe Registry updates, and deterministic output.
 - Workers discover and assess semantic Features; they must not invent source evidence.
 - Corpus sampling and sampling/marginal-yield reports are optional diagnostics.
+
+
+## Simple Feature categories
+
+Every selected Feature receives one primary category: performance, material_property, structure_composition, kinetics_mechanism, stability_durability, environmental_process, other, or unclassified. Category assignment is explanatory organization, not a scientific ranking. A brief evidence-grounded rationale is required; uncertain cases remain unclassified. No multi-label tagging or inferred hierarchy is used.
