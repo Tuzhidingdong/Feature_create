@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/integrity-review-decision.schema.json",
+  "title": "Feature_create human integrity review decision",
+  "description": "Human-edited review row generated from an immutable global integrity audit snapshot. Applying it appends a separate review-ledger entry and never edits Registry or Result Records.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "template_version",
+    "audit_fingerprint",
+    "finding_id",
+    "finding_fingerprint",
+    "severity",
+    "code",
+    "primary_object",
+    "review_decision",
+    "action",
+    "rationale",
+    "review_evidence_refs",
+    "follow_up_reference"
+  ],
+  "properties": {
+    "template_version": { "const": "1.0" },
+    "audit_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "finding_id": { "type": "string", "pattern": "^IRF-[A-F0-9]{20}$" },
+    "finding_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "severity": { "enum": ["error", "warning"] },
+    "code": { "type": "string", "minLength": 1 },
+    "primary_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_type", "object_id"],
+      "properties": {
+        "object_type": { "type": "string", "minLength": 1 },
+        "object_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "review_decision": {
+      "enum": ["", "repair_required", "accepted_warning", "defer"]
+    },
+    "action": {
+      "enum": [
+        "",
+        "feature_reconciliation",
+        "record_review",
+        "evidence_revalidation",
+        "decision_history_review",
+        "manual_review",
+        "none"
+      ]
+    },
+    "rationale": { "type": "string" },
+    "review_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["source_id", "locator"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "locator": { "type": "object", "minProperties": 1 },
+          "quote_or_cell_value": { "type": ["string", "null"] },
+          "evidence_status": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "follow_up_reference": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "review_decision": { "const": "repair_required" } } },
+      "then": {
+        "properties": {
+          "action": {
+            "enum": [
+              "feature_reconciliation",
+              "record_review",
+              "evidence_revalidation",
+              "decision_history_review",
+              "manual_review"
+            ]
+          },
+          "rationale": { "minLength": 12 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "review_decision": { "const": "accepted_warning" } } },
+      "then": {
+        "properties": {
+          "severity": { "const": "warning" },
+          "action": { "const": "none" },
+          "rationale": { "minLength": 12 },
+          "review_evidence_refs": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "review_decision": { "const": "defer" } } },
+      "then": {
+        "properties": {
+          "action": { "const": "none" },
+          "rationale": { "minLength": 12 }
+        }
+      }
+    }
+  ]
+}
