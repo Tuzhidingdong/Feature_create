@@ -414,6 +414,7 @@ def build_review_queue(
         "input_fingerprints": input_fingerprints,
         "finding_ids": [item["finding_id"] for item in findings],
         "known_source_ids": sorted(sources),
+        "findings_sha256": sha256_value(findings),
     }
     queue = {
         **queue_core,
