@@ -43,6 +43,26 @@ Each package must include:
 
 The CSV is the complete paper-selection authority. Feature_create does not scan the upstream folders, add unlisted files, repeat article screening, or substitute missing PDFs/SI.
 
+
+For a corpus with thousands of preprocessed papers, the optional sampler can reduce the workload before indexing. The default selects 10% of eligible unique papers, proportionally stratified by year. It uses CSV metadata only and does not touch PDF/SI or upstream package contents.
+
+~~~powershell
+python scripts/sample_corpus.py \`
+  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
+  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling" \`
+  --fraction 0.1 \`
+  --seed "feature-create-v1" \`
+  --stratify-by year
+~~~
+
+Inspect \`sampling_manifest.json\` and the selected CSV. The selection is repeatable for unchanged source CSV + seed + options. Papers without \`preprocessing_path\` or with unsupported preprocessing status are excluded and listed with reasons. Duplicate DOI rows stay together. Use \`--stratify-by none\` for global sampling. To prepare the sample, replace the full CSV path in the preparation command with \`sampling\\sampled_research_corpus_paired.csv\` and add:
+
+~~~powershell
+--sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampling_manifest.json"
+~~~
+
+Preparation verifies that the manifest's SHA-256 matches the exact selected CSV and copies the sampling provenance into \`source_manifest.json\`. Existing full-corpus runs remain unchanged when the sampler is omitted.
+
 The current chem-literature workflow writes relative paths against the directory from which `run_workflow.py` was executed. For example, when it is run from:
 
 `E:\\Zinc_batters_datas\\chem-literature`
