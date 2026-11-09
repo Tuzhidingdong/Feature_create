@@ -182,7 +182,7 @@ class IntegrityAuditTests(unittest.TestCase):
                 "evidence_observation_ids": ["OBS-1"],
             },
         ]
-        report = audit_integrity(data, [record(feature_id="F-MIDDLE")])
+        report = audit_integrity(data, [record() | {"registry_feature_id": "F-MIDDLE"}])
         self.assertNotIn("invalid_feature_merge_event_roles", self.codes(report))
         self.assertNotIn("merge_event_redirect_mismatch", self.codes(report))
 
