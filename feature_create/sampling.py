@@ -56,14 +56,14 @@ def _row_value(row: dict[str, str], key: str) -> str:
     return ""
 
 
-def _paper_key(rows: list[dict[str, str]]) -> str:
-    first = rows[0]
-    doi = _normalized_doi(_row_value(first, "doi"))
+def paper_identity_key(row: dict[str, str]) -> str:
+    """Return the shared DOI/metadata identity used by sampling and preparation."""
+    doi = _normalized_doi(_row_value(row, "doi"))
     if doi:
         return f"doi:{doi}"
-    title = " ".join(_row_value(first, "title").casefold().split())
-    year = _row_value(first, "year").strip()
-    journal = " ".join(_row_value(first, "journal").casefold().split())
+    title = " ".join(_row_value(row, "title").casefold().split())
+    year = _row_value(row, "year").strip()
+    journal = " ".join(_row_value(row, "journal").casefold().split())
     if not title:
         raise SamplingError("A paper row has neither DOI nor title; stable paper identity cannot be established.")
     fallback = json.dumps([title, year, journal], ensure_ascii=False, separators=(",", ":"))
@@ -160,7 +160,7 @@ def create_corpus_sample(
 
     grouped_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
-        grouped_rows[_paper_key([row])].append(row)
+        grouped_rows[paper_identity_key(row)].append(row)
 
     candidates: list[dict[str, Any]] = []
     for paper_key, paper_rows in grouped_rows.items():
@@ -211,7 +211,7 @@ def create_corpus_sample(
 
     selected_rows = [
         row for row in rows
-        if _paper_key([row]) in selected_keys
+        if paper_identity_key(row) in selected_keys
     ]
 
     output_dir.mkdir(parents=True, exist_ok=True)
