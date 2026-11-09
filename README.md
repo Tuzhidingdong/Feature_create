@@ -184,6 +184,18 @@ python scripts/validate_evidence.py `
 
 The first run should be performed on a small paper subset to validate the local OpenCode CLI version, model availability, task bundle size, and JSON event/export format. Do not start a large corpus run until the local smoke test succeeds.
 
+## Optional Feature discovery saturation diagnostics
+
+This is a **manually invoked, optional diagnostic**, not a required workflow phase. It is not run automatically after a batch and never blocks later extraction batches or determines that sampling should stop.
+
+After multiple batches have been ingested into the same persistent Registry and semantically reconciled, the report compares the number of newly observed current canonical result Features per 100 papers. It uses the current Registry so already-applied Feature merges are not double-counted. Batch manifests must be supplied in chronological order; for later sample expansions, use the incremental prepared manifest, not the cumulative one.
+
+~~~powershell
+python scripts/report_feature_saturation.py --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" --batch "round-10=E:\Zinc_batters_datas\runs\Feature_create\prepared\round-10\source_manifest.json" --batch "round-20-incremental=E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" --output-dir "E:\Zinc_batters_datas\runs\Feature_create\diagnostics\feature-saturation"
+~~~
+
+The JSON and Markdown reports show batch-level marginal yield, cumulative canonical Feature counts, evidence-verified observations, uncertain observations, and scope warnings. No automatic saturated/not-saturated verdict is generated. A low yield may reflect incomplete extraction or unresolved reconciliation rather than genuine discovery saturation. See [docs/feature_discovery_saturation.md](docs/feature_discovery_saturation.md).
+
 ## Targeted cross-chunk context review
 
 After first-pass Worker A/B results are ingested into the Registry, unresolved value-specific context links can be reviewed selectively with the existing Worker B model:
