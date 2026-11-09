@@ -11,7 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from jsonschema import Draft202012Validator
+except ImportError:
+    Draft202012Validator = None  # type: ignore[assignment]
+
 ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_PATH = ROOT / "contracts" / "integrity-review-decision.schema.json"
 sys.path.insert(0, str(ROOT))
 
 from feature_create.integrity_review import (
@@ -88,6 +94,24 @@ def exclusive_lock(path: Path, timeout_seconds: float = 30.0):
     return Lock()
 
 
+def validate_decision_contracts(rows: list[dict[str, Any]]) -> None:
+    if Draft202012Validator is None:
+        raise ReviewApplyError("Install jsonschema from requirements.txt before applying human review decisions.")
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReviewApplyError(f"Unable to load integrity review decision schema: {exc}") from exc
+    validator = Draft202012Validator(schema)
+    for index, row in enumerate(rows, 1):
+        if not str(row.get("review_decision") or "").strip():
+            continue
+        errors = sorted(validator.iter_errors(row), key=lambda error: list(error.absolute_path))
+        if errors:
+            error = errors[0]
+            location = "/".join(str(part) for part in error.absolute_path) or "$"
+            raise ReviewApplyError(f"Decision row {index} violates integrity-review schema at {location}: {error.message}")
+
+
 def append_jsonl(path: Path, rows: list[dict[str, Any]]) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -153,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 raise ReviewApplyError(f"Template finding no longer matches queue: {row.get('finding_id')}.")
 
+        validate_decision_contracts(decision_rows)
         validated = validate_review_rows(queue, template_rows, decision_rows)
         new_entries = make_ledger_entries(validated)
         ledger_path = args.ledger.expanduser().resolve()
