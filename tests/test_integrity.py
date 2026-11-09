@@ -142,6 +142,39 @@ class IntegrityAuditTests(unittest.TestCase):
         self.assertIn("decision_event_without_evidence_chain", self.codes(report))
         self.assertIn("excluded_decision_missing_subject_evidence", self.codes(report))
 
+    def test_historical_merge_chain_remains_valid_after_survivor_is_merged_again(self):
+        data = registry()
+        data["canonical_features"].append({
+            "registry_feature_id": "F-MIDDLE", "canonical_name": "Middle CE",
+            "feature_status": "retired_merged", "redirect_to": "F-1",
+            "observation_ids": ["OBS-1"],
+        })
+        data["canonical_features"].append({
+            "registry_feature_id": "F-FINAL", "canonical_name": "Final CE",
+            "feature_status": "confirmed", "observation_ids": ["OBS-1"],
+        })
+        data["canonical_features"][0]["feature_status"] = "retired_merged"
+        data["canonical_features"][0]["redirect_to"] = "F-FINAL"
+        data["canonical_features"][0]["observation_ids"] = ["OBS-1"]
+        data["observations"][0]["linked_registry_feature_id"] = "F-FINAL"
+        data["decision_log"] = [
+            {
+                "event_id": "EV-MERGE-1", "event_type": "feature_merged",
+                "subject_ids": ["F-1", "F-MIDDLE"], "decision": "merge_as_same_feature",
+                "rationale": "The first pair had equivalent definitions and statistic scope.",
+                "evidence_observation_ids": ["OBS-1"],
+            },
+            {
+                "event_id": "EV-MERGE-2", "event_type": "feature_merged",
+                "subject_ids": ["F-FINAL", "F-1"], "decision": "merge_as_same_feature",
+                "rationale": "The second pair had equivalent definitions and statistic scope.",
+                "evidence_observation_ids": ["OBS-1"],
+            },
+        ]
+        report = audit_integrity(data, [record(feature_id="F-MIDDLE")])
+        self.assertNotIn("invalid_feature_merge_event_roles", self.codes(report))
+        self.assertNotIn("merge_event_redirect_mismatch", self.codes(report))
+
     def test_valid_merge_preserves_historical_observation_link(self):
         data = registry()
         data["canonical_features"].append({
