@@ -188,6 +188,33 @@ class ExportTxtTests(unittest.TestCase):
                 ["result_feature_list.txt", "result_feature_records.txt"],
             )
 
+    def test_blocked_reexport_marks_previous_txt_files_as_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertEqual(
+                self.invoke_export(root, self.make_registry(), self.make_record(), []),
+                0,
+            )
+            output = root / "formal"
+            old_records = (output / "result_feature_records.txt").read_bytes()
+            old_features = (output / "result_feature_list.txt").read_bytes()
+
+            status = self.invoke_export(
+                root,
+                self.make_registry(status="under_review"),
+                self.make_record(),
+                [{"candidate_pair_id": "PAIR-1", "decision_status": "under_review"}],
+            )
+            self.assertEqual(status, 2)
+            self.assertEqual((output / "result_feature_records.txt").read_bytes(), old_records)
+            self.assertEqual((output / "result_feature_list.txt").read_bytes(), old_features)
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "blocked")
+            self.assertFalse(report["formal_outputs_written"])
+            self.assertEqual(set(report["stale_formal_output_files"]), {
+                "result_feature_records.txt", "result_feature_list.txt",
+            })
+
     def test_audit_report_cannot_overwrite_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
