@@ -282,6 +282,99 @@ class CorpusSamplingTests(unittest.TestCase):
             self.assertEqual(1, len(shared))
             self.assertEqual(2, shared[0]["row_count"])
 
+    def test_sample_expansion_is_nested_and_incremental_csv_contains_only_new_papers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(100))
+
+            first = create_corpus_sample(
+                source, root / "round-10", fraction="0.1", seed="incremental-seed",
+                stratify_by=("year",),
+            )
+            second = create_corpus_sample(
+                source, root / "round-20", fraction="0.2", seed="incremental-seed",
+                stratify_by=("year",), previous_manifest=Path(first["sampling_manifest"]),
+            )
+
+            first_manifest = __import__("json").loads(Path(first["sampling_manifest"]).read_text(encoding="utf-8"))
+            second_manifest = __import__("json").loads(Path(second["sampling_manifest"]).read_text(encoding="utf-8"))
+            first_keys = set(first_manifest["selected_paper_keys"])
+            second_keys = set(second_manifest["selected_paper_keys"])
+            new_keys = set(second_manifest["newly_selected_paper_keys"])
+
+            self.assertEqual(10, len(first_keys))
+            self.assertEqual(20, len(second_keys))
+            self.assertTrue(first_keys.issubset(second_keys))
+            self.assertEqual(second_keys - first_keys, new_keys)
+            self.assertEqual(10, len(new_keys))
+            self.assertEqual(10, second["newly_selected_paper_count"])
+            self.assertEqual(10, len(selected_dois(Path(second["incremental_csv"]))))
+            self.assertEqual(20, len(selected_dois(Path(second["sampled_csv"]))))
+
+            incremental_provenance = load_sampling_provenance(
+                Path(second["sampling_manifest"]), Path(second["incremental_csv"])
+            )
+            cumulative_provenance = load_sampling_provenance(
+                Path(second["sampling_manifest"]), Path(second["sampled_csv"])
+            )
+            self.assertEqual("incremental", incremental_provenance["applied_view"])
+            self.assertEqual(10, incremental_provenance["applied_paper_count"])
+            self.assertEqual("cumulative", cumulative_provenance["applied_view"])
+            self.assertEqual(20, cumulative_provenance["applied_paper_count"])
+
+    def test_sample_expansion_requires_same_seed_and_stratification(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(100))
+            first = create_corpus_sample(
+                source, root / "round-10", fraction="0.1",
+                seed="seed-a", stratify_by=("year",),
+            )
+            with self.assertRaises(SamplingError):
+                create_corpus_sample(
+                    source, root / "round-20", fraction="0.2",
+                    seed="seed-b", stratify_by=("year",),
+                    previous_manifest=Path(first["sampling_manifest"]),
+                )
+            with self.assertRaises(SamplingError):
+                create_corpus_sample(
+                    source, root / "round-20b", fraction="0.2",
+                    seed="seed-a", stratify_by=("journal",),
+                    previous_manifest=Path(first["sampling_manifest"]),
+                )
+
+    def test_sample_expansion_rejects_a_non_increasing_fraction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(100))
+            first = create_corpus_sample(
+                source, root / "round-20", fraction="0.2", seed="same-seed",
+            )
+            with self.assertRaises(SamplingError):
+                create_corpus_sample(
+                    source, root / "round-10", fraction="0.1", seed="same-seed",
+                    previous_manifest=Path(first["sampling_manifest"]),
+                )
+
+    def test_sample_expansion_can_report_no_new_papers_when_rounded_target_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            write_csv(source, make_rows(100))
+            first = create_corpus_sample(
+                source, root / "round-10", fraction="0.1", seed="same-seed",
+            )
+            second = create_corpus_sample(
+                source, root / "round-10-4", fraction="0.104", seed="same-seed",
+                previous_manifest=Path(first["sampling_manifest"]),
+            )
+            self.assertEqual("no_new_papers", second["status"])
+            self.assertEqual(0, second["newly_selected_paper_count"])
+            self.assertEqual([], selected_dois(Path(second["incremental_csv"])))
+
     def test_invalid_fraction_and_missing_identity_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
