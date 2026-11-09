@@ -85,37 +85,40 @@ Feature_create consumes this CSV and the already-generated preprocessing package
 
 For a corpus with thousands of preprocessed papers, optionally sample 10% before indexing. The sampler selects unique papers (not CSV rows), defaults to proportional stratification by year, keeps all rows belonging to each selected paper, and produces a reproducible selection manifest. Omit this step to process the full corpus.
 
-\`\`\`powershell
-python scripts/sample_corpus.py \`
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" \`
-  --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling" \`
-  --fraction 0.1 \`
-  --seed "feature-create-v1" \`
+```powershell
+python scripts/sample_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" `
+  --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling" `
+  --fraction 0.1 `
+  --seed "feature-create-v1" `
   --stratify-by year
-\`\`\`
+```
 
-This writes \`sampled_research_corpus_paired.csv\` and \`sampling_manifest.json\`. The manifest records the source/sample hashes, selected and excluded paper identities, per-paper deterministic scores, exclusion reasons, and stratum quotas. Use \`--stratify-by none\` for global sampling or comma-separated columns such as \`year,article_type\`.
+This writes `sampled_research_corpus_paired.csv` and `sampling_manifest.json`. The manifest records the source/sample hashes, selected and excluded paper identities, per-paper deterministic scores, exclusion reasons, and stratum quotas. Use `--stratify-by none` for global sampling or comma-separated columns such as `year,article_type`.
 
-When sampling is used, prepare only the sampled CSV and pass its manifest so the exact selection is hash-bound into \`source_manifest.json\`:
-
-\`\`\`powershell
-python scripts/prepare_corpus.py \`
-  --paired-csv "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampled_research_corpus_paired.csv" \`
-  --sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\sampling_manifest.json" \`
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" \`
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
-\`\`\`
-
-Example paths below assume chem-literature was run from `E:\\Zinc_batters_datas\\chem-literature`.
-
-Index the upstream preprocessing packages:
+When sampling is used, prepare only the sampled CSV and pass its manifest so the exact selection is hash-bound into `source_manifest.json`:
 
 ```powershell
 python scripts/prepare_corpus.py `
-  --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" `
-  --corpus-root "E:\\Zinc_batters_datas\\chem-literature" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared"
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
 ```
+
+Example paths below assume chem-literature was run from `E:\Zinc_batters_datas\chem-literature`.
+
+Index the selected sample:
+
+```powershell
+python scripts/prepare_corpus.py `
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
+  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
+```
+
+To process the full corpus instead, skip `sample_corpus.py`, use the original chem-literature `research_corpus_paired.csv` path, and omit `--sampling-manifest`.
 
 This creates an internal `source_manifest.json`, an `extracted_text/` staging area containing exact copies of upstream-parsed text/table content, and `upstream_evidence_indexes/` containing exact copies of each `evidence_index.json`. No PDF/SI parsing is performed by Feature_create.
 
@@ -123,8 +126,8 @@ Build the bounded Worker A/B chunk queue:
 
 ```powershell
 python scripts/build_task_queue.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\dispatch" `
   --max-bundle-chars 120000 `
   --max-attachments-per-chunk 8
 ```
@@ -142,8 +145,8 @@ First perform model-price preflight and command planning without inference:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs" `
   --dry-run
 ```
 
@@ -151,17 +154,17 @@ Only after the dry run passes, dispatch the two free workers:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
 Validate result-value evidence:
 
 ```powershell
 python scripts/validate_evidence.py `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" `
-  --run-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs"
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
 The first run should be performed on a small paper subset to validate the local OpenCode CLI version, model availability, task bundle size, and JSON event/export format. Do not start a large corpus run until the local smoke test succeeds.
@@ -171,7 +174,7 @@ The first run should be performed on a small paper subset to validate the local 
 After first-pass Worker A/B results are ingested into the Registry, unresolved value-specific context links can be reviewed selectively with the existing Worker B model:
 
 ~~~powershell
-python scripts/build_context_review_queue.py --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" --queue "E:\\Zinc_batters_datas\\runs\\Feature_create\\dispatch\\task_queue.json" --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\context_review_dispatch"
+python scripts/build_context_review_queue.py --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" --output "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch"
 ~~~
 
 The queue includes only unresolved items with an explicit remote target unit and a linked result record. It supplies the current result evidence and nominated target evidence, not the full paper. Dispatch it through the normal free-model gate, then run validate_evidence.py on the context queue before applying decisions with apply_context_reviews.py. A confirmed association may add context facts only; original result values and Feature identity are protected. Validation binds the exact source manifest, evidence manifest, prompt, bundle and visual attachments, and apply rechecks those hashes. No-association requires positive counter-evidence, not merely a missing match; insufficient/conflicting evidence remains unresolved. Resolved items are not redispatched; a repeat pass on inconclusive items requires the explicit --retry-inconclusive switch.
@@ -184,10 +187,10 @@ Before treating the two TXT files as final, audit the Registry â†” Observation â
 
 ```powershell
 python scripts/audit_global_integrity.py `
-  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
-  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
-  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
-  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+  --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
+  --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --report "E:\Zinc_batters_datas\runs\Feature_create\global_integrity_audit.json"
 ```
 
 Eligible Observations without a Result Record are warnings by default because a source may identify a variable without supplying an exportable value. Add `--strict-observation-records` when complete Observation-to-Record materialization is required. See [docs/global_integrity_audit.md](docs/global_integrity_audit.md).
