@@ -440,6 +440,11 @@ def build_review_queue(
             "review_ledger_is_separate": True,
         },
     }
+    # Bind every editable decision row to the complete queue snapshot, not only
+    # the audit findings. This prevents an old decisions copy being reused after
+    # unrelated Registry/Records/Manifest changes that leave a finding unchanged.
+    for template in templates:
+        template["queue_fingerprint"] = queue["queue_fingerprint"]
     return queue, templates
 
 
@@ -467,7 +472,7 @@ def validate_review_rows(
         if original.get("audit_fingerprint") != expected_audit_fingerprint:
             raise ValueError(f"{original.get('finding_id')}: template audit fingerprint does not match the queue.")
         for key in (
-            "template_version", "audit_fingerprint", "finding_id",
+            "template_version", "queue_fingerprint", "audit_fingerprint", "finding_id",
             "finding_fingerprint", "severity", "code", "primary_object",
         ):
             if original.get(key) != edited.get(key):
