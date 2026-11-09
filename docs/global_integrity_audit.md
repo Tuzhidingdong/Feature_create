@@ -60,3 +60,8 @@ The audit does not treat `visual_only` evidence as numeric verification. It does
 - No semantic equivalence inference or model calls.
 - No conversion of warnings into confirmed completeness.
 - No replacement for the Registry JSON Schema, evidence quote/hash checks, model review, human adjudication, or export-specific value/context gates.
+
+
+## Human remediation queue
+
+Use [integrity_review_workflow.md](integrity_review_workflow.md) after producing the audit. The queue builder reruns the same audit and enriches every finding with connected Registry objects, Result Records, source evidence locators, and relevant decision-log history. Human triage is stored in a separate append-only JSONL ledger. The apply command verifies the queue fingerprint and exact Registry/Records/Manifest snapshot before appending decisions. It never changes the Registry, records, source files, or Registry decision_log. A new audit—not a review status—is the only confirmation that an issue has cleared.
