@@ -176,75 +176,79 @@ def main(argv: list[str] | None = None) -> int:
         ledger_path = args.review_ledger.expanduser().resolve() if args.review_ledger else None
         output_dir = args.output_dir.expanduser().resolve()
 
-        existing_state = [output_dir / name for name in WORKFLOW_STATE_NAMES if (output_dir / name).exists()]
-        if existing_state and not args.force:
-            names = ", ".join(path.name for path in existing_state)
-            raise QueueInputError(
-                f"Existing review workflow files detected ({names}). "
-                "Use --force --archive-existing only after deciding to archive and rebuild this review round."
-            )
-        if existing_state and not args.archive_existing:
-            raise QueueInputError(
-                "Refusing to overwrite an existing review round. Pass both --force and --archive-existing "
-                "to preserve the previous queue, editable decisions, and apply report in an archive."
-            )
+        # Serialize queue builders targeting the same output directory. Lock order:
+        # output directory -> Registry -> review ledger. Apply never locks output_dir,
+        # so this order cannot form a cycle with its Registry -> ledger lock order.
+        with exclusive_lock(output_dir / ".integrity_review_build.lock"):
+            existing_state = [output_dir / name for name in WORKFLOW_STATE_NAMES if (output_dir / name).exists()]
+            if existing_state and not args.force:
+                names = ", ".join(path.name for path in existing_state)
+                raise QueueInputError(
+                    f"Existing review workflow files detected ({names}). "
+                    "Use --force --archive-existing only after deciding to archive and rebuild this review round."
+                )
+            if existing_state and not args.archive_existing:
+                raise QueueInputError(
+                    "Refusing to overwrite an existing review round. Pass both --force and --archive-existing "
+                    "to preserve the previous queue, editable decisions, and apply report in an archive."
+                )
 
-        # All mutation stages that can update Registry/Records use this exact lock.
-        # The ledger is acquired second everywhere to keep lock ordering deterministic.
-        with ExitStack() as locks:
-            locks.enter_context(exclusive_lock(registry_lock_path(registry_path)))
-            if ledger_path is not None:
-                ledger_lock_path = ledger_path.with_name(ledger_path.name + ".lock")
-                locks.enter_context(exclusive_lock(ledger_lock_path))
+            # Hold the shared Registry/Record lock from snapshot read through bundle
+            # publication so this output is not stale at the moment it is committed.
+            with ExitStack() as locks:
+                locks.enter_context(exclusive_lock(registry_lock_path(registry_path)))
+                if ledger_path is not None:
+                    ledger_file_lock = ledger_path.with_name(ledger_path.name + ".lock")
+                    locks.enter_context(exclusive_lock(ledger_file_lock))
 
-            registry = read_object(registry_path)
-            records = read_jsonl(records_path)
-            manifest_before = sha256_file(manifest_path) if manifest_path else None
-            manifest = read_object(manifest_path) if manifest_path else None
-            manifest_after = sha256_file(manifest_path) if manifest_path else None
-            if manifest_before != manifest_after:
-                raise QueueInputError("Source manifest changed while being read; retry queue preparation.")
-            ledger = read_jsonl(ledger_path) if ledger_path else []
+                registry = read_object(registry_path)
+                records = read_jsonl(records_path)
+                manifest_before = sha256_file(manifest_path) if manifest_path else None
+                manifest = read_object(manifest_path) if manifest_path else None
+                manifest_after = sha256_file(manifest_path) if manifest_path else None
+                if manifest_before != manifest_after:
+                    raise QueueInputError("Source manifest changed while being read; retry queue preparation.")
+                ledger = read_jsonl(ledger_path) if ledger_path else []
 
-            fingerprints = {
-                "registry_sha256": sha256_file(registry_path),
-                "records_sha256": sha256_file(records_path),
-                "manifest_sha256": manifest_after,
-                "strict_observation_records": bool(args.strict_observation_records),
-            }
-            audit_report = audit_integrity(
-                registry, records, manifest,
-                strict_observation_records=args.strict_observation_records,
-            )
-            queue, template_rows = build_review_queue(
-                audit_report, registry, records, manifest, fingerprints, ledger,
-            )
+                fingerprints = {
+                    "registry_sha256": sha256_file(registry_path),
+                    "records_sha256": sha256_file(records_path),
+                    "manifest_sha256": manifest_after,
+                    "strict_observation_records": bool(args.strict_observation_records),
+                }
+                audit_report = audit_integrity(
+                    registry, records, manifest,
+                    strict_observation_records=args.strict_observation_records,
+                )
+                queue, template_rows = build_review_queue(
+                    audit_report, registry, records, manifest, fingerprints, ledger,
+                )
 
-        payloads = {
-            "global_integrity_audit.json": json_bytes(audit_report),
-            "integrity_review_queue.json": json_bytes(queue),
-            "integrity_review_decisions.template.jsonl": jsonl_bytes(template_rows),
-        }
-        artifact_hashes = {
-            name: hashlib.sha256(payload).hexdigest()
-            for name, payload in payloads.items()
-        }
-        bundle_core = {
-            "bundle_version": "1.0",
-            "queue_fingerprint": queue.get("queue_fingerprint"),
-            "artifact_sha256": artifact_hashes,
-        }
-        bundle = {
-            **bundle_core,
-            "bundle_fingerprint": sha256_value(bundle_core),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "commit_protocol": "bundle_manifest_published_last",
-        }
-        payloads["integrity_review_bundle.json"] = json_bytes(bundle)
+                payloads = {
+                    "global_integrity_audit.json": json_bytes(audit_report),
+                    "integrity_review_queue.json": json_bytes(queue),
+                    "integrity_review_decisions.template.jsonl": jsonl_bytes(template_rows),
+                }
+                artifact_hashes = {
+                    name: hashlib.sha256(payload).hexdigest()
+                    for name, payload in payloads.items()
+                }
+                bundle_core = {
+                    "bundle_version": "1.0",
+                    "queue_fingerprint": queue.get("queue_fingerprint"),
+                    "artifact_sha256": artifact_hashes,
+                }
+                bundle = {
+                    **bundle_core,
+                    "bundle_fingerprint": sha256_value(bundle_core),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "commit_protocol": "bundle_manifest_published_last",
+                }
+                payloads["integrity_review_bundle.json"] = json_bytes(bundle)
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        archive_dir = archive_existing_workflow(output_dir) if args.archive_existing else None
-        commit_artifacts(output_dir, payloads)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                archive_dir = archive_existing_workflow(output_dir) if args.archive_existing else None
+                commit_artifacts(output_dir, payloads)
 
         print(json.dumps({
             "audit_status": audit_report["status"],
