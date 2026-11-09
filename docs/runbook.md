@@ -341,7 +341,11 @@ The exporter creates exactly two formal TXT files:
 - `result_feature_records.txt`
 - `result_feature_list.txt`
 
-Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The exporter blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal audit JSON beside (not inside) the formal output directory. The formal output directory contains only the two TXT files.
+Both are UTF-8 TSV files with fixed headers; nested context and evidence fields are compact JSON cells. The records file includes `CONTEXT_ASSOCIATION_STATUS` and `OPEN_CONTEXT_UNRESOLVED_ITEMS` for every result record. A record is `not_required` when it has no linked missing-context issue, `resolved` only when every linked issue is explicitly `association_confirmed` or `no_association`, and otherwise carries a pending/inconclusive/mixed/invalid status plus the open unresolved IDs and their current states.
+
+By default, export is blocked while any linked context association remains pending, insufficient, or conflicting. Unknown resolution states always block. After the context review has been completed, run the command above normally. Only when an intentionally provisional package is needed, add `--allow-unresolved-context`; unresolved items remain visible in the record rows, the separate audit JSON is marked `exported_with_unresolved_context`, and the package must not be treated as a final resolved deliverable. This override does not bypass unknown states, Feature reconciliation, or other export checks.
+
+The exporter also blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal audit JSON beside (not inside) the formal output directory. The formal output directory contains only the two TXT files.
 
 ## 14. Generate the final deterministic audit report
 
