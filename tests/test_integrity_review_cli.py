@@ -80,6 +80,8 @@ class IntegrityReviewCliTests(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertFalse(report["registry_modified"])
             self.assertFalse(report["records_modified"])
+            self.assertEqual(report["decision_counts"]["repair_required"], len(template))
+            self.assertGreaterEqual(len(report["action_counts"]), 1)
             self.assertEqual(registry_path.read_text(encoding="utf-8"), registry_bytes)
             self.assertEqual(records_path.read_text(encoding="utf-8"), "")
 
