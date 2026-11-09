@@ -418,7 +418,7 @@ python scripts/audit_records.py `
   --output "E:\\Zinc_batters_datas\\runs\\Feature_create\\final_audit.json"
 ```
 
-The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
+The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, Worker B context-review decisions, human context-adjudication decisions/facts/retained-open questions, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
 
 ## 16. Inspect the run
 
