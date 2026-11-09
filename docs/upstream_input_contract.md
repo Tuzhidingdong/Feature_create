@@ -36,6 +36,8 @@ Other CSV fields, including `abstract`, `landing_page_url`, `has_pdf`, and `has_
 
 The complete paired CSV remains the authoritative upstream inventory. When it contains thousands of preprocessed papers, `scripts/sample_corpus.py` can produce an explicit subset before preparation.
 
+Incremental expansion is deliberately bound to an immutable source CSV snapshot. Adding/removing papers or editing metadata creates a new source hash and is rejected by `--previous-manifest`; establish a new sampling baseline for a changed corpus rather than pretending the old and new populations are identical.
+
 - Default sample fraction: 10% of eligible unique papers, rounded to the nearest whole paper (minimum one by default).
 - Sampling unit: normalized DOI; when DOI is absent, normalized title + year + journal.
 - All CSV rows sharing one paper identity are selected together.
