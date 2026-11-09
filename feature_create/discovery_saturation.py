@@ -307,6 +307,21 @@ def calculate_feature_saturation_report(
     *,
     allow_unassigned: bool = False,
 ) -> dict[str, Any]:
+    batch_paper_union: set[str] = set()
+    for batch in batches:
+        paper_ids = batch.get("paper_ids")
+        if not isinstance(paper_ids, list) or any(not isinstance(item, str) or not item for item in paper_ids):
+            raise FeatureSaturationError(f"Batch {batch.get('label', '<unknown>')} has invalid paper_ids.")
+        if len(paper_ids) != len(set(paper_ids)):
+            raise FeatureSaturationError(f"Batch {batch.get('label', '<unknown>')} contains duplicate paper IDs.")
+        overlap = batch_paper_union.intersection(paper_ids)
+        if overlap:
+            examples = ", ".join(sorted(overlap)[:5])
+            raise FeatureSaturationError(f"Batch paper overlap detected in core calculation: {examples}")
+        batch_paper_union.update(paper_ids)
+    if batch_paper_union != assigned_papers:
+        raise FeatureSaturationError("The assigned_papers index does not match the union of ordered batch paper IDs.")
+
     observations = registry.get("observations", [])
     observation_by_id, feature_by_id = _registry_index(registry)
     registry_papers = {
