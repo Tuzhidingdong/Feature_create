@@ -16,6 +16,26 @@ from scripts.reconcile_features import registry_lock_path
 
 
 class IntegrityReviewCliTests(unittest.TestCase):
+    def test_builder_rejects_output_path_aliasing_registry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output_dir = root / "review"
+            registry_path = output_dir / "global_integrity_audit.json"
+            records_path = root / "records.jsonl"
+            registry_path.parent.mkdir(parents=True)
+            registry_bytes = json.dumps({
+                "observations": [], "canonical_features": [], "decision_log": [],
+            }).encode("utf-8")
+            registry_path.write_bytes(registry_bytes)
+            records_path.write_text("", encoding="utf-8")
+
+            self.assertEqual(build_main([
+                "--registry", str(registry_path),
+                "--records", str(records_path),
+                "--output-dir", str(output_dir),
+            ]), 2)
+            self.assertEqual(registry_path.read_bytes(), registry_bytes)
+
     def test_partial_bundle_publication_has_no_valid_commit_marker(self):
         with tempfile.TemporaryDirectory() as temp:
             output_dir = Path(temp)
@@ -155,6 +175,12 @@ class IntegrityReviewCliTests(unittest.TestCase):
                 "--ledger", str(ledger_path),
                 "--report", str(report_path),
             ]
+            unsafe_ledger_args = list(args)
+            ledger_index = unsafe_ledger_args.index("--ledger")
+            unsafe_ledger_args[ledger_index + 1] = str(registry_path)
+            self.assertEqual(apply_main(unsafe_ledger_args), 2)
+            self.assertEqual(registry_path.read_text(encoding="utf-8"), registry_bytes)
+
             acquired_locks = []
             real_lock = apply_module.exclusive_lock
 
@@ -179,6 +205,13 @@ class IntegrityReviewCliTests(unittest.TestCase):
             self.assertEqual(records_path.read_text(encoding="utf-8"), "")
 
             # A changed artifact cannot be applied even if its JSON remains parseable.
+            queue_bytes = queue_path.read_bytes()
+            queue_path.write_bytes(queue_bytes + b" ")
+            self.assertEqual(apply_main(args), 2)
+            self.assertEqual(ledger_path.read_text(encoding="utf-8").splitlines(), ledger_before)
+            queue_path.write_bytes(queue_bytes)
+
+            # Altering a prepared artifact invalidates its bundle commit marker.
             queue_bytes = queue_path.read_bytes()
             queue_path.write_bytes(queue_bytes + b" ")
             self.assertEqual(apply_main(args), 2)
