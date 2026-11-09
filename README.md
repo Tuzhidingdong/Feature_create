@@ -54,6 +54,7 @@ Antigravity may be used as the Supervisor control plane, but not as the paper-re
 - `docs/upstream_input_contract.md` — the formal chem-literature CSV/file-path boundary.
 - `docs/token_policy.md` — zero-paid-cost policy and provider/model guards.
 - `docs/opencode_free_model_execution.md` — OpenCode Go invocation, model pinning, and verification.
+- `scripts/adjudicate_unresolved.py` + `contracts/manual-context-adjudication.schema.json` — two-step, evidence-checked human resolution for context links that Worker B cannot close.
 - `worker_prompts/` — isolated Worker A, Worker B, and targeted-review prompts.
 - `config/` — model and extraction policies.
 
