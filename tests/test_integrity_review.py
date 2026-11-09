@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import unittest
+
+from feature_create.integrity_review import (
+    build_review_queue,
+    make_ledger_entries,
+    validate_review_rows,
+)
+
+
+def fixture():
+    registry = {
+        "observations": [{
+            "observation_id": "OBS-1",
+            "paper_id": "PAPER-1",
+            "source_id": "SRC-1",
+            "raw_feature_name": "Coulombic efficiency",
+            "variable_role": "result_feature",
+            "discovery_status": "evidence_verified",
+            "linked_registry_feature_id": "F-1",
+            "evidence_refs": [{
+                "source_id": "SRC-1",
+                "source_type": "main_text",
+                "locator": {"page": 3, "section": "Results"},
+                "quote_or_cell_value": "CE reached 99.1%.",
+                "evidence_status": "verified_text",
+            }],
+        }],
+        "canonical_features": [{
+            "registry_feature_id": "F-1",
+            "canonical_name": "Coulombic efficiency",
+            "feature_status": "confirmed",
+            "observation_ids": ["OBS-1"],
+        }, {
+            "registry_feature_id": "F-2",
+            "canonical_name": "CE (legacy)",
+            "feature_status": "provisional",
+            "observation_ids": [],
+        }],
+        "decision_log": [{
+            "event_id": "EV-1",
+            "event_type": "feature_mapped",
+            "subject_ids": ["F-1", "OBS-1"],
+            "decision": "map_existing_feature",
+            "rationale": "The canonical definition matches.",
+            "evidence_observation_ids": ["OBS-1"],
+            "actor": "human",
+            "contract_version": "0.1",
+        }],
+    }
+    records = [{
+        "record_id": "REC-1",
+        "paper_id": "PAPER-1",
+        "source_id": "SRC-1",
+        "observation_id": "OBS-1",
+        "registry_feature_id": "F-2",
+        "raw_feature_name": "CE",
+        "value": 99.1,
+        "reported_unit": "%",
+        "evidence_refs": [{
+            "source_id": "SRC-1",
+            "locator": {"page": 3, "section": "Results"},
+        }],
+    }]
+    manifest = {
+        "sources": [{
+            "source_id": "SRC-1",
+            "paper_id": "PAPER-1",
+            "source_type": "main_text",
+            "extracted_text_path": "extracted_text/PAPER-1.txt",
+        }]
+    }
+    report = {
+        "audit_version": "1.0",
+        "status": "fail",
+        "summary": {"issue_count": 1, "error_count": 1, "warning_count": 0},
+        "issues": [{
+            "code": "record_observation_feature_mismatch",
+            "severity": "error",
+            "message": "Record and Observation Feature IDs disagree.",
+            "context": {
+                "record_id": "REC-1",
+                "record_feature_id": "F-2",
+                "observation_feature_id": "F-1",
+            },
+        }],
+    }
+    fingerprints = {
+        "registry_sha256": "a" * 64,
+        "records_sha256": "b" * 64,
+        "manifest_sha256": "c" * 64,
+        "strict_observation_records": False,
+    }
+    return report, registry, records, manifest, fingerprints
+
+
+class IntegrityReviewQueueTests(unittest.TestCase):
+    def test_queue_expands_finding_to_related_objects_evidence_and_history(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(
+            report, registry, records, manifest, fingerprints,
+        )
+        self.assertEqual(queue["summary"]["finding_count"], 1)
+        finding = queue["findings"][0]
+        self.assertEqual(finding["primary_object"], {
+            "object_type": "result_record", "object_id": "REC-1",
+        })
+        self.assertEqual(finding["object_context"]["related_ids"]["observation_ids"], ["OBS-1"])
+        self.assertEqual(finding["object_context"]["related_ids"]["feature_ids"], ["F-1", "F-2"])
+        self.assertEqual(finding["object_context"]["related_ids"]["event_ids"], ["EV-1"])
+        self.assertEqual(finding["object_context"]["sources"][0]["source_id"], "SRC-1")
+        self.assertEqual(finding["recommended_route"]["action"], "record_review")
+        self.assertEqual(template[0]["review_decision"], "")
+
+    def test_prior_review_is_marked_changed_when_finding_fingerprint_changes(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        first, _ = build_review_queue(report, registry, records, manifest, fingerprints)
+        ledger = [{
+            "finding_id": first["findings"][0]["finding_id"],
+            "finding_fingerprint": first["findings"][0]["finding_fingerprint"],
+            "review_decision": "repair_required",
+        }]
+        changed = dict(report)
+        changed["issues"] = [dict(report["issues"][0], message="A different mismatch remains.")]
+        queue, _ = build_review_queue(changed, registry, records, manifest, fingerprints, ledger)
+        self.assertEqual(queue["findings"][0]["review_state"], "changed_since_review")
+
+    def test_disappeared_repair_finding_is_reported_as_audit_clearance(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        first, _ = build_review_queue(report, registry, records, manifest, fingerprints)
+        ledger = [{
+            "finding_id": first["findings"][0]["finding_id"],
+            "finding_fingerprint": first["findings"][0]["finding_fingerprint"],
+            "review_decision": "repair_required",
+            "code": "record_observation_feature_mismatch",
+        }]
+        cleared_report = dict(report, status="pass", summary={"issue_count": 0, "error_count": 0, "warning_count": 0}, issues=[])
+        queue, _ = build_review_queue(cleared_report, registry, records, manifest, fingerprints, ledger)
+        self.assertEqual(queue["summary"]["cleared_since_previous_review_count"], 1)
+        self.assertEqual(queue["cleared_since_previous_review"][0]["clearance"], "not_reported_by_current_audit")
+
+    def test_hard_error_cannot_be_accepted_as_warning(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], review_decision="accepted_warning", action="none",
+                       rationale="This is accepted after review.", review_evidence_refs=[{
+                           "source_id": "SRC-1", "locator": {"page": 3},
+                       }])]
+        with self.assertRaisesRegex(ValueError, "hard errors"):
+            validate_review_rows(queue, template, edited)
+
+    def test_repair_decision_requires_action_and_rationale(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], review_decision="repair_required", action="none",
+                       rationale="This needs correction.")]
+        with self.assertRaisesRegex(ValueError, "concrete review action"):
+            validate_review_rows(queue, template, edited)
+
+    def test_valid_review_decision_becomes_human_ledger_entry(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], review_decision="repair_required",
+                       action="record_review",
+                       rationale="Review this result record against the parsed source evidence.")]
+        validated = validate_review_rows(queue, template, edited)
+        entries = make_ledger_entries(validated)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["actor"], "human")
+        self.assertEqual(entries[0]["finding_id"], template[0]["finding_id"])
+
+    def test_template_immutable_identity_cannot_be_edited(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], code="invented_code", review_decision="defer",
+                       action="none", rationale="Defer until more evidence is available.")]
+        with self.assertRaisesRegex(ValueError, "immutable field code"):
+            validate_review_rows(queue, template, edited)
+
+    def test_accepted_warning_requires_evidence(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        warning_report = dict(report, status="pass_with_warnings", summary={
+            "issue_count": 1, "error_count": 0, "warning_count": 1,
+        }, issues=[dict(report["issues"][0], severity="warning")])
+        queue, template = build_review_queue(warning_report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], review_decision="accepted_warning",
+                       action="none", rationale="Accepted because this is a visual-only series.",
+                       review_evidence_refs=[])]
+        with self.assertRaisesRegex(ValueError, "requires explicit review_evidence_refs"):
+            validate_review_rows(queue, template, edited)
+
+
+if __name__ == "__main__":
+    unittest.main()
