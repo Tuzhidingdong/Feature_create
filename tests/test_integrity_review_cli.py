@@ -20,10 +20,10 @@ class IntegrityReviewCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             output_dir = Path(temp)
             payloads = {
-                "global_integrity_audit.json": b"{}\\n",
-                "integrity_review_queue.json": b"{}\\n",
+                "global_integrity_audit.json": b"{}\n",
+                "integrity_review_queue.json": b"{}\n",
                 "integrity_review_decisions.template.jsonl": b"",
-                "integrity_review_bundle.json": b"{}\\n",
+                "integrity_review_bundle.json": b"{}\n",
             }
             real_replace = __import__("os").replace
 
@@ -76,12 +76,12 @@ class IntegrityReviewCliTests(unittest.TestCase):
             ]
             self.assertEqual(build_main(base_args), 0)
             decisions_path = output_dir / "integrity_review_decisions.jsonl"
-            decisions_path.write_text('{"human_work":"keep"}\\n', encoding="utf-8")
+            decisions_path.write_text('{"human_work":"keep"}\n', encoding="utf-8")
             queue_before = (output_dir / "integrity_review_queue.json").read_bytes()
 
             self.assertEqual(build_main(base_args + ["--force"]), 2)
             self.assertEqual((output_dir / "integrity_review_queue.json").read_bytes(), queue_before)
-            self.assertEqual(decisions_path.read_text(encoding="utf-8"), '{"human_work":"keep"}\\n')
+            self.assertEqual(decisions_path.read_text(encoding="utf-8"), '{"human_work":"keep"}\n')
 
             self.assertEqual(build_main(base_args + ["--force", "--archive-existing"]), 0)
             archives = list(output_dir.glob("integrity_review_archive_*"))
