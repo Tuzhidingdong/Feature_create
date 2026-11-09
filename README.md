@@ -96,16 +96,6 @@ python scripts/sample_corpus.py `
 
 This writes `sampled_research_corpus_paired.csv` and `sampling_manifest.json`. The manifest records the source/sample hashes, selected and excluded paper identities, per-paper deterministic scores, exclusion reasons, and stratum quotas. Use `--stratify-by none` for global sampling or comma-separated columns such as `year,article_type`.
 
-When sampling is used, prepare only the sampled CSV and pass its manifest so the exact selection is hash-bound into `source_manifest.json`:
-
-```powershell
-python scripts/prepare_corpus.py `
-  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
-  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
-  --corpus-root "E:\Zinc_batters_datas\chem-literature" `
-  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
-```
-
 Example paths below assume chem-literature was run from `E:\Zinc_batters_datas\chem-literature`.
 
 Index the selected sample:
