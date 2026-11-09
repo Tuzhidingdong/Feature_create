@@ -469,6 +469,8 @@ def validate_review_rows(
     manifest_was_supplied = bool((queue.get("input_fingerprints") or {}).get("manifest_sha256"))
     validated = []
     for original, edited in zip(template_rows, decision_rows):
+        if original.get("queue_fingerprint") != queue.get("queue_fingerprint"):
+            raise ValueError(f"{original.get('finding_id')}: template queue fingerprint does not match the queue.")
         if original.get("audit_fingerprint") != expected_audit_fingerprint:
             raise ValueError(f"{original.get('finding_id')}: template audit fingerprint does not match the queue.")
         for key in (
