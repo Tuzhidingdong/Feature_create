@@ -46,6 +46,8 @@ Incremental expansion is deliberately bound to an immutable source CSV snapshot.
 - Rows with missing `preprocessing_path` or unsupported/failed preprocessing status are excluded before calculating the sample size and appear in the manifest with reasons.
 - The default seed is `feature-create-v1`. Identical input bytes, seed, fraction, and strata reproduce the same selected paper set.
 
+CSV header names are trimmed and matched case-insensitively; values are copied unchanged into the sampled output. Duplicate headers that become identical after trimming/case-folding are rejected.
+
 The sampler reads CSV metadata only. It does not open or hash source PDFs, SI, or preprocessing packages. It writes a cumulative sample CSV, a newly-selected incremental CSV, and `sampling_manifest.json`, which records the source/sample hashes, per-paper decision/score, stratum quotas, parent-manifest fingerprint, previous/current selected keys, and exclusion reasons.
 
 For a later round, use the incremental CSV as the preparation input; use the cumulative CSV only when intentionally rebuilding the entire sample. Preparation detects which view was supplied, verifies its SHA-256 and paper-key set, and records cumulative plus applied-view provenance in `source_manifest.json`. For sample expansion, the source CSV bytes, seed, strata, and `min_papers` must remain unchanged and the fraction must increase. Preserve the previous manifest and cumulative CSV; changed or missing parent artifacts block expansion. Prepare an incremental CSV in a new run directory, then reconcile it into the same persistent Registry/Records. Existing full-corpus runs remain valid without a sampling manifest.
