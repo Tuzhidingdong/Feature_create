@@ -187,6 +187,16 @@ class ExportTxtTests(unittest.TestCase):
                 "observation_ids": [],
             })
             registry["canonical_features"].append(retired)
+            registry["decision_log"].append({
+                "event_id": "EV-MERGE-1",
+                "event_type": "feature_merged",
+                "subject_ids": ["RFEAT-1", "RFEAT-OLD"],
+                "decision": "merge_as_same_feature",
+                "rationale": "The definitions and statistic scope are equivalent.",
+                "evidence_observation_ids": ["OBS-1"],
+                "actor": "human",
+                "contract_version": "0.1",
+            })
             record = self.make_record(feature_id="RFEAT-OLD")
             status = self.invoke_export(root, registry, record, [])
             self.assertEqual(status, 0)
