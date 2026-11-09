@@ -148,8 +148,8 @@ def create_corpus_sample(
     fraction_value = _fraction(fraction)
     if not str(seed).strip():
         raise SamplingError("Sampling seed must not be empty.")
-    if min_papers < 0:
-        raise SamplingError("min_papers must be zero or greater.")
+    if min_papers < 1:
+        raise SamplingError("min_papers must be at least one so a valid non-empty corpus sample is produced.")
 
     fieldnames, rows = _read_csv(paired_csv)
     field_lookup = {name.casefold(): name for name in fieldnames}
@@ -197,7 +197,7 @@ def create_corpus_sample(
         raise SamplingError("No eligible preprocessed papers remain after checking preprocessing_path and preprocessing_status.")
 
     target_count = int((Decimal(len(eligible)) * fraction_value).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    target_count = max(min_papers if min_papers else 0, target_count)
+    target_count = max(min_papers, target_count)
     target_count = min(len(eligible), target_count)
 
     strata: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -244,7 +244,7 @@ def create_corpus_sample(
             "created_at": datetime.now(timezone.utc).isoformat(),
             "algorithm": SAMPLE_ALGORITHM,
             "seed": str(seed),
-            "requested_fraction": str(fraction_value.normalize()),
+            "requested_fraction": format(fraction_value, "f").rstrip("0").rstrip(".") if "." in format(fraction_value, "f") else format(fraction_value, "f"),
             "stratify_by": list(normalized_strata),
             "source_csv_path": str(paired_csv),
             "source_csv_sha256": _sha256_file(paired_csv),
