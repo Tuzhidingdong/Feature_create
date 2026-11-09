@@ -104,10 +104,10 @@ Index the selected sample:
 
 ```powershell
 python scripts/prepare_corpus.py `
-  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampled_research_corpus_paired.csv" `
-  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\sampling_manifest.json" `
+  --paired-csv "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\newly_selected_research_corpus_paired.csv" `
+  --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-20\sampling_manifest.json" `
   --corpus-root "E:\Zinc_batters_datas\chem-literature" `
-  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared"
+  --output "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental"
 ```
 
 To process the full corpus instead, skip `sample_corpus.py`, use the original chem-literature `research_corpus_paired.csv` path, and omit `--sampling-manifest`.
