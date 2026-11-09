@@ -11,6 +11,11 @@ from typing import Any
 
 ACTIVE_FEATURE_STATUSES = {"confirmed", "provisional", "under_review", "split_pending"}
 VERIFIED_EVIDENCE_STATUSES = {"verified_text", "verified_table_cell", "verified_digitization", "visual_only"}
+ALLOWED_DECISION_EVENT_TYPES = {
+    "observation_created", "feature_created", "feature_confirmed", "feature_merged",
+    "feature_split", "feature_mapped", "feature_unmapped", "observation_reassigned",
+    "feature_excluded", "status_changed",
+}
 
 
 def _issue(code: str, severity: str, message: str, **context: Any) -> dict[str, Any]:
@@ -216,6 +221,12 @@ def audit_integrity(
         if event.get("event_type") in {"feature_merged", "feature_split", "feature_excluded", "observation_reassigned"} and not evidence_observation_ids:
             issues.append(_issue("decision_event_without_evidence_chain", "error", f"Decision event {event_id or index} has no evidence Observation references.", event_id=event_id))
         event_type = str(event.get("event_type") or "")
+        if event_type not in ALLOWED_DECISION_EVENT_TYPES:
+            issues.append(_issue(
+                "unknown_decision_event_type", "error",
+                f"Decision event {event_id or index} has unsupported event_type {event_type!r}.",
+                event_id=event_id, event_type=event_type,
+            ))
         feature_subjects = [str(subject) for subject in subjects if str(subject) in features]
         if event_type in {"feature_merged", "feature_split"}:
             if len(set(feature_subjects)) < 2:
