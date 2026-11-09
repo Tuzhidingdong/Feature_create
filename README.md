@@ -132,8 +132,8 @@ Build the bounded Worker A/B chunk queue:
 
 ```powershell
 python scripts/build_task_queue.py `
-  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
-  --output "E:\Zinc_batters_datas\runs\Feature_create\dispatch" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" `
+  --output "E:\Zinc_batters_datas\runs\Feature_create\dispatch\round-20-incremental" `
   --max-bundle-chars 120000 `
   --max-attachments-per-chunk 8
 ```
@@ -151,8 +151,8 @@ First perform model-price preflight and command planning without inference:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
-  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\round-20-incremental\task_queue.json" `
+  --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\round-20-incremental" `
   --dry-run
 ```
 
@@ -160,7 +160,7 @@ Only after the dry run passes, dispatch the two free workers:
 
 ```powershell
 python scripts/run_workers.py `
-  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\round-20-incremental\task_queue.json" `
   --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
@@ -168,8 +168,8 @@ Validate result-value evidence:
 
 ```powershell
 python scripts/validate_evidence.py `
-  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
-  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" `
+  --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\round-20-incremental\task_queue.json" `
   --run-dir "E:\Zinc_batters_datas\runs\Feature_create\worker_runs"
 ```
 
@@ -180,7 +180,7 @@ The first run should be performed on a small paper subset to validate the local 
 After first-pass Worker A/B results are ingested into the Registry, unresolved value-specific context links can be reviewed selectively with the existing Worker B model:
 
 ~~~powershell
-python scripts/build_context_review_queue.py --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\task_queue.json" --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" --output "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch"
+python scripts/build_context_review_queue.py --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" --queue "E:\Zinc_batters_datas\runs\Feature_create\dispatch\round-20-incremental\task_queue.json" --unresolved "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\unresolved_extraction_items.jsonl" --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" --output "E:\Zinc_batters_datas\runs\Feature_create\context_review_dispatch"
 ~~~
 
 The queue includes only unresolved items with an explicit remote target unit and a linked result record. It supplies the current result evidence and nominated target evidence, not the full paper. Dispatch it through the normal free-model gate, then run validate_evidence.py on the context queue before applying decisions with apply_context_reviews.py. A confirmed association may add context facts only; original result values and Feature identity are protected. Validation binds the exact source manifest, evidence manifest, prompt, bundle and visual attachments, and apply rechecks those hashes. No-association requires positive counter-evidence, not merely a missing match; insufficient/conflicting evidence remains unresolved. Resolved items are not redispatched; a repeat pass on inconclusive items requires the explicit --retry-inconclusive switch.
@@ -195,7 +195,7 @@ Before treating the two TXT files as final, audit the Registry â†” Observation â
 python scripts/audit_global_integrity.py `
   --registry "E:\Zinc_batters_datas\runs\Feature_create\global_feature_registry.json" `
   --records "E:\Zinc_batters_datas\runs\Feature_create\worker_runs\result_records.jsonl" `
-  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\source_manifest.json" `
+  --manifest "E:\Zinc_batters_datas\runs\Feature_create\prepared\round-20-incremental\source_manifest.json" `
   --report "E:\Zinc_batters_datas\runs\Feature_create\global_integrity_audit.json"
 ```
 
