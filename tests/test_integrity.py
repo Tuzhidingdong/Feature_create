@@ -73,6 +73,23 @@ class IntegrityAuditTests(unittest.TestCase):
         self.assertIn("invalid_feature_merge_redirect", self.codes(report))
         self.assertIn("merged_feature_without_decision", self.codes(report))
 
+    def test_valid_merge_preserves_historical_observation_link(self):
+        data = registry()
+        data["canonical_features"].append({
+            "registry_feature_id": "F-OLD", "canonical_name": "Old CE",
+            "feature_status": "retired_merged", "redirect_to": "F-1",
+            "observation_ids": ["OBS-1"],
+        })
+        data["decision_log"] = [{
+            "event_id": "EV-MERGE", "event_type": "feature_merged",
+            "subject_ids": ["F-1", "F-OLD"], "decision": "merge_as_same_feature",
+            "rationale": "Definitions and statistic scope are equivalent.",
+            "evidence_observation_ids": ["OBS-1"],
+        }]
+        report = audit_integrity(data, [record()])
+        self.assertNotIn("observation_feature_backlink_mismatch", self.codes(report))
+        self.assertNotIn("merged_feature_without_decision", self.codes(report))
+
 
 if __name__ == "__main__":
     unittest.main()
