@@ -75,6 +75,19 @@ class RegistryIngestionTests(unittest.TestCase):
         self.assertEqual(len(registry["canonical_features"]), 1)
         self.assertEqual(registry["canonical_features"][0]["feature_status"], "provisional")
         self.assertEqual(registry["observations"][0]["discovery_status"], "evidence_verified")
+        self.assertEqual(registry["observations"][0]["author_emphasis"], "not_assessable")
+        validate_registry(registry)
+
+
+    def test_persists_author_emphasis_and_selection_rationale(self) -> None:
+        registry = create_empty_registry()
+        candidate = self.candidate("OBS-CAND-4", "SEI resistance", "Resistance associated with the SEI")
+        candidate["author_emphasis"] = "mechanistic_interpretation"
+        candidate["selection_rationale"] = "Used by the authors to explain interfacial stabilization."
+        add_observation(registry, "PAPER-1", self.task, candidate, self.source_map, self.root)
+        observation = registry["observations"][0]
+        self.assertEqual(observation["author_emphasis"], "mechanistic_interpretation")
+        self.assertEqual(observation["selection_rationale"], "Used by the authors to explain interfacial stabilization.")
         validate_registry(registry)
 
     def test_condition_only_observation_is_not_a_canonical_feature(self) -> None:

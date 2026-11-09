@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tuzhidingdong/Feature_create/blob/main/contracts/feature-selection.schema.json",
+  "title": "Representative Feature selection decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "registry_id",
+    "decisions"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "0.1"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "registry_feature_id",
+          "decision",
+          "selection_rationale",
+          "supporting_observation_ids"
+        ],
+        "properties": {
+          "registry_feature_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision": {
+            "enum": [
+              "select",
+              "exclude",
+              "review"
+            ]
+          },
+          "selection_rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supporting_observation_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}
