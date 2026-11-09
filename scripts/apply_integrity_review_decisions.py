@@ -126,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             "input_fingerprints": expected,
             "finding_ids": queue.get("finding_ids") or [],
             "known_source_ids": queue.get("known_source_ids") or [],
+            "findings_sha256": sha256_value(queue.get("findings") or []),
         }
         if sha256_value(queue_core) != queue.get("queue_fingerprint"):
             raise ReviewApplyError("Queue fingerprint is invalid; rebuild the review queue.")
