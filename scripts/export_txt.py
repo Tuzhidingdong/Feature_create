@@ -24,6 +24,7 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 REGISTRY_SCHEMA = ROOT / "contracts" / "registry.schema.json"
 
 RECORD_HEADERS = [
