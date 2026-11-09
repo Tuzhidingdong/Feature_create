@@ -77,7 +77,8 @@ def _read_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
             reader = csv.DictReader(handle)
             if not reader.fieldnames:
                 raise SamplingError("Input paired CSV has no header row.")
-            fieldnames = [str(name).strip() for name in reader.fieldnames]
+            original_fieldnames = list(reader.fieldnames)
+            fieldnames = [str(name).strip() for name in original_fieldnames]
             if len({name.casefold() for name in fieldnames}) != len(fieldnames):
                 raise SamplingError("Input paired CSV contains duplicate column names (case-insensitive).")
             missing = sorted(REQUIRED_COLUMNS - {name.casefold() for name in fieldnames})
@@ -87,7 +88,10 @@ def _read_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
             for line_number, raw in enumerate(reader, start=2):
                 if None in raw and raw[None]:
                     raise SamplingError(f"Input CSV row {line_number} has more fields than the header.")
-                rows.append({name: str(raw.get(name) or "") for name in reader.fieldnames})
+                rows.append({
+                    normalized: str(raw.get(original) or "")
+                    for original, normalized in zip(original_fieldnames, fieldnames)
+                })
     except OSError as exc:
         raise SamplingError(f"Unable to read paired CSV {path}: {exc}") from exc
     if not rows:
