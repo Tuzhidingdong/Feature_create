@@ -118,7 +118,7 @@ The second round emits a cumulative 20% CSV plus an incremental CSV containing o
 Before preparation, inspect the cumulative sample's metadata distribution against the full eligible population:
 
 ~~~powershell
-python scripts/report_sampling_quality.py --paired-csv "E:\\Zinc_batters_datas\\chem-literature\\research_corpus_paired.csv" --sampling-manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\round-10\\sampling_manifest.json" --output-dir "E:\\Zinc_batters_datas\\runs\\Feature_create\\sampling\\round-10\\quality"
+python scripts/report_sampling_quality.py --paired-csv "E:\Zinc_batters_datas\chem-literature\research_corpus_paired.csv" --sampling-manifest "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10\sampling_manifest.json" --output-dir "E:\Zinc_batters_datas\runs\Feature_create\sampling\round-10\quality"
 ~~~
 
 This read-only paper-level report compares year, journal, article type, and preprocessing status by default. It records category-share differences, TVD, missing categories, and metadata conflicts; it does not modify the sample or certify scientific representativeness. For later rounds, report against that round's cumulative CSV, not its incremental-only CSV. For details, see [docs/sampling_quality.md](docs/sampling_quality.md).
