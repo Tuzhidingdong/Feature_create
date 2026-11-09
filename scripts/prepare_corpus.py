@@ -438,16 +438,17 @@ def build_manifest_from_paired_csv(
         doi = normalize_doi(row.get("doi"))
         if doi:
             paper_key = doi
-        else:
+        elif sampling is not None:
             title = " ".join(str(row.get("title") or "").casefold().split())
             year = str(row.get("year") or "").strip()
             journal = " ".join(str(row.get("journal") or "").casefold().split())
-            if title:
-                fallback = json.dumps([title, year, journal], ensure_ascii=False, separators=(",", ":"))
-                paper_key = stable_id("PAPER", fallback, 12)
-            else:
-                # Preserve legacy full-corpus behavior when no stable metadata identity exists.
-                paper_key = stable_id("PAPER", f"{title}|{year}|{journal}|{row_index}", 12)
+            fallback = json.dumps([title, year, journal], ensure_ascii=False, separators=(",", ":"))
+            paper_key = stable_id("PAPER", fallback, 12)
+        else:
+            # Preserve the historical full-corpus fallback IDs for existing runs.
+            paper_key = stable_id(
+                "PAPER", f"{row.get('title','')}|{row.get('year','')}|{row_index}", 12
+            )
         grouped.setdefault(paper_key, []).append(row)
 
     sources: list[dict[str, Any]] = []
