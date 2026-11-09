@@ -44,8 +44,8 @@ def _primary_object(context: dict[str, Any]) -> dict[str, str]:
         ("record_id", "result_record"),
         ("observation_id", "observation"),
         ("feature_id", "feature"),
-        ("subject_id", "subject"),
         ("event_id", "decision_event"),
+        ("subject_id", "subject"),
     ):
         value = context.get(key)
         if value is not None and str(value).strip():
@@ -78,7 +78,7 @@ def _finding_identity(issue: dict[str, Any]) -> tuple[str, str]:
 
 
 def _recommended_route(code: str) -> dict[str, str]:
-    if "decision" in code or "redirect" in code or "split" in code or "excluded" in code:
+    if "decision" in code or "redirect" in code or "split" in code or "excluded" in code or "transition" in code:
         return {
             "action": "decision_history_review",
             "workflow": "Compare the current Registry state with the historical decision_log. Do not fabricate a past event; record a new human decision only after evidence review and schema validation.",
