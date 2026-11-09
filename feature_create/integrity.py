@@ -119,8 +119,12 @@ def audit_integrity(
             if observation is None:
                 issues.append(_issue("feature_points_to_missing_observation", "error", f"Feature {feature_id} references missing Observation {observation_id}.", feature_id=feature_id, observation_id=observation_id))
                 continue
-            if observation.get("linked_registry_feature_id") != feature_id:
-                issues.append(_issue("observation_feature_backlink_mismatch", "error", f"Observation {observation_id} does not point back to Feature {feature_id}.", feature_id=feature_id, observation_id=observation_id, actual_feature_id=observation.get("linked_registry_feature_id")))
+            actual_feature_id = observation.get("linked_registry_feature_id")
+            if actual_feature_id != feature_id:
+                resolved_expected, expected_error = _resolve_feature_id(feature_id, features)
+                resolved_actual, actual_error = _resolve_feature_id(str(actual_feature_id or ""), features)
+                if expected_error or actual_error or resolved_expected != resolved_actual:
+                    issues.append(_issue("observation_feature_backlink_mismatch", "error", f"Observation {observation_id} does not point back to Feature {feature_id} (or its merge survivor).", feature_id=feature_id, observation_id=observation_id, actual_feature_id=actual_feature_id))
             if observation.get("variable_role") == "result_feature" and observation.get("discovery_status") != "excluded":
                 valid_linked += 1
                 if observation.get("discovery_status") == "evidence_verified" and any(
