@@ -203,6 +203,18 @@ class IntegrityReviewQueueTests(unittest.TestCase):
         }])])[0]["decision_id"]
         self.assertEqual(len({first, changed_action, changed_evidence}), 3)
 
+    def test_review_evidence_must_exist_in_supplied_manifest(self):
+        report, registry, records, manifest, fingerprints = fixture()
+        queue, template = build_review_queue(report, registry, records, manifest, fingerprints)
+        edited = [dict(template[0], review_decision="repair_required",
+                       action="record_review",
+                       rationale="Review this record against the source package.",
+                       review_evidence_refs=[{
+                           "source_id": "SRC-NOT-IN-MANIFEST", "locator": {"page": 1},
+                       }])]
+        with self.assertRaisesRegex(ValueError, "absent from the prepared manifest"):
+            validate_review_rows(queue, template, edited)
+
     def test_accepted_warning_requires_evidence(self):
         report, registry, records, manifest, fingerprints = fixture()
         warning_report = dict(report, status="pass_with_warnings", summary={
