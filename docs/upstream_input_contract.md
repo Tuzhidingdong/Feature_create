@@ -40,12 +40,13 @@ The complete paired CSV remains the authoritative upstream inventory. When it co
 - Sampling unit: normalized DOI; when DOI is absent, normalized title + year + journal.
 - All CSV rows sharing one paper identity are selected together.
 - Default proportional stratification: `year`. Use `--stratify-by none` for global sampling or provide comma-separated metadata columns.
+- Stratum quotas use D'Hondt divisor allocation, which is house-monotone: for a fixed source corpus, increasing the fraction cannot reduce a stratum's quota. Combined with fixed per-paper hash ranks, each larger sample is a superset of the smaller sample.
 - Rows with missing `preprocessing_path` or unsupported/failed preprocessing status are excluded before calculating the sample size and appear in the manifest with reasons.
 - The default seed is `feature-create-v1`. Identical input bytes, seed, fraction, and strata reproduce the same selected paper set.
 
-The sampler reads CSV metadata only. It does not open or hash source PDFs, SI, or preprocessing packages. It writes the selected CSV plus `sampling_manifest.json`, which records the input/output CSV hashes, per-paper decision/score, stratum quotas, selected paper keys, and exclusion reasons.
+The sampler reads CSV metadata only. It does not open or hash source PDFs, SI, or preprocessing packages. It writes a cumulative sample CSV, a newly-selected incremental CSV, and `sampling_manifest.json`, which records the source/sample hashes, per-paper decision/score, stratum quotas, parent-manifest fingerprint, previous/current selected keys, and exclusion reasons.
 
-Pass the manifest to `prepare_corpus.py --sampling-manifest`. Preparation verifies that its selected-CSV SHA-256 matches and records the sampling provenance in `source_manifest.json`. Editing or replacing the sampled CSV after selection blocks this verification. Existing full-corpus runs remain valid without a sampling manifest.
+Pass the same manifest to `prepare_corpus.py --sampling-manifest` with either the cumulative CSV or, for a later round, the `newly_selected_research_corpus_paired.csv`. Preparation detects which view was supplied, verifies its SHA-256 and paper-key set, and records cumulative plus applied-view provenance in `source_manifest.json`. For sample expansion, the source CSV bytes, seed, strata, and `min_papers` must remain unchanged and the fraction must increase. Preserve the previous manifest and cumulative CSV; changed or missing parent artifacts block expansion. Prepare an incremental CSV in a new run directory, then reconcile it into the same persistent Registry/Records. Existing full-corpus runs remain valid without a sampling manifest.
 
 
 ## 3. Path resolution
