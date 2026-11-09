@@ -123,7 +123,7 @@ Sampling operates only on CSV metadata; it does not open raw PDFs, SI files, or 
 
 ### Phase 1 — Index upstream preprocessing packages
 
-1. Read only the rows in the CSV selected for this run: the complete `research_corpus_paired.csv` or the hash-verified `sampled_research_corpus_paired.csv`.
+1. Read only the rows in the CSV selected for this run: the complete `research_corpus_paired.csv`, a hash-verified cumulative `sampled_research_corpus_paired.csv`, or a hash-verified `newly_selected_research_corpus_paired.csv` for an incremental expansion round.
 2. Follow each row's `preprocessing_path` to its `01_preprocessing/` package. Keep `local_pdf_path` and `local_si_info` only as raw-source provenance and hash-integrity inputs.
 3. Keep upstream DOI/title/year/journal/article type and all original CSV row metadata.
 4. Read `main_analysis.md` and `si_analysis.md` exactly as created upstream.
