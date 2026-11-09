@@ -166,6 +166,7 @@ def create_corpus_sample(
     for paper_key, paper_rows in grouped_rows.items():
         first = paper_rows[0]
         statuses = sorted({_row_value(row, "preprocessing_status").upper() for row in paper_rows})
+        package_paths = sorted({_row_value(row, "preprocessing_path") for row in paper_rows})
         missing_paths = any(not _row_value(row, "preprocessing_path") for row in paper_rows)
         unsupported = sorted(status for status in statuses if status not in ALLOWED_PREPROCESSING_STATUSES)
         reasons = []
@@ -173,10 +174,22 @@ def create_corpus_sample(
             reasons.append("missing_preprocessing_path")
         if unsupported:
             reasons.append("unsupported_preprocessing_status:" + ",".join(unsupported))
-        stratum_values = [
-            _row_value(first, field_lookup[name]).strip() or "(missing)"
-            for name in normalized_strata
-        ]
+        if len(package_paths) > 1:
+            reasons.append("conflicting_preprocessing_paths")
+        if len(statuses) > 1:
+            reasons.append("conflicting_preprocessing_statuses")
+
+        stratum_values = []
+        for name in normalized_strata:
+            values = sorted({
+                _row_value(row, field_lookup[name]).strip() or "(missing)"
+                for row in paper_rows
+            }, key=lambda value: (value.casefold(), value))
+            if len(values) > 1:
+                reasons.append(f"conflicting_stratification_metadata:{name}")
+                stratum_values.append("(conflict)")
+            else:
+                stratum_values.append(values[0] if values else "(missing)")
         stratum = json.dumps(stratum_values, ensure_ascii=False, separators=(",", ":")) if normalized_strata else "[]"
         score = _score(str(seed), paper_key)
         candidates.append({
