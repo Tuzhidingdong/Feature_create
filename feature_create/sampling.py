@@ -219,6 +219,11 @@ def create_corpus_sample(
     manifest_path = output_dir / "sampling_manifest.json"
     if sampled_csv == paired_csv or manifest_path == paired_csv:
         raise SamplingError("Sampling output must not overwrite the input paired CSV.")
+    if sampled_csv.exists() or manifest_path.exists():
+        raise SamplingError(
+            f"Sampling outputs already exist in {output_dir}; use a new output directory "
+            "to preserve the previous selection and its provenance."
+        )
 
     temp_csv = sampled_csv.with_name(sampled_csv.name + ".tmp")
     temp_manifest = manifest_path.with_name(manifest_path.name + ".tmp")
@@ -228,7 +233,6 @@ def create_corpus_sample(
             writer.writeheader()
             writer.writerows(selected_rows)
         sampled_hash = _sha256_file(temp_csv)
-        selected_papers = [item for item in candidates if item["paper_key"] in selected_keys]
         stratum_summary = []
         for stratum, members in sorted(strata.items()):
             stratum_summary.append({
@@ -245,6 +249,7 @@ def create_corpus_sample(
             "algorithm": SAMPLE_ALGORITHM,
             "seed": str(seed),
             "requested_fraction": format(fraction_value, "f").rstrip("0").rstrip(".") if "." in format(fraction_value, "f") else format(fraction_value, "f"),
+            "min_papers": min_papers,
             "stratify_by": list(normalized_strata),
             "source_csv_path": str(paired_csv),
             "source_csv_sha256": _sha256_file(paired_csv),
@@ -281,6 +286,7 @@ def create_corpus_sample(
         "selected_paper_count": len(selected_keys),
         "selected_row_count": len(selected_rows),
         "requested_fraction": str(fraction_value.normalize()),
+        "min_papers": min_papers,
         "seed": str(seed),
         "stratify_by": list(normalized_strata),
         "sampled_csv": str(sampled_csv),
