@@ -27,8 +27,8 @@ A representative set is the goal, not complete coverage. Do not force a fixed nu
 Use **Antigravity Supervisor + two OpenCode Worker models + deterministic local Python**.
 
 - Antigravity is the thin Supervisor/control plane. It plans, dispatches, monitors, and coordinates; it must not perform bulk paper reading or result extraction.
-- Worker A runs through OpenCode using a verified free OpenCode Go model and performs source-centric discovery/extraction.
-- Worker B runs through OpenCode using a second, distinct verified free OpenCode Go model and independently performs feature-centric discovery/coverage audit.
+- Worker A uses a verified free OpenCode Go model to discover candidate Result Features and capture author-emphasis evidence.
+- Worker B uses a second, distinct verified free OpenCode Go model to independently check important omissions and semantic distinctions.
 - chem-literature performs all PDF/SI preprocessing. Feature_create Python validates and indexes its preprocessed text, tables, figure assets, evidence index, QC status, and raw-source hashes; it does not parse PDFs or SI.
 
 The intended current model pair is:
@@ -121,7 +121,7 @@ For a very large chem-literature corpus, the user may choose to build the Featur
 5. Use the D'Hondt divisor method across configured strata, with deterministic per-paper SHA-256 ranking. The target count must be exact after half-up rounding, and the method must be house-monotone: increasing the fraction cannot reduce a stratum quota. The identical input bytes, fraction, seed, and stratification columns must reproduce the same selected identities.
 6. Inspect the cumulative `sampled_research_corpus_paired.csv`, the `newly_selected_research_corpus_paired.csv`, and `sampling_manifest.json`. Do not edit these files.
 7. When expanding an existing sample (for example, 10% to 20%), pass `--previous-manifest` and keep the exact source CSV bytes, seed, strata, and `min_papers` unchanged. The new fraction must be greater. The parent manifest and previous cumulative CSV must exist and match their hashes. The new CSV is cumulative; the incremental CSV contains only papers not previously selected.
-8. Prepare a later round from its incremental CSV and the same round's manifest in a fresh prepared output directory. Reuse the persistent Registry and Result Record files during the subsequent reconciliation stage; do not dispatch the cumulative CSV again for an incremental run.
+8. Prepare a later round from its incremental CSV and the same round's manifest in a fresh prepared output directory. Reuse the persistent Feature Registry during the subsequent reconciliation stage; do not dispatch the cumulative CSV again for an incremental run.
 9. Pass the manifest to `prepare_corpus.py --sampling-manifest`. Preparation identifies cumulative vs incremental view, verifies the matching CSV hash and paper keys, and records the sampling lineage in `source_manifest.json`.
 10. If the user chooses full-corpus processing, skip the sampler and omit `--sampling-manifest`. Never silently sample or silently expand a sample to the full corpus.
 
@@ -144,15 +144,13 @@ Before preparation/queue construction, the Supervisor may run scripts/report_sam
 
 The internal `source_manifest.json` is a logical-source index derived from the CSV and upstream packages, not a new document parser. Each worker task receives only its assigned parsed text/table evidence units, related pre-extracted images, the `chunk_evidence_index.json` locator slice, a compact paper-wide `paper_chunk_index.json`, and the relevant QC report. The complete original upstream index remains in the prepared run and is not redundantly attached to every chunk. Raw PDF/SI files remain outside worker attachments.
 
-#### Deterministic chunking and cross-chunk provenance
+#### Bounded evidence review
 
-- Text is split at upstream page headings and paragraph/newline boundaries. Every source character is assigned once; page number and original source-text offsets remain attached to each unit.
-- Tables are split by original 1-based source rows. A single oversized row is split into cell fragments while preserving original table ID, row, column, and character offsets. Multi-row headers remain available as context.
-- An upstream image asset is assigned once to its related figure/table evidence unit when the evidence index identifies that relationship. Orphaned assets remain explicit units.
-- Every unit has a stable `unit_id`; every task has a stable `chunk_id`. Every `(source_id, unit_id)` assignment also receives a stable `scope_id`, and the task bundle includes a coverage checklist. Worker evidence locators must cite `unit_id` and `chunk_id`, plus the original upstream locator. Context-only excerpts and repeated header rows are not counted as assigned coverage.
-- `paper_chunk_index.json` exposes `unit_navigation` for every unit, `cross_chunk_text_boundaries` for adjacent text segments assigned to different chunks, `same_original_table_row_groups` for rows/cell fragments spanning chunks, and candidate MAIN-to-SI links. Candidate links are navigation aids, not confirmed semantic associations.
-- If a sample/condition/result relationship crosses chunks, the worker must cite only what the assigned chunk supports and record the missing cross-chunk link as unresolved. It must never fill the gap by proximity or guesswork.
-- Worker A and Worker B must each return exactly one coverage entry for every assigned `scope_id`, preserving the corresponding `source_id`. Repeated `source_id` values with different units require separate entries. A source is counted fully reviewed only when every one of its scopes across every chunk has the worker's successful status. A completed task/chunk cannot mark other scopes of that source complete.
+- Keep paragraph context and original page/section locators intact when splitting long papers into manageable tasks.
+- Preserve original table row/column and figure/panel identifiers. Attach pre-extracted visual assets only when they help identify a distinct result Feature.
+- Every evidence unit and task keeps a stable ID. Workers cite only assigned evidence and exact source locators.
+- Worker A and Worker B each report coverage for their assigned evidence units. Incomplete upstream text, missing figures, or unprocessed SI remain explicit warnings.
+- Cross-chunk sample/condition/value linking is outside this project's scope. Do not create context-association review tasks.
 
 ### Phase 2 — Candidate Feature discovery
 
@@ -177,29 +175,15 @@ Numerical-value parsing, figure digitization, sample/condition association, and 
 4. Build semantic candidate pairs using name/alias/definition signals; these retrieve candidates but never automatically merge them.
 5. Do not create or populate per-paper Result Records. The downstream project owns value and condition extraction.
 
-### Phase 5 — Global cross-paper reconciliation
+### Phase 5 — Cross-paper semantic deduplication
 
-1. Build bounded pair-review tasks with source-backed Observation excerpts and relevant visual evidence.
-2. Use Worker B's second free OpenCode Go model for cross-paper semantic comparison. This is the same Worker B role, not an additional model worker.
-3. Compare physical/statistical quantity, definition, formula, numerator/denominator, normalization basis, statistic, temporal/cycle scope, dimensions, methods, and source contradictions.
-4. Require an explicit equivalence assessment for each dimension. Missing information cannot be treated as affirmative equivalence.
-5. Python applies a merge only when the decision is SAME_FEATURE and all deterministic evidence/compatibility gates pass.
-6. Preserve separate features for RELATED_BUT_DISTINCT and SAME_FAMILY_DIFFERENT_STATISTIC decisions.
-7. Keep insufficient/conflicting evidence under review; do not force a merge.
-8. After a merge, invalidate and regenerate any other pair that references the retired ID.
-9. Preserve all merge/split/redirect decisions in the append-only Registry history.
+Use the Python candidate-pair queue to find likely duplicates. Worker B reviews only those pairs, using the source definitions and their supporting text/table/figure evidence.
 
-Worker B supplies semantic recommendations. Python validates source provenance, feature IDs, evidence coverage, and explicit merge gates, then performs the state transition. The Supervisor only coordinates this work.
+Merge only when the candidates describe the same scientific outcome with compatible definitions and scope. Keep related-but-distinct Features separate. Similar names or units alone are never sufficient. Unclear pairs remain under review. Python applies decisions and preserves the decision history.
 
-### Phase 6 — Existing FEATURE_ID mapping
+### Phase 6 — Optional existing-ID mapping
 
-1. Import the user's existing Feature Schema into the normalized schema contract, preserving every existing ID and the source-file SHA-256.
-2. Treat this schema strictly as a mapping reference; never use it to limit discovery or to define what is/is not a result Feature.
-3. Build bounded mapping tasks for each confirmed Registry Feature. Include the full legacy candidate list in the review bundle so lexical pre-filtering cannot silently remove a valid synonym.
-4. Use Worker B's already configured free OpenCode Go model to compare definitions, quantity, formula, normalization basis, statistic, temporal scope, and units.
-5. Apply an old FEATURE_ID only when exactly one candidate is selected and every explicit compatibility gate passes, source evidence exists, and the old ID is not already assigned to another active Feature.
-6. When there is no match, preserve the new Registry Feature ID. When evidence is insufficient or candidates conflict, do not force a mapping.
-7. Record the source schema hash and every mapping/no-mapping decision in the Registry decision log.
+Only when the user supplies an existing Feature Schema, compare confirmed canonical Features with that dictionary and preserve compatible existing IDs. This is optional and must never limit candidate discovery or determine which Features are scientifically important.
 
 ### Phase 7 — Representative Feature selection and export
 
@@ -214,7 +198,7 @@ Selection priorities:
 
 A figure/table-only Feature may be selected when it adds a distinct scientific dimension. Frequency alone must never determine selection. Use `review` when evidence is ambiguous; do not force a yes/no decision.
 
-Every decision cites supporting Observation IDs and gives a concise reason. The Supervisor reviews the shortlist and borderline decisions, not every underlying value.
+Every decision cites supporting Observation IDs and gives a concise reason. The Supervisor reviews only the shortlist and borderline decisions.
 
 Export only Features marked `select`:
 
@@ -244,9 +228,8 @@ Stop or pause when:
 - the two selected workers resolve to the same model;
 - a model is unavailable or region-restricted;
 - OpenCode indicates or reports a paid route/cost;
-- the only way to continue would be a paid fallback or bulk extraction by Antigravity;
 - source integrity cannot be established;
-- a schema migration would invalidate existing IDs or records.
+- a change would risk invalidating existing Feature IDs.
 
 Preserve partial work and report exactly what remains incomplete.
 
