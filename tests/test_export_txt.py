@@ -105,7 +105,14 @@ class ExportTxtTests(unittest.TestCase):
             "created_at": "2026-11-08T00:00:00+00:00",
         }
 
-    def invoke_export(self, root: Path, registry: dict, record: dict, review_rows: list[dict]) -> int:
+    def invoke_export(
+        self,
+        root: Path,
+        registry: dict,
+        record: dict,
+        review_rows: list[dict],
+        allow_unresolved_context: bool = False,
+    ) -> int:
         registry_path = root / "registry.json"
         records_path = root / "records.jsonl"
         review_path = root / "pairs.jsonl"
@@ -118,6 +125,10 @@ class ExportTxtTests(unittest.TestCase):
             "--records", str(records_path),
             "--review-queue", str(review_path),
             "--output-dir", str(output),
+            *(
+                ["--allow-unresolved-context"]
+                if allow_unresolved_context else []
+            ),
         ])
 
     def test_exports_exactly_two_tsv_txt_files(self) -> None:
@@ -180,6 +191,117 @@ class ExportTxtTests(unittest.TestCase):
             with (root / "formal" / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
                 row = next(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(row["FEATURE_ID"], "RFEAT-1")
+
+
+    def test_blocks_export_when_context_association_is_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = self.make_record()
+            record["unresolved_issues"] = [{
+                "unresolved_id": "UNRES-PENDING",
+                "item_type": "missing_context",
+                "description": "Sample identity association crosses chunks.",
+                "resolution_status": "pending",
+            }]
+            status = self.invoke_export(root, self.make_registry(), record, [])
+            self.assertEqual(status, 2)
+            self.assertFalse((root / "formal" / "result_feature_records.txt").exists())
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "blocked")
+            self.assertEqual(report["open_context_issue_count"], 1)
+            self.assertEqual(report["records_with_open_context"], 1)
+            self.assertEqual(report["context_association_status_counts"], {"pending": 1})
+            self.assertTrue(any("context association item(s) remain unresolved" in item for item in report["errors"]))
+
+    def test_explicit_override_exports_open_context_as_provisional(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = self.make_record()
+            record["unresolved_issues"] = [{
+                "unresolved_id": "UNRES-OPEN",
+                "item_type": "missing_context",
+                "description": "Condition association could not be established.",
+                "resolution_status": "insufficient_evidence",
+            }]
+            status = self.invoke_export(
+                root, self.make_registry(), record, [], allow_unresolved_context=True
+            )
+            self.assertEqual(status, 0)
+            with (root / "formal" / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
+                row = next(csv.DictReader(handle, delimiter="\\t"))
+            self.assertEqual(row["CONTEXT_ASSOCIATION_STATUS"], "inconclusive")
+            open_items = json.loads(row["OPEN_CONTEXT_UNRESOLVED_ITEMS"])
+            self.assertEqual(open_items[0]["unresolved_id"], "UNRES-OPEN")
+            self.assertEqual(open_items[0]["resolution_status"], "insufficient_evidence")
+            self.assertEqual(row["RAW_VALUE"], "99.1")
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "exported_with_unresolved_context")
+            self.assertTrue(report["warnings"])
+            self.assertEqual(report["open_context_issue_count"], 1)
+
+    def test_confirmed_and_no_association_decisions_close_context_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = self.make_record()
+            record["unresolved_issues"] = [
+                {
+                    "unresolved_id": "UNRES-CONFIRMED",
+                    "item_type": "missing_context",
+                    "description": "Sample identity was checked across chunks.",
+                    "resolution_status": "association_confirmed",
+                },
+                {
+                    "unresolved_id": "UNRES-NO-LINK",
+                    "item_type": "missing_context",
+                    "description": "Condition statement refers to a different sample.",
+                    "resolution_status": "no_association",
+                },
+            ]
+            status = self.invoke_export(root, self.make_registry(), record, [])
+            self.assertEqual(status, 0)
+            with (root / "formal" / "result_feature_records.txt").open(encoding="utf-8", newline="") as handle:
+                row = next(csv.DictReader(handle, delimiter="\\t"))
+            self.assertEqual(row["CONTEXT_ASSOCIATION_STATUS"], "resolved")
+            self.assertEqual(json.loads(row["OPEN_CONTEXT_UNRESOLVED_ITEMS"]), [])
+            self.assertEqual(json.loads(row["UNRESOLVED_ISSUES"])[1]["resolution_status"], "no_association")
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "exported")
+            self.assertEqual(report["open_context_issue_count"], 0)
+
+    def test_conflicting_context_evidence_blocks_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = self.make_record()
+            record["unresolved_issues"] = [{
+                "unresolved_id": "UNRES-CONFLICT",
+                "item_type": "missing_context",
+                "description": "Conflicting sample association evidence.",
+                "resolution_status": "conflicting_evidence",
+            }]
+            status = self.invoke_export(root, self.make_registry(), record, [])
+            self.assertEqual(status, 2)
+            self.assertFalse((root / "formal" / "result_feature_records.txt").exists())
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["context_association_status_counts"], {"inconclusive": 1})
+
+    def test_unknown_context_resolution_status_fails_closed_even_with_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            record = self.make_record()
+            record["unresolved_issues"] = [{
+                "unresolved_id": "UNRES-UNKNOWN",
+                "item_type": "missing_context",
+                "description": "Unknown state must not be assumed resolved.",
+                "resolution_status": "auto_resolved",
+            }]
+            status = self.invoke_export(
+                root, self.make_registry(), record, [], allow_unresolved_context=True
+            )
+            self.assertEqual(status, 2)
+            self.assertFalse((root / "formal" / "result_feature_records.txt").exists())
+            report = json.loads((root / "formal_export_audit.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["invalid_context_status_count"], 1)
+            self.assertTrue(any("unknown resolution status" in item for item in report["errors"]))
 
 
 if __name__ == "__main__":
