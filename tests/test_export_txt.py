@@ -196,7 +196,7 @@ class ExportTxtTests(unittest.TestCase):
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
             original = registry_path.read_bytes()
             records_path = root / "records.jsonl"
-            records_path.write_text(json.dumps(self.make_record()) + "\\n", encoding="utf-8")
+            records_path.write_text(json.dumps(self.make_record()) + "\n", encoding="utf-8")
             review_path = root / "pairs.jsonl"
             review_path.write_text("", encoding="utf-8")
             status = main([
