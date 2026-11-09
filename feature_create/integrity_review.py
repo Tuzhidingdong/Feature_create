@@ -322,16 +322,18 @@ def build_review_queue(
     findings = []
     templates = []
     seen_finding_ids: set[str] = set()
+    duplicate_counts: dict[str, int] = {}
     for issue in audit_report.get("issues", []):
-        finding_id, fingerprint = _finding_identity(issue)
+        base_finding_id, fingerprint = _finding_identity(issue)
+        occurrence = duplicate_counts.get(base_finding_id, 0) + 1
+        duplicate_counts[base_finding_id] = occurrence
+        finding_id = base_finding_id if occurrence == 1 else "IRF-" + sha256_value({
+            "base": base_finding_id,
+            "occurrence": occurrence,
+            "fingerprint": fingerprint,
+        })[:20].upper()
         if finding_id in seen_finding_ids:
-            # Keep distinct instances distinct if one issue code occurs more than once
-            # for a single object (for example multiple malformed evidence refs).
-            context = issue.get("context") if isinstance(issue.get("context"), dict) else {}
-            finding_id = "IRF-" + sha256_value({
-                "base": finding_id,
-                "context": context,
-            })[:20].upper()
+            raise ValueError(f"Unable to allocate a unique finding ID for {base_finding_id}.")
         seen_finding_ids.add(finding_id)
         context = issue.get("context") if isinstance(issue.get("context"), dict) else {}
         primary = _primary_object(context)
@@ -390,9 +392,9 @@ def build_review_queue(
     current_ids = {item["finding_id"] for item in findings}
     cleared = []
     for finding_id, previous in ledger_latest.items():
-        if finding_id in current_ids or previous.get("review_decision") == "defer":
+        if finding_id in current_ids:
             continue
-        if previous.get("review_decision") in {"repair_required", "accepted_warning"}:
+        if previous.get("review_decision") in {"repair_required", "accepted_warning", "defer"}:
             cleared.append({
                 "finding_id": finding_id,
                 "code": previous.get("code"),
