@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from feature_create.sampling import paper_identity_key, SamplingError
+
 
 class CorpusError(RuntimeError):
     pass
@@ -108,7 +114,9 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def load_sampling_provenance(path: Path, paired_csv: Path) -> dict[str, Any]:
+def load_sampling_provenance(
+    path: Path, paired_csv: Path, rows: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """Verify the sample manifest is bound to the exact CSV used for preparation."""
     sampling = read_json(path)
     if sampling.get("sampling_manifest_version") != "0.1":
@@ -123,10 +131,24 @@ def load_sampling_provenance(path: Path, paired_csv: Path) -> dict[str, Any]:
             "the sample may have been edited or replaced."
         )
     selected_keys = sampling.get("selected_paper_keys")
-    if not isinstance(selected_keys, list) or len(selected_keys) != sampling.get("selected_paper_count"):
+    selected_count = sampling.get("selected_paper_count")
+    if not isinstance(selected_count, int) or not isinstance(selected_keys, list) or len(selected_keys) != selected_count:
         raise CorpusError("Sampling manifest has an invalid selected_paper_keys inventory.")
     if len(selected_keys) != len(set(str(item) for item in selected_keys)):
         raise CorpusError("Sampling manifest contains duplicate selected paper keys.")
+    if sampling.get("algorithm") != "sha256_rank_within_strata_v1":
+        raise CorpusError("Sampling manifest uses an unsupported sampling algorithm.")
+    rows = rows if rows is not None else load_paired_csv(paired_csv)
+    try:
+        actual_keys = sorted({paper_identity_key(row) for row in rows})
+    except SamplingError as exc:
+        raise CorpusError(f"Cannot verify sampled paper identities: {exc}") from exc
+    if actual_keys != sorted(str(item) for item in selected_keys):
+        raise CorpusError("Sampling manifest selected paper keys do not match the sampled CSV contents.")
+    if selected_count != len(actual_keys):
+        raise CorpusError("Sampling manifest selected_paper_count does not match the sampled CSV.")
+    if sampling.get("selected_row_count") != len(rows):
+        raise CorpusError("Sampling manifest selected_row_count does not match the sampled CSV row count.")
     source_hash = str(sampling.get("source_csv_sha256") or "").lower()
     if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
         raise CorpusError("Sampling manifest has an invalid source_csv_sha256.")
@@ -300,7 +322,7 @@ def build_manifest_from_paired_csv(
     sampling_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     rows = load_paired_csv(paired_csv)
-    sampling = load_sampling_provenance(sampling_manifest_path, paired_csv) if sampling_manifest_path else None
+    sampling = load_sampling_provenance(sampling_manifest_path, paired_csv, rows) if sampling_manifest_path else None
     if not rows:
         raise CorpusError("chem-literature paired corpus contains zero paper rows.")
 
@@ -312,7 +334,18 @@ def build_manifest_from_paired_csv(
     grouped: dict[str, list[dict[str, str]]] = {}
     for row_index, row in enumerate(rows, start=1):
         doi = normalize_doi(row.get("doi"))
-        paper_key = doi or stable_id("PAPER", f"{row.get('title','')}|{row.get('year','')}|{row_index}", 12)
+        if doi:
+            paper_key = doi
+        else:
+            title = " ".join(str(row.get("title") or "").casefold().split())
+            year = str(row.get("year") or "").strip()
+            journal = " ".join(str(row.get("journal") or "").casefold().split())
+            if title:
+                fallback = json.dumps([title, year, journal], ensure_ascii=False, separators=(",", ":"))
+                paper_key = stable_id("PAPER", fallback, 12)
+            else:
+                # Preserve legacy full-corpus behavior when no stable metadata identity exists.
+                paper_key = stable_id("PAPER", f"{title}|{year}|{journal}|{row_index}", 12)
         grouped.setdefault(paper_key, []).append(row)
 
     sources: list[dict[str, Any]] = []
