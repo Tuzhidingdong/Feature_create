@@ -324,7 +324,60 @@ python scripts/apply_existing_feature_mapping.py `
 
 A mapping is applied only when Worker B selects one exact old FEATURE_ID, all seven compatibility checks are affirmative, definitions and source evidence exist, unit strings are conservatively compatible, and that old ID is not already assigned to another active Registry Feature. Otherwise the Registry Feature keeps its new Registry ID.
 
-## 13. Export the two formal TXT files
+## 13. Human adjudication for unresolved context associations
+
+Use the deterministic human-review path for Worker B results that remain `insufficient_evidence`/`conflicting_evidence`, items without a usable remote target, or other unresolved sample/condition links. Do not edit the records or unresolved JSONL files by hand.
+
+First build a review template. This reads the existing prepared evidence package and creates a separate template containing candidate result records, full snapshot hashes, and the SHA-256 inventory of parsed source text:
+
+```powershell
+python scripts/adjudicate_unresolved.py `
+  --prepare `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
+  --output-template "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_prepare_report.json"
+```
+
+Keep `manual_context_template.jsonl` unchanged and copy it to a separate file for editing:
+
+```powershell
+Copy-Item `
+  "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
+  "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_decisions.jsonl"
+```
+
+Edit only the decision fields in the copy:
+- Select exactly one `record_id` from `candidate_records`. If one Observation has multiple result-value records, the template deliberately leaves `record_id` blank and requires an explicit human choice.
+- Set `decision` to `association_confirmed`, `no_association`, or `remain_unresolved`; provide a specific rationale of at least 12 characters.
+- For `association_confirmed`, add one or more `context_facts`. Each fact needs a context role, raw label/value, and its own exact `current` + `target` evidence references.
+- For `no_association`, leave `context_facts` empty and choose a positive `counterevidence_basis`: `explicit_other_sample_mapping`, `explicit_scope_exclusion`, `explicit_contradictory_identifier`, or `other_positive_counterevidence`. This cannot be justified by a missing mention alone.
+- For `remain_unresolved`, leave `context_facts` empty. The issue remains open and continues to block normal formal export.
+
+A text evidence reference must include `evidence_side` (`current` or `target`), `source_id`, a page/figure/table locator, the exact `quote_or_cell_value`, and `evidence_status: verified_text`. For a structured table cell use `verified_table_cell` and original row/column indexes. The tool rechecks every quote/cell against the preprocessed source manifest and extracted text; merely copying the Worker B's status is not sufficient. It does not parse PDFs/SI or accept unverified/visual-only citations as proof.
+
+Apply the edited decisions while retaining the unchanged template:
+
+```powershell
+python scripts/adjudicate_unresolved.py `
+  --apply `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --unresolved "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\unresolved_extraction_items.jsonl" `
+  --template "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_template.jsonl" `
+  --decisions "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_decisions.jsonl" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\manual_context_application_report.json"
+```
+
+The applier uses the same Registry lock as ingestion/context application. It checks the unchanged template, selected record and unresolved snapshots, the source-manifest hash, every extracted text hash for the paper, and every cited quote/table cell. A stale or invalid decision blocks the entire batch without changing either JSONL file. A confirmed fact is merged into its existing context entry when identical; a no-association decision closes only that question; a retained-unresolved decision appends human history but preserves its open resolution state. The original result value, unit, Feature/Observation IDs and primary evidence are protected. Human actions are recorded in both the unresolved item's `manual_review_history` and the result record's `context_review_history`.
+
+The completed-decision contract is `contracts/manual-context-adjudication.schema.json`. Rebuild the template whenever any source/record/unresolved state changes; never edit its snapshot fields to force a stale decision through.
+
+## 14. Export the two formal TXT files
+
 
 Only after all active Features are confirmed and all candidate pairs are resolved:
 
@@ -347,7 +400,7 @@ By default, export is blocked while any linked context association remains pendi
 
 The exporter also blocks if any active Feature remains provisional/under review, any result record lacks a valid Feature ID, or any candidate pair remains unresolved. It writes a separate internal audit JSON beside (not inside) the formal output directory. The formal output directory contains only the two TXT files.
 
-## 14. Generate the final deterministic audit report
+## 15. Generate the final deterministic audit report
 
 After mapping and reconciliation, calculate the corpus/source/extraction totals directly from local manifests and task outputs:
 
@@ -367,7 +420,7 @@ python scripts/audit_records.py `
 
 The audit distinguishes sources fully reviewed by both independent Workers from partial/one-pass coverage, and reports main-article vs SI coverage separately. It also counts records by extraction/evidence status, explicit unresolved context items, active/retired Features, existing-ID mappings, pending semantic pairs, and model usage/cost metadata when exposed. Missing usage or cost metadata is labelled unknown, never silently converted to zero.
 
-## 15. Inspect the run
+## 16. Inspect the run
 
 Key files:
 - `worker_runs/model_preflight.json`
@@ -378,7 +431,7 @@ Key files:
 
 A missing usage/cost field is recorded as not exposed, not automatically treated as independently verified zero billing. Model pricing and actual route are separate audit layers.
 
-## 16. Important limitations in v0.1
+## 17. Important limitations in v0.1
 
 - Scanned PDFs are not OCR-processed.
 - Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
