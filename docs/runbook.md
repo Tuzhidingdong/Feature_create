@@ -433,6 +433,25 @@ A missing usage/cost field is recorded as not exposed, not automatically treated
 
 ## 17. Important limitations in v0.1
 
+## 18. Global bidirectional Feature / Record integrity audit
+
+Run this after reconciliation and human adjudication, and before final export:
+
+```powershell
+python scripts/audit_global_integrity.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+```
+
+The audit is read-only and must not repair the Registry. It verifies every Record's Observation and Feature links; Feature ↔ Observation backlinks; Observation and Record source evidence with non-empty locators; source-ID existence when a manifest is supplied; and decision chains for excluded Observations, merged Features, split-pending Features, and merge/split/reassignment events.
+
+Every eligible Observation is checked for at least one Result Record. Such omissions are warnings by default because a reported visual-only variable may have no exportable value. Use `--strict-observation-records` when all eligible observations must materialize as records. Exit code 2 indicates hard integrity errors. Do not bypass them or modify raw identity fields to silence the report. Correct the originating reconciliation/adjudication decision, preserve the old event, append the correcting event, and rerun the audit.
+
+The final `export_txt.py` command invokes the same integrity engine. It blocks both TXT files for hard errors and records the integrity summary/findings in the separate internal export audit JSON. Pass `--source-manifest` to the exporter for source existence checks. See [global_integrity_audit.md](global_integrity_audit.md) for issue-code semantics.
+
+
 - Scanned PDFs are not OCR-processed.
 - Upstream page, text-block, figure bounding-box, table ID, row/cell, and SI-reference coordinates are preserved in the attached evidence index; the validator checks exact structured-table cells when a machine-readable row/column locator is supplied.
 - Figure panel/bounding-box interpretation is not automatically validated. The image and upstream coordinates support review, but workers must not claim automated figure digitization or exact values without digitization evidence.
