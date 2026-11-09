@@ -232,6 +232,19 @@ Every result record must also state `CONTEXT_ASSOCIATION_STATUS` and list `OPEN_
 
 The Feature-list file contains one entry per canonical result feature, with ID, canonical name, aliases, definition, result type, units/dimension, measurement/calculation methods, and standardization/comparability notes. It must not contain concrete values, Record_IDs, samples, conditions, paper coverage, or conclusions.
 
+
+Before export, run the global bidirectional integrity audit:
+
+```powershell
+python scripts/audit_global_integrity.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+```
+
+This is a read-only graph audit, not a repair step. It verifies Record → Observation → Feature links, Feature → Observation backlinks, Observation and Record source evidence, merge redirects, and append-only exclusion/split/merge decision chains. Resolve errors through existing deterministic reconciliation and human-adjudication workflows; never patch IDs or history to make the audit pass. Observation-without-Record findings are warnings by default and become blocking with `--strict-observation-records`. The final exporter runs the same hard checks internally and refuses to write either TXT file when integrity errors remain. See `docs/global_integrity_audit.md`.
+
 ### Phase 8 — Report
 
 Report counts calculated from local audit data:

@@ -153,3 +153,18 @@ python scripts/build_context_review_queue.py --manifest "E:\\Zinc_batters_datas\
 The queue includes only unresolved items with an explicit remote target unit and a linked result record. It supplies the current result evidence and nominated target evidence, not the full paper. Dispatch it through the normal free-model gate, then run validate_evidence.py on the context queue before applying decisions with apply_context_reviews.py. A confirmed association may add context facts only; original result values and Feature identity are protected. Validation binds the exact source manifest, evidence manifest, prompt, bundle and visual attachments, and apply rechecks those hashes. No-association requires positive counter-evidence, not merely a missing match; insufficient/conflicting evidence remains unresolved. Resolved items are not redispatched; a repeat pass on inconclusive items requires the explicit --retry-inconclusive switch.
 
 More detail: [docs/runbook.md](docs/runbook.md).
+
+## Global bidirectional integrity audit
+
+Before treating the two TXT files as final, audit the Registry ↔ Observation ↔ Result Record graph. This read-only audit checks both directions of the links, source evidence, merge redirects, and exclusion/split/merge decision history. The final exporter also invokes it; hard integrity errors block both formal TXT outputs.
+
+```powershell
+python scripts/audit_global_integrity.py `
+  --registry "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_feature_registry.json" `
+  --records "E:\\Zinc_batters_datas\\runs\\Feature_create\\worker_runs\\result_records.jsonl" `
+  --manifest "E:\\Zinc_batters_datas\\runs\\Feature_create\\prepared\\source_manifest.json" `
+  --report "E:\\Zinc_batters_datas\\runs\\Feature_create\\global_integrity_audit.json"
+```
+
+Eligible Observations without a Result Record are warnings by default because a source may identify a variable without supplying an exportable value. Add `--strict-observation-records` when complete Observation-to-Record materialization is required. See [docs/global_integrity_audit.md](docs/global_integrity_audit.md).
+
