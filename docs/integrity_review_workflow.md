@@ -34,8 +34,11 @@ Outputs:
 - `global_integrity_audit.json`: the exact audit used to build this queue.
 - `integrity_review_queue.json`: findings enriched with connected objects, evidence locators, source-manifest context, and relevant decision events.
 - `integrity_review_decisions.template.jsonl`: immutable finding identity/snapshot fields plus blank human decision fields.
+- `integrity_review_bundle.json`: a commit manifest containing SHA-256 hashes for the three artifacts above. The apply command verifies this manifest before accepting decisions.
 
-If a template already exists, the builder stops rather than overwriting a human-edited file. Archive the previous review files first, then use `--force` when intentionally rebuilding the queue.
+The builder acquires the same `global_feature_registry.json.lock` used by Registry/Record mutation stages while it reads Registry and Records; it also locks the optional review ledger. All artifacts are staged and flushed before replacement, and the bundle manifest is published last. If publication fails part-way through, the old or missing bundle will not match the mixed artifact files, so apply fails closed.
+
+If any queue, template, edited-decision, bundle, or prior apply-report file already exists, rebuilding is refused. After deciding to start a new review round, use both `--force --archive-existing`; the previous review files are moved into a timestamped archive directory. The append-only decision ledger is deliberately preserved outside that archive.
 
 Use `--strict-observation-records` only when every eligible result-feature Observation is expected to have a Result Record. If the audit was built in strict mode, that mode is captured in the queue snapshot.
 
@@ -77,11 +80,12 @@ python scripts/apply_integrity_review_decisions.py`
   --registry (Join-Path $run "global_feature_registry.json")`
   --records (Join-Path $run "worker_runs\\result_records.jsonl")`
   --manifest (Join-Path $run "prepared\\source_manifest.json")`
+  --bundle (Join-Path $review "integrity_review_bundle.json")`
   --ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --report (Join-Path $review "integrity_review_apply_report.json")
 ```
 
-Apply validates the queue and finding fingerprints, checks that Registry/Records/Manifest bytes have not changed since preparation, preserves the template row inventory, and rejects invalid decisions. Repeated application of the same decision is idempotent. A conflicting second decision for the same finding and audit snapshot is rejected.
+Apply validates the bundle manifest and every prepared artifact hash, the queue and finding fingerprints, the complete template row inventory, and the JSON Schema for each submitted decision. It acquires the canonical Registry lock first and the review-ledger lock second; while both are held it re-checks Registry/Records/Manifest hashes and the edited decision-file hash immediately before appending. This closes the snapshot-check/append race with the existing Registry/Record mutation stages. Repeated application of the same decision is idempotent. A conflicting second decision for the same finding and audit snapshot is rejected.
 
 The apply step appends only to the separate review ledger. The Registry, Records, source files, and Registry `decision_log` remain untouched.
 
@@ -108,12 +112,12 @@ python scripts/build_integrity_review_queue.py`
   --manifest (Join-Path $run "prepared\\source_manifest.json")`
   --review-ledger (Join-Path $review "integrity_review_decision_ledger.jsonl")`
   --output-dir $review`
-  --force
+  --force --archive-existing
 ```
 
 Findings still present are marked `repair_pending`, `deferred`, `accepted_warning`, or `changed_since_review`. A previously reviewed finding absent from the current audit appears under `cleared_since_previous_review` with `not_reported_by_current_audit`. This confirms only that the latest audit no longer reports that finding; it does not attribute causality to a particular edit.
 
-Archive the prior queue/template/edited decisions before using `--force`. The separate ledger remains append-only and carries the review history across queue rebuilds.
+The `--force --archive-existing` combination archives the prior queue, audit, bundle, template, edited decisions, and apply report before publishing the new round. The separate ledger remains append-only and carries the review history across queue rebuilds.
 
 ## 6. Export gate
 
