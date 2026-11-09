@@ -215,6 +215,8 @@ Export exactly two formal TXT files:
 
 The records file may contain paper identifiers, raw names, mapped feature IDs, reported values and units, result types, sample/context facts, protocols, evidence locators, extraction states, and unresolved questions.
 
+Every result record must also state `CONTEXT_ASSOCIATION_STATUS` and list `OPEN_CONTEXT_UNRESOLVED_ITEMS`. A missing-context link is treated as resolved only after an explicit `association_confirmed` or `no_association` decision. Pending, insufficient, and conflicting associations block the default formal export. An explicit `--allow-unresolved-context` override is permitted only for a clearly provisional package; the unresolved state and issue IDs must remain visible in the records file. Unknown resolution states always block export.
+
 The Feature-list file contains one entry per canonical result feature, with ID, canonical name, aliases, definition, result type, units/dimension, measurement/calculation methods, and standardization/comparability notes. It must not contain concrete values, Record_IDs, samples, conditions, paper coverage, or conclusions.
 
 ### Phase 8 — Report
