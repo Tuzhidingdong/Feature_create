@@ -222,6 +222,26 @@ class CorpusSamplingTests(unittest.TestCase):
             self.assertEqual(1, len(metadata_decisions))
             self.assertEqual(2, metadata_decisions[0]["row_count"])
 
+    def test_doi_urls_and_case_variants_share_one_paper_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "research_corpus_paired.csv"
+            rows = make_rows(20)
+            rows[0]["doi"] = "https://doi.org/10.1234/SHARED"
+            duplicate = dict(rows[0])
+            duplicate["doi"] = "10.1234/shared"
+            duplicate["abstract"] = "DOI normalized duplicate row"
+            rows.append(duplicate)
+            write_csv(source, rows)
+
+            result = create_corpus_sample(
+                source, root / "sample", fraction="0.2", seed="doi-normalization", stratify_by=(),
+            )
+            manifest = __import__("json").loads(Path(result["sampling_manifest"]).read_text(encoding="utf-8"))
+            shared = [item for item in manifest["paper_decisions"] if item["doi"] == "10.1234/shared"]
+            self.assertEqual(1, len(shared))
+            self.assertEqual(2, shared[0]["row_count"])
+
     def test_invalid_fraction_and_missing_identity_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
