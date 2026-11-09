@@ -5,7 +5,6 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import sys
 import uuid
 from contextlib import ExitStack
@@ -75,6 +74,26 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def ensure_distinct_paths(roles: dict[str, Path | None]) -> None:
+    seen: list[tuple[str, Path]] = []
+    for role, candidate in roles.items():
+        if candidate is None:
+            continue
+        path = candidate.expanduser().resolve()
+        for previous_role, previous_path in seen:
+            same_file = path == previous_path
+            if not same_file and path.is_file() and previous_path.is_file():
+                try:
+                    same_file = os.path.samefile(path, previous_path)
+                except OSError:
+                    same_file = False
+            if same_file:
+                raise QueueInputError(
+                    f"Unsafe path collision: {role} and {previous_role} refer to the same file ({path})."
+                )
+        seen.append((role, path))
 
 
 def json_bytes(value: Any) -> bytes:
@@ -175,6 +194,19 @@ def main(argv: list[str] | None = None) -> int:
         manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
         ledger_path = args.review_ledger.expanduser().resolve() if args.review_ledger else None
         output_dir = args.output_dir.expanduser().resolve()
+        output_paths = {
+            "audit_report": output_dir / "global_integrity_audit.json",
+            "queue": output_dir / "integrity_review_queue.json",
+            "template": output_dir / "integrity_review_decisions.template.jsonl",
+            "bundle": output_dir / "integrity_review_bundle.json",
+        }
+        ensure_distinct_paths({
+            "registry": registry_path,
+            "records": records_path,
+            "manifest": manifest_path,
+            "review_ledger": ledger_path,
+            **output_paths,
+        })
 
         # Serialize queue builders targeting the same output directory. Lock order:
         # output directory -> Registry -> review ledger. Apply never locks output_dir,
