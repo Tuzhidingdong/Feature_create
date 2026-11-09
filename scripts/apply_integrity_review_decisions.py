@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from feature_create.integrity_review import (
     make_ledger_entries,
+    sha256_value,
     validate_review_rows,
 )
 
@@ -118,6 +119,15 @@ def main(argv: list[str] | None = None) -> int:
         decision_rows = read_jsonl(args.decisions.expanduser().resolve())
 
         expected = queue.get("input_fingerprints") or {}
+        queue_core = {
+            "queue_version": queue.get("queue_version"),
+            "audit_fingerprint": queue.get("audit_fingerprint"),
+            "audit_status": queue.get("audit_status"),
+            "input_fingerprints": expected,
+            "finding_ids": queue.get("finding_ids") or [],
+        }
+        if sha256_value(queue_core) != queue.get("queue_fingerprint"):
+            raise ReviewApplyError("Queue fingerprint is invalid; rebuild the review queue.")
         actual_manifest_path = args.manifest.expanduser().resolve() if args.manifest else None
         actual = {
             "registry_sha256": sha256_file(args.registry.expanduser().resolve()),
