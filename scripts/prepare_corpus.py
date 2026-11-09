@@ -108,6 +108,52 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def load_sampling_provenance(path: Path, paired_csv: Path) -> dict[str, Any]:
+    """Verify the sample manifest is bound to the exact CSV used for preparation."""
+    sampling = read_json(path)
+    if sampling.get("sampling_manifest_version") != "0.1":
+        raise CorpusError(
+            f"Unsupported sampling_manifest_version: {sampling.get('sampling_manifest_version')!r}"
+        )
+    expected_hash = str(sampling.get("sampled_csv_sha256") or "").lower()
+    actual_hash = sha256_file(paired_csv)
+    if not expected_hash or expected_hash != actual_hash:
+        raise CorpusError(
+            "Sampling manifest does not match the selected paired CSV SHA-256; "
+            "the sample may have been edited or replaced."
+        )
+    selected_keys = sampling.get("selected_paper_keys")
+    if not isinstance(selected_keys, list) or len(selected_keys) != sampling.get("selected_paper_count"):
+        raise CorpusError("Sampling manifest has an invalid selected_paper_keys inventory.")
+    if len(selected_keys) != len(set(str(item) for item in selected_keys)):
+        raise CorpusError("Sampling manifest contains duplicate selected paper keys.")
+    source_hash = str(sampling.get("source_csv_sha256") or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", source_hash):
+        raise CorpusError("Sampling manifest has an invalid source_csv_sha256.")
+    for field in ("source_paper_count", "eligible_paper_count", "selected_paper_count", "selected_row_count"):
+        if not isinstance(sampling.get(field), int) or sampling[field] < 0:
+            raise CorpusError(f"Sampling manifest has an invalid {field}.")
+    return {
+        "sampling_manifest_version": sampling["sampling_manifest_version"],
+        "algorithm": sampling.get("algorithm"),
+        "seed": sampling.get("seed"),
+        "requested_fraction": sampling.get("requested_fraction"),
+        "stratify_by": sampling.get("stratify_by", []),
+        "source_csv_path": sampling.get("source_csv_path"),
+        "source_csv_sha256": source_hash,
+        "source_paper_count": sampling["source_paper_count"],
+        "eligible_paper_count": sampling["eligible_paper_count"],
+        "ineligible_paper_count": sampling.get("ineligible_paper_count"),
+        "selected_paper_count": sampling["selected_paper_count"],
+        "selected_row_count": sampling["selected_row_count"],
+        "sampled_csv_path": str(paired_csv.resolve()),
+        "sampled_csv_sha256": actual_hash,
+        "selected_paper_keys": sorted(str(item) for item in selected_keys),
+        "sampling_manifest_path": str(path.resolve()),
+        "sampling_manifest_sha256": sha256_file(path),
+    }
+
+
 def load_paired_csv(path: Path) -> list[dict[str, str]]:
     required = {
         "doi", "title", "year", "journal", "article_type",
@@ -251,8 +297,10 @@ def component_for_asset(asset_type: str, doc_type: str) -> tuple[str, str]:
 
 def build_manifest_from_paired_csv(
     paired_csv: Path, output: Path, corpus_root: Path,
+    sampling_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     rows = load_paired_csv(paired_csv)
+    sampling = load_sampling_provenance(sampling_manifest_path, paired_csv) if sampling_manifest_path else None
     if not rows:
         raise CorpusError("chem-literature paired corpus contains zero paper rows.")
 
@@ -541,6 +589,7 @@ def build_manifest_from_paired_csv(
         "blocked_paper_count": sum(p["input_status"].startswith("blocked") for p in papers),
         "corpus_fingerprint": hashlib.sha256("\n".join(fingerprint_payload).encode("utf-8")).hexdigest(),
         "papers": papers, "sources": sources, "upstream_warnings": warnings,
+        "sampling": sampling,
         "parsing_performed_by_feature_create": False,
     }
 
@@ -551,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--paired-csv", type=Path, required=True)
     parser.add_argument("--corpus-root", type=Path, help="Base directory for upstream relative paths; defaults to CSV directory.")
+    parser.add_argument("--sampling-manifest", type=Path, help="Optional sampling_manifest.json; its selected-CSV hash is verified and provenance is copied into source_manifest.json.")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -561,7 +611,12 @@ def main(argv: list[str] | None = None) -> int:
         if not paired_csv.is_file():
             raise CorpusError(f"Paired corpus CSV does not exist: {paired_csv}")
         output.mkdir(parents=True, exist_ok=True)
-        manifest = build_manifest_from_paired_csv(paired_csv, output, corpus_root)
+        sampling_manifest = args.sampling_manifest.expanduser().resolve() if args.sampling_manifest else None
+        if sampling_manifest and not sampling_manifest.is_file():
+            raise CorpusError(f"Sampling manifest does not exist: {sampling_manifest}")
+        manifest = build_manifest_from_paired_csv(
+            paired_csv, output, corpus_root, sampling_manifest_path=sampling_manifest
+        )
         manifest_path = output / "source_manifest.json"
         manifest_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -575,6 +630,12 @@ def main(argv: list[str] | None = None) -> int:
             "blocked_paper_count": manifest["blocked_paper_count"],
             "parsing_performed_by_feature_create": False,
             "manifest": str(manifest_path),
+            "sampling": {
+                "selected_paper_count": manifest["sampling"]["selected_paper_count"],
+                "source_paper_count": manifest["sampling"]["source_paper_count"],
+                "requested_fraction": manifest["sampling"]["requested_fraction"],
+                "sampled_csv_sha256": manifest["sampling"]["sampled_csv_sha256"],
+            } if manifest.get("sampling") else None,
         }
         (output / "prepare_summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
