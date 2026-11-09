@@ -397,20 +397,32 @@ def build_feature_rows(
     return rows, feature_by_id, canonical_names, errors
 
 
-def build_record_rows(
-    records: list[dict[str, Any]],
-    feature_by_id: dict[str, dict[str, Any]],
-    canonical_names: dict[str, str] | None = None,
- ) -> tuple[list[list[Any]], list[str], dict[str, Any]]:
-    rows: list[list[Any]] = []
-    errors: list[str] = []
-    seen_record_ids: set[str] = set()
-    context_summary = {
+def summarize_context_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    summary = {
         "status_counts": {},
         "records_with_open_context": 0,
         "open_context_issue_count": 0,
         "invalid_context_status_count": 0,
     }
+    for record in records:
+        result = context_association_summary(record)
+        status = result["status"]
+        summary["status_counts"][status] = summary["status_counts"].get(status, 0) + 1
+        if result["open_items"]:
+            summary["records_with_open_context"] += 1
+            summary["open_context_issue_count"] += len(result["open_items"])
+        summary["invalid_context_status_count"] += result["invalid_status_count"]
+    return summary
+
+
+def build_record_rows(
+    records: list[dict[str, Any]],
+    feature_by_id: dict[str, dict[str, Any]],
+    canonical_names: dict[str, str] | None = None,
+) -> tuple[list[list[Any]], list[str]]:
+    rows: list[list[Any]] = []
+    errors: list[str] = []
+    seen_record_ids: set[str] = set()
 
     for record in records:
         record_id = record.get("record_id")
@@ -450,16 +462,6 @@ def build_record_rows(
         context_summary_for_record = context_association_summary(record)
         context_status = context_summary_for_record["status"]
         open_context_items = context_summary_for_record["open_items"]
-        context_summary["status_counts"][context_status] = (
-            context_summary["status_counts"].get(context_status, 0) + 1
-        )
-        if open_context_items:
-            context_summary["records_with_open_context"] += 1
-            context_summary["open_context_issue_count"] += len(open_context_items)
-        context_summary["invalid_context_status_count"] += (
-            context_summary_for_record["invalid_status_count"]
-        )
-
         feature_id = feature.get("existing_feature_id") or canonical_id
         source_location = {
             "source_id": record.get("source_id"),
@@ -498,7 +500,7 @@ def build_record_rows(
         str(row[3] or ""),
         str(row[0] or ""),
     ))
-    return rows, errors, context_summary
+    return rows, errors
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -532,9 +534,8 @@ def main(argv: list[str] | None = None) -> int:
         }
     ]
     feature_rows, feature_by_id, canonical_names, feature_errors = build_feature_rows(registry, existing_schema)
-    record_rows, record_errors, context_summary = build_record_rows(
-        records, feature_by_id, canonical_names
-    )
+    record_rows, record_errors = build_record_rows(records, feature_by_id, canonical_names)
+    context_summary = summarize_context_records(records)
 
     errors = list(schema_errors) + feature_errors + record_errors
     if existing_schema is None and any(
