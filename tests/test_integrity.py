@@ -59,6 +59,17 @@ class IntegrityAuditTests(unittest.TestCase):
         self.assertIn("observation_without_result_record", self.codes(strict))
         self.assertEqual(strict["status"], "fail")
 
+    def test_unknown_decision_event_type_is_error(self):
+        data = registry()
+        data["decision_log"] = [{
+            "event_id": "EV-UNKNOWN", "event_type": "feature_auto_fixed",
+            "subject_ids": ["F-1"], "decision": "auto_fix",
+            "rationale": "This event type is not part of the Registry contract.",
+            "evidence_observation_ids": [],
+        }]
+        report = audit_integrity(data, [record()])
+        self.assertIn("unknown_decision_event_type", self.codes(report))
+
     def test_excluded_observation_requires_decision(self):
         data = registry()
         data["observations"][0]["discovery_status"] = "excluded"
