@@ -21,11 +21,11 @@ Run from the repository root in PowerShell. The builder runs the audit itself, s
 $run = "E:\\Zinc_batters_datas\\runs\\Feature_create"
 $review = Join-Path $run "integrity_review"
 
-python scripts/build_integrity_review_queue.py `P`
-  --registry (Join-Path $run "global_feature_registry.json") `P`
-  --records (Join-Path $run "worker_runs\\result_records.jsonl") `P`
-  --manifest (Join-Path $run "prepared\\source_manifest.json") `P`
-  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl") `P`
+python scripts/build_integrity_review_queue.py`
+  --registry (Join-Path $run "global_feature_registry.json")`
+  --records (Join-Path $run "worker_runs\\result_records.jsonl")`
+  --manifest (Join-Path $run "prepared\\source_manifest.json")`
+  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl")`
   --output-dir $review
 ```
 
@@ -44,8 +44,8 @@ Use `--strict-observation-records` only when every eligible result-feature Obser
 Copy the generated template; do not edit the original:
 
 ```
-Copy-Item `P`
-  (Join-Path $review "integrity_review_decisions.template.jsonl") `P`
+Copy-Item`
+  (Join-Path $review "integrity_review_decisions.template.jsonl")`
   (Join-Path $review "integrity_review_decisions.jsonl")
 ```
 
@@ -70,14 +70,14 @@ Rules:
 ## 3. Validate and append the review ledger
 
 ```
-python scripts/apply_integrity_review_decisions.py `P`
-  --queue (Join-Path $review "integrity_review_queue.json") `P`
-  --template (Join-Path $review "integrity_review_decisions.template.jsonl") `P`
-  --decisions (Join-Path $review "integrity_review_decisions.jsonl") `P`
-  --registry (Join-Path $run "global_feature_registry.json") `P`
-  --records (Join-Path $run "worker_runs\\result_records.jsonl") `P`
-  --manifest (Join-Path $run "prepared\\source_manifest.json") `P`
-  --ledger (Join-Path $review "integrity_review_decisions.jsonl") `P`
+python scripts/apply_integrity_review_decisions.py`
+  --queue (Join-Path $review "integrity_review_queue.json")`
+  --template (Join-Path $review "integrity_review_decisions.template.jsonl")`
+  --decisions (Join-Path $review "integrity_review_decisions.jsonl")`
+  --registry (Join-Path $run "global_feature_registry.json")`
+  --records (Join-Path $run "worker_runs\\result_records.jsonl")`
+  --manifest (Join-Path $run "prepared\\source_manifest.json")`
+  --ledger (Join-Path $review "integrity_review_decisions.jsonl")`
   --report (Join-Path $review "integrity_review_apply_report.json")
 ```
 
@@ -102,12 +102,12 @@ Do not patch raw Observation fields or Result Record values just to clear a find
 After making corrections, rebuild the queue and pass the review ledger:
 
 ```
-python scripts/build_integrity_review_queue.py `P`
-  --registry (Join-Path $run "global_feature_registry.json") `P`
-  --records (Join-Path $run "worker_runs\\result_records.jsonl") `P`
-  --manifest (Join-Path $run "prepared\\source_manifest.json") `P`
-  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl") `P`
-  --output-dir $review `P`
+python scripts/build_integrity_review_queue.py`
+  --registry (Join-Path $run "global_feature_registry.json")`
+  --records (Join-Path $run "worker_runs\\result_records.jsonl")`
+  --manifest (Join-Path $run "prepared\\source_manifest.json")`
+  --review-ledger (Join-Path $review "integrity_review_decisions.jsonl")`
+  --output-dir $review`
   --force
 ```
 
