@@ -233,28 +233,12 @@ def audit_integrity(
                         f"Decision event {event_id or index} has no evidence Observation linked to Feature {feature_subject_id}.",
                         event_id=event_id, feature_id=feature_subject_id,
                     ))
-        if event_type == "feature_merged" and len(set(feature_subjects)) >= 2:
-            retired_subjects = [
-                feature_id for feature_id in set(feature_subjects)
-                if features[feature_id].get("feature_status") == "retired_merged"
-            ]
-            if len(retired_subjects) != 1:
-                issues.append(_issue(
-                    "invalid_feature_merge_event_roles", "error",
-                    f"Merge event {event_id or index} must identify exactly one retired Feature and one surviving Feature.",
-                    event_id=event_id, feature_ids=sorted(set(feature_subjects)),
-                    retired_feature_ids=sorted(retired_subjects),
-                ))
-            else:
-                retired_id = retired_subjects[0]
-                target_id = str(features[retired_id].get("redirect_to") or "")
-                if target_id not in set(feature_subjects) or target_id == retired_id:
-                    issues.append(_issue(
-                        "merge_event_redirect_mismatch", "error",
-                        f"Merge event {event_id or index} does not include the redirect target of retired Feature {retired_id}.",
-                        event_id=event_id, feature_id=retired_id, redirect_to=target_id,
-                        feature_ids=sorted(set(feature_subjects)),
-                    ))
+        if event_type == "feature_merged" and len(set(feature_subjects)) != 2:
+            issues.append(_issue(
+                "invalid_feature_merge_event_subjects", "error",
+                f"Merge event {event_id or index} must identify exactly two Feature objects.",
+                event_id=event_id, feature_ids=sorted(set(feature_subjects)),
+            ))
         if event_type == "feature_excluded":
             evidence_set = {str(value) for value in evidence_observation_ids}
             for subject in subjects:
@@ -288,8 +272,19 @@ def audit_integrity(
             resolved, error = _resolve_feature_id(feature_id, features)
             if not target or error or resolved == feature_id:
                 issues.append(_issue("invalid_feature_merge_redirect", "error", f"Retired Feature {feature_id} has an invalid merge redirect.", feature_id=feature_id, redirect_to=target))
-            if not event_types_by_subject.get(("feature_merged", feature_id)):
+            merge_events = event_types_by_subject.get(("feature_merged", feature_id), [])
+            if not merge_events:
                 issues.append(_issue("merged_feature_without_decision", "error", f"Retired Feature {feature_id} has no feature_merged decision event.", feature_id=feature_id))
+            elif not any(
+                str(target or "") in {str(subject) for subject in (event.get("subject_ids") or [])}
+                for event in merge_events
+            ):
+                issues.append(_issue(
+                    "merge_event_redirect_mismatch", "error",
+                    f"Retired Feature {feature_id} has no merge event that identifies its direct redirect target {target}.",
+                    feature_id=feature_id, redirect_to=target,
+                    event_ids=[event.get("event_id") for event in merge_events],
+                ))
         if feature.get("feature_status") == "split_pending" and not event_types_by_subject.get(("feature_split", feature_id)):
             issues.append(_issue("split_pending_without_decision", "error", f"Split-pending Feature {feature_id} has no feature_split decision event.", feature_id=feature_id))
 
